@@ -1,12 +1,11 @@
-# ==========================================
-# PRODUCTION COMPOSE FILE (For End-Users)
-# Uses pre-built images from GitHub Container Registry
-# ==========================================
-version: '3.8'
+
 
 services:
   api:
-    image: ghcr.io/instancium/instant-ai-gate-api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+      target: api-runtime
     container_name: instant-ai-gate-api
     restart: unless-stopped
     ports:
@@ -24,7 +23,6 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
     networks:
       - app-network
-    # GPU Support Configuration
     deploy:
       resources:
         reservations:
@@ -34,7 +32,10 @@ services:
               capabilities: [gpu, compute, utility]
 
   admin:
-    image: ghcr.io/instancium/instant-ai-gate-admin:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+      target: admin-runtime
     container_name: instant-ai-gate-admin
     restart: unless-stopped
     ports:

@@ -21,39 +21,41 @@
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License">
 </p>
 
----
-## Getting Started with Docker Compose
+## 🚀 Easy Start: Running with Docker Compose
 
-Deploying the entire high-performance AI gateway infrastructure is completely automated. Because this repository is public, all native hardware-acceleration drivers (CUDA, Vulkan, CPU backends) are automatically fetched, cached, and configured directly inside the multi-stage Docker build pipeline.
+Deploying the entire high-performance AI gateway infrastructure is now completely automated and takes just seconds. 
 
-## 1. Clone the Repository
+We provide pre-built, highly-optimized Docker images hosted on the GitHub Container Registry (GHCR). All native hardware-acceleration drivers (CUDA, Vulkan, CPU backends) are **already baked into these images**, meaning zero compilation time and no massive downloads during setup.
+
+### 1. Clone the Repository
 
 Clone the project repository to your local environment and navigate into the root directory:
 
 ```bash
-git clone https://github.com/Instancium/instant-ai-gate.git
+git clone [https://github.com/Instancium/instant-ai-gate.git](https://github.com/Instancium/instant-ai-gate.git)
 cd instant-ai-gate
-docker compose up -d --build
 ```
 
+### 2. Launch the Infrastructure
+Start the gateway in detached mode using Docker Compose:
+```bash
+docker compose up -d
+```
 > 💡 **What happens under the hood:**
->
-> Docker will instantly spin up a secure, multi-stage compilation context, download the pre-compiled native Linux-x64 computing cores from the production release registry, and route your active hardware devices (including NVIDIA GPUs) directly to the inference core.
+> Docker will instantly pull the pre-compiled native Linux-x64 computing cores from GHCR. It will completely bypass any compilation steps and automatically route your active hardware devices (including NVIDIA GPUs) directly to the inference core for maximum performance.
 
-## 3. Access the Gateway Applications
-
+### 3. Access the Gateway Applications
 Once the containers report an active operational status, you can immediately access the local deployment endpoints:
 
-- **Management UI Console:** http://127.0.0.1:49153/
-- **Core Processing Inference API:** http://127.0.0.1:49152/
+- **Management UI Console:** [http://127.0.0.1:49153/](http://127.0.0.1:49153/)
+- **Core Processing Inference API:** [http://127.0.0.1:49152/](http://127.0.0.1:49152/)
 
-> ⚠️ **Important Note on Asset Fetching & Layer Caching**
->
-> To maximize build performance, all native hardware acceleration drivers are stored in Docker's layer cache. Changes to your C# source files inside the `src/` directory will **not** trigger a re-download of these large runtime assets.
->
-> However, if you explicitly rebuild the project using the `--no-cache` flag, Docker will discard the cached layers and download the native runtime components again.
+
+
+> 🔄 **Updating to the latest version**
+> Because everything is pre-built, keeping your gateway up to date is trivial. To fetch the newest features and performance improvements without losing your downloaded models, simply run:
 
 ```bash
-docker compose build --no-cache
+docker compose pull
 docker compose up -d
 ```
