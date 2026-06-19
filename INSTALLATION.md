@@ -22,62 +22,38 @@
 </p>
 
 ---
-
 ## Getting Started with Docker Compose
 
-To spin up the infrastructure seamlessly, follow these setup steps. Because this repository isolates heavy unmanaged hardware runtimes (CUDA, Vulkan, CPU backends) to keep the source tree lightweight, you must download and place the runtime drivers manually inside the project directory before launching Docker.
+Deploying the entire high-performance AI gateway infrastructure is completely automated. Because this repository is public, all native hardware-acceleration drivers (CUDA, Vulkan, CPU backends) are automatically fetched, cached, and configured directly inside the multi-stage Docker build pipeline.
 
-> ⚠️ **Note on Automation**
->
-> While this repository remains private, automated downloading inside Docker requires strict authentication tokens. A seamless, automatic download sequence directly inside the Dockerfile will be deployed once the project transitions to a public scope.
+## 1. Clone the Repository
 
-
-### 1. Clone the Repository
-
-First, clone the project repository to your local environment and navigate into the root directory:
+Clone the project repository to your local environment and navigate into the root directory:
 
 ```bash
 git clone https://github.com/Instancium/instant-ai-gate.git
 cd instant-ai-gate
+docker compose up -d --build
 ```
 
-### 2. Setup Local Runtime Drivers
+> 💡 **What happens under the hood:**
+>
+> Docker will instantly spin up a secure, multi-stage compilation context, download the pre-compiled native Linux-x64 computing cores from the production release registry, and route your active hardware devices (including NVIDIA GPUs) directly to the inference core.
 
-1. Navigate to the repository **Releases** page in your browser.
-2. Download the hardware drivers archive:
+## 3. Access the Gateway Applications
 
-   ```
-   instant-ai-gate-runtime-v1.0.0.zip
-   ```
+Once the containers report an active operational status, you can immediately access the local deployment endpoints:
 
-3. Inside the newly cloned `instant-ai-gate` directory, create a new folder named `.runtimes`.
-4. Extract the contents of the downloaded ZIP archive directly into that `.runtimes` folder.
+- **Management UI Console:** http://127.0.0.1:49153/
+- **Core Processing Inference API:** http://127.0.0.1:49152/
 
-Verify that your local directory tree looks exactly like this before proceeding:
-
-```text
-instant-ai-gate/
-├── Dockerfile
-├── docker-compose.yml
-├── src/
-└── .runtimes/
-    └── linux-x64/
-        ├── cpu/
-        ├── cuda/
-        └── vulkan/
-```
-
-### 3. Build and Launch Infrastructure
-
-Once the `.runtimes` directory tree is fully populated, execute the following command to build and start the containers:
+> ⚠️ **Important Note on Asset Fetching & Layer Caching**
+>
+> To maximize build performance, all native hardware acceleration drivers are stored in Docker's layer cache. Changes to your C# source files inside the `src/` directory will **not** trigger a re-download of these large runtime assets.
+>
+> However, if you explicitly rebuild the project using the `--no-cache` flag, Docker will discard the cached layers and download the native runtime components again.
 
 ```bash
-docker-compose up -d --build
+docker compose build --no-cache
+docker compose up -d
 ```
-
-### 4. Access the Gateway Applications
-
-Once the multi-stage containers successfully build and report an active status, you can immediately access the endpoints:
-
-- **Admin Panel Web UI:** http://127.0.0.1:49153/
-- **AI Core Gateway API:** http://127.0.0.1:49152/
