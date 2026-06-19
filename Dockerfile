@@ -34,7 +34,7 @@ RUN dotnet publish "src/InstantAIGate.API/InstantAIGate.API.csproj" \
 
 # Publish Admin as framework-dependent (using aspnet:10.0 at runtime)
 RUN dotnet publish "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj" \
-    -c Release -o /app/publish/admin 
+    -c Release -o /app/publish/admin /p:DisableGitVersionTask=true
 
 # ==========================================
 # 3. API Runtime (CUDA + GPU)
