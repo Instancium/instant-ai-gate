@@ -1,0 +1,9 @@
+mode: ContinuousDeployment
+next-version: 1.0.0
+branches:
+  main:
+    mode: ContinuousDeployment
+    regex: ^master$|^main$
+  master:
+    mode: ContinuousDeployment
+    regex: ^master$|^main$
