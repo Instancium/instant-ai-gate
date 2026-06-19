@@ -32,7 +32,7 @@ We provide pre-built, highly-optimized Docker images hosted on the GitHub Contai
 Clone the project repository to your local environment and navigate into the root directory:
 
 ```bash
-git clone [https://github.com/Instancium/instant-ai-gate.git](https://github.com/Instancium/instant-ai-gate.git)
+git clone https://github.com/Instancium/instant-ai-gate.git
 cd instant-ai-gate
 ```
 
