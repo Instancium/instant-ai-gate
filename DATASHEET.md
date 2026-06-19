@@ -47,12 +47,12 @@ The gateway utilizes a highly optimized, stripped-down custom compilation of the
 
 ---
 
-## ❌ Current Limitations & Out-of-Scope (As of v0.9.0)
+## ❌ Current Limitations & Out-of-Scope (As of v1.0.1)
 
-To keep implementation predictable and prevent resource allocation conflicts, the following features are **explicitly not supported** in the current build:
+To keep implementation predictable and prevent resource allocation conflicts, the following features are **explicitly not supported** in the current stable build:
 
-| Feature / Tech | Current Status | Alternative / Target Roadmap |
-| :--- | :--- | :--- |
-| **VULKAN Backend** | 🚫 **Not Supported** | Scheduled for next major release (v1.1.0) for AMD/Intel GPU compatibility. |
-| **AMD ROCm Backend** | 🚫 **Not Supported** | Under evaluation. Use CPU-AVX2 fallback on AMD EPYC platforms. |
-| **OpenAI Vision / Audio** | 🚫 **Not Supported** | Protocol schemas are ready, but underlying compute pipelines accept **Text Only** inputs. |
+| Feature / Tech | Current Status in v1.0.1 | Target Release | Alternative / Workaround |
+| :--- | :--- | :--- | :--- |
+| **VULKAN Backend** | 🚫 Not Supported | 🚀 **v1.1.0** | Scheduled for AMD/Intel GPU native acceleration support. |
+| **AMD ROCm Backend** | 🚫 Not Supported | 🚀 **v1.1.0** | Under evaluation. Use CPU-AVX2 fallback on AMD EPYC platforms. |
+| **OpenAI Vision / Audio** | 🚫 Not Supported | 📅 **v1.2.0+** | Protocol schemas are ready, but underlying compute pipelines accept **Text Only** inputs. |
