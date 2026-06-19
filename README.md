@@ -3,7 +3,13 @@
   <br />
   <strong>Standardized. Secure. Instant Deployment.</strong>
   <br />
- Lightweight middleware providing a self-hosted, monitored foundation for local AI applications.
+  Lightweight middleware providing a self-hosted, monitored foundation for local AI applications.
+</p>
+
+<p align="center">
+  <a href="README.md"><b>Overview</b></a> │ 
+  <a href="INSTALLATION.md"><b>Installation Guide</b></a> │ 
+  <a href="DATASHEET.md"><b>Technical Data Sheet</b></a>
 </p>
 
 <p align="center">

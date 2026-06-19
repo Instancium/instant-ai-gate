@@ -1,10 +1,33 @@
-# 📊 InstantAIGate Technical Data Sheet
 
-This document provides system administrators, DevOps engineers, and IT specialists with strict hardware, software, and driver requirements for deploying **InstantAIGate**.
+<p align="center">
+  <img src="media/ig-logo.png" alt="InstantAIGate logo" height="180" />
+  <br />
+  <strong>Standardized. Secure. Instant Deployment.</strong>
+  <br />
+  Lightweight middleware providing a self-hosted, monitored foundation for local AI applications.
+</p>
+
+<p align="center">
+  <a href="README.md"><b>Overview</b></a> │ 
+  <a href="INSTALLATION.md"><b>Installation Guide</b></a> │ 
+  <a href="DATASHEET.md"><b>Technical Data Sheet</b></a>
+</p>
+
+<p align="center">
+  <a href="#-quick-start-60s"><img src="https://img.shields.io/badge/Docker%20Hub-Available-blue?style=flat-square&logo=docker" alt="Docker Hub"></a>
+  <img src="https://img.shields.io/badge/Hardware-CPU%20%26%20GPU-flash?style=flat-square" alt="Hardware Support">
+  <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-orange?style=flat-square" alt="OpenAI API">
+  <img src="https://img.shields.io/badge/Architecture-DDD-purple?style=flat-square" alt="DDD">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License">
+</p>
 
 ---
 
-## 💻 Hardware Support Matrix
+# InstantAIGate Technical Data Sheet
+
+This document provides system administrators, DevOps engineers, and IT specialists with strict hardware, software, and driver requirements for deploying **InstantAIGate**.
+
+## Hardware Support Matrix
 
 ### 🟢 NVIDIA GPU Backend (Highly Recommended)
 The native core is built with compute architectures spanning from **Ampere** to the latest generation architecture chips.
@@ -15,27 +38,23 @@ The native core is built with compute architectures spanning from **Ampere** to 
   * `120` — Rubin (Next-gen architecture)
 * **VRAM Overhead:** Base footprint is extremely light (< 200MB for the gateway instance). Total VRAM allocation depends entirely on the selected GGUF model size, context length (`MaxContexts`), and KV-Cache quantization settings.
 
-### ⚙️ CPU Backend (Automatic Fallback)
+### CPU Backend (Automatic Fallback)
 * **Supported Architectures:** x86-64 with AVX2 instruction sets.
 * **RAM Requirement:** Model size in GB + 20% buffer for context window overhead.
 * **Threading Policy:** Automatically scales to use available physical CPU cores.
 
----
-
-## 💿 Software & Driver Requirements
+## Software & Driver Requirements
 
 ### 🐧 Linux Environment (Containerized / On-Prem)
 * **Base OS:** Ubuntu 22.04 LTS (or any glibc-compatible modern Linux distribution).
 * **NVIDIA Driver:** Requires CUDA **12.8** compatible drivers (Minimum Host Driver Version: **570.xx+** or newer matching CUDA 12.8.x toolkits).
 * **Container Runtime:** Docker with `nvidia-container-toolkit` installed and configured for GPU scheduling inside `docker-compose.yml`.
 
-### 🪟 Windows Environment (Native)
+### Windows Environment (Native)
 * **Base OS:** Windows Server 2022 / Windows 10 & 11 (64-bit).
 * **NVIDIA Driver:** Official NVIDIA Display Driver with CUDA 12.8 support.
 
----
-
-## 🛠️ Build Specs & Core Engine Integrity
+## Build Specs & Core Engine Integrity
 
 The gateway utilizes a highly optimized, stripped-down custom compilation of the `llama.cpp` core (Commit: `6e14286`) to minimize attack surface and binary weight:
 
@@ -45,7 +64,6 @@ The gateway utilizes a highly optimized, stripped-down custom compilation of the
 * **Compiled Artifacts Included:** `libllama.so`, `libggml-cuda.so`, `libggml-base.so`, `libggml-cpu.so`.
 * **Excluded Ecosystem Components:** All standard executable wrappers (`llama-cli`, `llama-server`, benchmarks, and test binaries) are stripped at compilation level to guarantee zero unmanaged process leaks.
 
----
 
 ## ❌ Current Limitations & Out-of-Scope (As of v1.0.1)
 
