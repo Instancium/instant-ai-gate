@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="#-quick-start-60s"><img src="https://img.shields.io/badge/Docker%20Hub-Available-blue?style=flat-square&logo=docker" alt="Docker Hub"></a>
+  <a href="#-quick-start-60s"><img src="https://img.shields.io/badge/GHCR-Available-blue?style=flat-square&logo=github" alt="GitHub Container Registry"></a>
   <img src="https://img.shields.io/badge/Hardware-CPU%20%26%20GPU-flash?style=flat-square" alt="Hardware Support">
   <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-orange?style=flat-square" alt="OpenAI API">
   <img src="https://img.shields.io/badge/Architecture-DDD-purple?style=flat-square" alt="DDD">
