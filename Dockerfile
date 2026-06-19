@@ -37,13 +37,16 @@ RUN curl -fSL "https://github.com/Instancium/instant-ai-gate/releases/download/v
 # Now copy ALL source code
 COPY src/ src/
 
+# Define build argument for application versioning (defaults to 1.0.2)
+ARG BUILD_VERSION=1.0.2
+
 # Publish API as self-contained (with GitVersion bypass flag added)
 RUN dotnet publish "src/InstantAIGate.API/InstantAIGate.API.csproj" \
-    -c Release -o /app/publish/api -r linux-x64 --self-contained true /p:DisableGitVersionTask=true
+    -c Release -o /app/publish/api -r linux-x64 --self-contained true /p:Version=${BUILD_VERSION}
 
 # Publish Admin as framework-dependent (using aspnet:10.0 at runtime)
 RUN dotnet publish "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj" \
-    -c Release -o /app/publish/admin /p:DisableGitVersionTask=true
+    -c Release -o /app/publish/admin /p:Version=${BUILD_VERSION}
 
 # ==========================================
 # 3. API Runtime (CUDA + GPU)
