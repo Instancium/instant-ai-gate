@@ -50,26 +50,6 @@ the platform enables fine-grained configuration of model parameters, putting tot
   infrastructure costs.
 
 
-
-
-## Quick Start 
-
-Deploy a complete production-grade infrastructure (Backend API + Admin UI) with a single command:
-
-```bash
-# Clone the repository
-git clone https://github.com/Instancium/InstantAIGate.git
-cd InstantAIGate
-
-# Start services in the background
-docker-compose up -d
-
-# Once the containers are up and running, you can access the services via the following URLs:
-# Admin Panel: Open your browser at http://127.0.0.1:49153/
-# API Endpoint: Available at http://127.0.0.1:49152/
-
-```
-
 ## Technical Architecture & High-Level Design
 
 **InstantAIGate** is built on **Domain-Driven Design (DDD)** principles, cleanly separating core business logic from infrastructural details. The architecture ensures modularity, testability, and high performance. 
@@ -173,6 +153,68 @@ graph TD
 | **Application** | Orchestrates model lifecycle to meet availability and cost targets; implements hot-swap, pooling and request routing so deployments scale without user disruption. Encapsulates operational policies (routing, concurrency caps, resource affinity). | ChatCompletionService (Orchestrator), ModelManager (State control & semaphores), PromptTemplateService (Token framing), ModelValidationService (Size & limits validation), core abstraction ports (IModelProvider, IModelStorageService, ITelemetryService). |
 | **Domain / Contracts** | Single source of truth for product behavior and governance; preserves business invariants, model identity, and auditable manifests so changes are predictable and testable. | ModelManifest (Aggregate Root), RepoId (Strict Domain Value Object), ModelFile, ModelChecksum, ModelType taxonomy. |
 | **Infrastructure** | Delivers secure, observable, and efficient execution of models (storage, downloads, native runtimes); implements enterprise controls for data locality, secure downloads, and hardware-aware scheduling to minimize costs. | LlamaModelProvider (Unmanaged core wrapper), HttpModelStorageService (.tmp network streams), NvmlProvider & TelemetryService (Raw OS/Hardware metrics), NativeLibraryLoader (Shadow copying & DLL bindings), InMemoryModelRegistry. |
+
+
+
+## Getting Started with Docker Compose
+
+To spin up the infrastructure seamlessly, follow these setup steps. Because this repository isolates heavy unmanaged hardware runtimes (CUDA, Vulkan, CPU backends) to keep the source tree lightweight, you must download and place the runtime drivers manually inside the project directory before launching Docker.
+
+> ⚠️ **Note on Automation**
+>
+> While this repository remains private, automated downloading inside Docker requires strict authentication tokens. A seamless, automatic download sequence directly inside the Dockerfile will be deployed once the project transitions to a public scope.
+
+
+### 1. Clone the Repository
+
+First, clone the project repository to your local environment and navigate into the root directory:
+
+```bash
+git clone https://github.com/Instancium/instant-ai-gate.git
+cd instant-ai-gate
+```
+
+### 2. Setup Local Runtime Drivers
+
+1. Navigate to the repository **Releases** page in your browser.
+2. Download the hardware drivers archive:
+
+   ```
+   instant-ai-gate-runtime-v1.0.0.zip
+   ```
+
+3. Inside the newly cloned `instant-ai-gate` directory, create a new folder named `.runtimes`.
+4. Extract the contents of the downloaded ZIP archive directly into that `.runtimes` folder.
+
+Verify that your local directory tree looks exactly like this before proceeding:
+
+```text
+instant-ai-gate/
+├── Dockerfile
+├── docker-compose.yml
+├── src/
+└── .runtimes/
+    └── linux-x64/
+        ├── cpu/
+        ├── cuda/
+        └── vulkan/
+```
+
+### 3. Build and Launch Infrastructure
+
+Once the `.runtimes` directory tree is fully populated, execute the following command to build and start the containers:
+
+```bash
+docker-compose up -d --build
+```
+
+### 4. Access the Gateway Applications
+
+Once the multi-stage containers successfully build and report an active status, you can immediately access the endpoints:
+
+- **Admin Panel Web UI:** http://127.0.0.1:49153/
+- **AI Core Gateway API:** http://127.0.0.1:49152/
+
 
 ## 🛠️ Tech Stack & Third-Party Licenses
 
