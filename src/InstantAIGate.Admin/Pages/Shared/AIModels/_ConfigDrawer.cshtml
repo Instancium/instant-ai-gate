@@ -2,7 +2,7 @@
 
 <div id="config-drawer" class="drawer-container">
     <form id="drawer-form" asp-page-handler="Load" method="post" class="drawer-form-layout">
-        <input type="hidden" id="drawer-input-modelpath" asp-for="SelectedSettings.RepoId" />
+        <input type="hidden" id="drawer-input-modelpath" asp-for="ModelSettings.RepoId" />
 
         <div id="drawer-loading-overlay" class="drawer-loading hidden opacity-0">
             <div class="spinner-loader"></div>
@@ -37,7 +37,7 @@
                             </span>
                             <span id="gpu-layers-val" class="range-live-value font-mono">20</span>
                         </div>
-                        <input type="range" id="gpu-layers" asp-for="SelectedSettings.GpuLayerCount" min="-1" max="128" step="1" value="20" class="custom-range-slider">
+                        <input type="range" id="gpu-layers" asp-for="ModelSettings.GpuLayerCount" min="-1" max="128" step="1" value="20" class="custom-range-slider">
                     </div>
 
                     <div class="grid-two-columns">
@@ -46,7 +46,7 @@
                                 CPU Threads
                                 <i class="bi bi-question-circle tooltip-trigger" title="Number of CPU worker threads allocated for tensor mathematics. For optimal execution speed, set this equal to the number of physical CPU cores (avoid hyperthreading cores)."></i>
                             </label>
-                            <input type="number" asp-for="SelectedSettings.Threads" min="1" max="64" class="custom-form-input font-mono">
+                            <input type="number" asp-for="ModelSettings.Threads" min="1" max="64" class="custom-form-input font-mono">
                         </div>
 
                         <div class="input-group-spacing">
@@ -54,7 +54,7 @@
                                 Primary GPU Index
                                 <i class="bi bi-question-circle tooltip-trigger" title="The hardware identifier (ID) of the primary graphics card utilized to host the core compute context. Essential for multi-GPU arrays (0, 1, 2...)."></i>
                             </label>
-                            <input type="number" asp-for="SelectedSettings.MainGpu" min="0" max="8" class="custom-form-input font-mono">
+                            <input type="number" asp-for="ModelSettings.MainGPU" min="0" max="8" class="custom-form-input font-mono">
                         </div>
                     </div>
 
@@ -83,7 +83,7 @@
                             Context Size (Tokens)
                             <i class="bi bi-question-circle tooltip-trigger" title="The maximum boundary for the model's memory buffer. Expanding this allows for larger prompt strings and longer responses, but heavily amplifies VRAM allocation requirements for the KV-cache."></i>
                         </label>
-                        <select asp-for="SelectedSettings.ContextSize" class="custom-form-select font-mono">
+                        <select asp-for="ModelSettings.ContextSize" class="custom-form-select font-mono">
                             <optgroup label="Small / BERT">
                                 <option value="512">512 Tokens (Minimal)</option>
                                 <option value="1024">1024 Tokens (Basic)</option>
@@ -105,12 +105,12 @@
                             Max Parallel Users
                             <i class="bi bi-question-circle tooltip-trigger" title="Configures the number of concurrency slots available before the backpressure semaphore engages. When limits are exceeded, extra concurrent requests will safely queue in an async buffer."></i>
                         </label>
-                        <input type="number" asp-for="SelectedSettings.MaxContexts" min="1" max="32" value="2" class="custom-form-input font-mono">
+                        <input type="number" asp-for="ModelSettings.MaxContexts" min="1" max="32" value="2" class="custom-form-input font-mono">
                     </div>
 
                     <div class="checkbox-group-wrapper">
                         <label class="checkbox-custom-label">
-                            <input type="checkbox" asp-for="SelectedSettings.FlashAttention" class="custom-checkbox-input">
+                            <input type="checkbox" asp-for="ModelSettings.FlashAttention" class="custom-checkbox-input">
                             <div>
                                 <div class="checkbox-title">Enable Flash Attention</div>
                                 <p class="checkbox-description">Mathematical optimization for attention matrix. Cuts VRAM utilization and accelerates long-context generations.</p>
@@ -118,7 +118,7 @@
                         </label>
 
                         <label class="checkbox-custom-label">
-                            <input type="checkbox" asp-for="SelectedSettings.Embeddings" class="custom-checkbox-input">
+                            <input type="checkbox" asp-for="ModelSettings.Embeddings" class="custom-checkbox-input">
                             <div>
                                 <div class="checkbox-title">Expose Embeddings Endpoint</div>
                                 <p class="checkbox-description">Activates semantic vector extraction layer. Toggle on only for vector-based RAG workflows.</p>
@@ -140,7 +140,7 @@
                             KV-Cache Compression
                             <i class="bi bi-question-circle tooltip-trigger" title="Quantizes the dynamic memory used for tracking chat history. Q5_0/Q8_0 preserves precise token attention links while saving up to 60% of VRAM on extended context windows."></i>
                         </label>
-                        <select asp-for="SelectedSettings.KvCacheQuantization" class="custom-form-select font-mono">
+                        <select asp-for="ModelSettings.KvCacheQuantization" class="custom-form-select font-mono">
                             <option value="F16" selected>Disabled (High Precision F16)</option>
                             <option value="Q8_K">High Fidelity (Q8_K Cache - Safe for all models)</option>
                             <option value="Q5_K">Symmetric Sweet Spot (Q5_K Cache - Best for Q5/Q6 weights)</option>
@@ -153,7 +153,7 @@
                             Processing Batch Size
                             <i class="bi bi-question-circle tooltip-trigger" title="The chunk size of tokens processed simultaneously during large prompt ingestions. Lower values like 256 are highly recommended for CPU Only mode to prevent RAM cache thrashing."></i>
                         </label>
-                        <select asp-for="SelectedSettings.BatchSize" class="custom-form-select font-mono">
+                        <select asp-for="ModelSettings.BatchSize" class="custom-form-select font-mono">
                             <option value="256">256 Tokens (Optimized for CPU Only)</option>
                             <option value="512" selected>512 Tokens (Standard / Hybrid Default)</option>
                             <option value="1024">1024 Tokens (Performance GPU)</option>
@@ -163,7 +163,7 @@
 
                     <div class="checkbox-group-wrapper">
                         <label class="checkbox-custom-label">
-                            <input type="checkbox" asp-for="SelectedSettings.UseMemoryLock" class="custom-checkbox-input">
+                            <input type="checkbox" asp-for="ModelSettings.UseMemoryLock" class="custom-checkbox-input">
                             <div>
                                 <div class="checkbox-title">Lock Model in Physical Memory (mlock)</div>
                                 <p class="checkbox-description">Forces the OS to lock the model weights inside physical RAM/VRAM. Prevents the deployment from being paged out into disk Swap, eliminating system lag spikes after periods of inactivity.</p>

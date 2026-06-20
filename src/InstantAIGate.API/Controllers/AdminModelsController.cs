@@ -1,8 +1,7 @@
-﻿using InstantAIGate.Application.Dtos.Config;
-using InstantAIGate.Application.Dtos.Inference;
-using InstantAIGate.Application.Interfaces.Catalog;
+﻿using InstantAIGate.Application.Interfaces.Catalog;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
+using InstantAIGate.Domain.Dtos.Config;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -140,28 +139,12 @@ namespace InstantAIGate.API.Controllers
             return Ok(telemetry ?? []);
         }
 
-        /// <summary>
-        /// DTO contract for custom runtime resource overrides during programmatic memory allocation.
-        /// </summary>
-        public record LoadModelAdminRequest(
-            string RepoId,
-            uint ContextSize = 4096,
-            int MaxParallelUsers = 4,
-            int GpuLayerCount = -1,
-            bool FlashAttention = true,
-            int Threads = 4,
-            int MainGpu = 0,
-            bool Embeddings = false,
-            uint BatchSize = 512,
-            bool UseMemoryLock = false,
-            string KvCacheQuantization = "F16"
-        );
 
         /// <summary>
         /// Instantiates and allocates execution nodes for a downloaded model within the native system runtime.
         /// </summary>
         [HttpPost("load")]
-        public async Task<IActionResult> LoadModelIntoMemory([FromBody] LoadModelAdminRequest? req, CancellationToken ct)
+        public async Task<IActionResult> LoadModelIntoMemory([FromBody] ModelSettings? req, CancellationToken ct)
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RepoId))
             {
@@ -182,12 +165,12 @@ namespace InstantAIGate.API.Controllers
             // Resolves the primary binary chunk path (-00001) for the native llama.cpp loading pipeline
             var fullPhysicalPath = await pathProvider.GetFullModelPathAsync(req.RepoId);
             int computingThreads = req.Threads > 0 ? req.Threads : 4;
-            var config = new ModelLoadSettings
+            var config = new ModelSettings
             {
                 RepoId = model.RepoId,
                 ModelPath = fullPhysicalPath,
                 ContextSize = req.ContextSize,
-                MaxContexts = req.MaxParallelUsers,
+                MaxContexts = req.MaxContexts,
                 GpuLayerCount = req.GpuLayerCount,
                 FlashAttention = req.FlashAttention,
                 Threads = computingThreads,
@@ -243,7 +226,7 @@ namespace InstantAIGate.API.Controllers
         /// De-allocates execution instances and drops RAM/VRAM resource pools reserved for the specified active model.
         /// </summary>
         [HttpPost("unload")]
-        public async Task<IActionResult> UnloadModelFromMemory([FromBody] LoadModelAdminRequest? req, CancellationToken ct)
+        public async Task<IActionResult> UnloadModelFromMemory([FromBody] ModelSettings? req, CancellationToken ct)
         {
             if (req == null || string.IsNullOrWhiteSpace(req.RepoId))
             {

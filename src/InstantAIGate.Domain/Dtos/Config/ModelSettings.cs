@@ -1,12 +1,15 @@
 ﻿using InstantAIGate.Domain.Enums;
+using System;
+using System.Collections.Generic;
+using System.Text;
 
-namespace InstantAIGate.Application.Dtos.Config
+namespace InstantAIGate.Domain.Dtos.Config
 {
     /// <summary>
     /// Configuration payload containing runtime initialization parameters and hardware boundaries for a model.
     /// Maps a logical repository identifier to its physical file location on disk.
     /// </summary>
-    public class ModelLoadSettings
+    public class ModelSettings
     {
         /// <summary>
         /// The logical repository identifier (e.g., "Qwen/Qwen2.5-7B"). Used as the unique key across API boundaries.
@@ -57,18 +60,18 @@ namespace InstantAIGate.Application.Dtos.Config
         public bool UseMemoryLock { get; set; } = false;
 
         public int MainGPU { get; set; } = 0;
-        
+
         public string KvCacheQuantization { get; set; } = "F16";  //"F16", "Q8_K", "Q5_K", "Q4_K"
 
         /// <summary>
         /// Traditional parameter-free constructor for standard serialization engines.
         /// </summary>
-        public ModelLoadSettings() { }
+        public ModelSettings() { }
 
         /// <summary>
         /// Convenience constructor to initialize structural mapping presets.
         /// </summary>
-        public ModelLoadSettings(string repoId, string modelPath)
+        public ModelSettings(string repoId, string modelPath)
         {
             RepoId = repoId;
             ModelPath = modelPath;

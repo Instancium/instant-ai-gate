@@ -8,8 +8,8 @@
 		<UseAppHost>false</UseAppHost>
 		<UserSecretsId>9b40a094-b959-4566-8a02-29b99fe7d07c</UserSecretsId>
 		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-		<GitVersion_NextVersion>1.0.0</GitVersion_NextVersion>
-		<GitVersion_VersioningMode>ContinuousDeployment</GitVersion_VersioningMode>
+		<AssemblyVersion>1.0.3</AssemblyVersion>
+		<FileVersion>1.0.3</FileVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

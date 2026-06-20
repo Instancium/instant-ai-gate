@@ -1,6 +1,6 @@
-﻿using InstantAIGate.Application.Dtos.Config;
-using InstantAIGate.Application.Dtos.Inference;
+﻿using InstantAIGate.Application.Dtos.Inference;
 using InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Domain.Dtos.Config;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
@@ -19,7 +19,7 @@ namespace InstantAIGate.Infrastructure.Inference
         private readonly INativeLlamaApi _nativeApi;
 
         private readonly ConcurrentDictionary<string, IntPtr> _modelCache = new();
-        private readonly ConcurrentDictionary<string, ModelLoadSettings> _configCache = new();
+        private readonly ConcurrentDictionary<string, ModelSettings> _configCache = new();
         private readonly ConcurrentDictionary<string, ConcurrentBag<IntPtr>> _pools = new();
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _initLocks = new();
 
@@ -126,7 +126,7 @@ namespace InstantAIGate.Infrastructure.Inference
 
         public bool IsLoaded(string repoId) => _modelCache.ContainsKey(repoId);
 
-        public async Task InitializeAsync(ModelLoadSettings config, CancellationToken ct = default)
+        public async Task InitializeAsync(ModelSettings config, CancellationToken ct = default)
         {
             if (config == null || string.IsNullOrWhiteSpace(config.RepoId))
                 throw new ArgumentException("Config and RepoId required.", nameof(config));

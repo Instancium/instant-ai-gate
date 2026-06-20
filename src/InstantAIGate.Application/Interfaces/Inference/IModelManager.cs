@@ -1,5 +1,5 @@
-﻿using InstantAIGate.Application.Dtos.Config;
-using InstantAIGate.Application.Dtos.Inference;
+﻿using InstantAIGate.Application.Dtos.Inference;
+using InstantAIGate.Domain.Dtos.Config;
 
 namespace InstantAIGate.Application.Interfaces.Inference
 {
@@ -15,7 +15,7 @@ namespace InstantAIGate.Application.Interfaces.Inference
         /// </summary>
         /// <param name="config">The model load specifications (file path, maximum context limits, hardware thread allocations, and GPU layers).</param>
         /// <param name="ct">The token to monitor for cancellation requests.</param>
-        Task LoadModelAsync(ModelLoadSettings config, CancellationToken ct = default);
+        Task LoadModelAsync(ModelSettings config, CancellationToken ct = default);
 
         /// <summary>
         /// Atomically acquires a safe, isolated context lease for active text generation and chat inference (Chat/Completions).
@@ -58,7 +58,7 @@ namespace InstantAIGate.Application.Interfaces.Inference
         /// Provides read-only access to the internal registry of currently loaded model configurations.
         /// Useful for telemetry services to derive active load parameters without modifying manager state.
         /// </summary>
-        IReadOnlyDictionary<string, ModelLoadSettings> ActiveModels { get; }
+        IReadOnlyDictionary<string, ModelSettings> ActiveModels { get; }
 
         /// <summary>
         /// Provides read-only access to the concurrency throttle registry. 
