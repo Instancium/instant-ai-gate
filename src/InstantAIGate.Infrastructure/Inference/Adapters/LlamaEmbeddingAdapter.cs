@@ -1,6 +1,6 @@
-﻿using InstantAIGate.Application.Dtos.Config;
-using InstantAIGate.Application.Interfaces.Inference;
+﻿using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
+using InstantAIGate.Domain.Dtos.Config;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
@@ -41,7 +41,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 return Array.Empty<float[]>();
 
             var activeConfig = _modelManager.ActiveModels.FirstOrDefault(x => x.Key == model);
-            if (activeConfig.Value is not ModelLoadSettings settings)
+            if (activeConfig.Value is not ModelSettings settings)
                 throw new InvalidOperationException($"Configuration settings for active model '{model}' could not be resolved.");
 
             using var weightsLease = await _modelManager.AcquireModelAsync(model, ct);

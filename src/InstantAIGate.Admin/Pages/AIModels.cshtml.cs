@@ -4,7 +4,8 @@ using Microsoft.Extensions.Options;
 using System.Text.Json;
 using InstantAIGate.Admin.Config;
 using InstantAIGate.Admin.Dtos;
-using InstantAIGate.Application.Dtos.Inference; // Provides access to ModelRegistryStatus
+using InstantAIGate.Application.Dtos.Inference;
+using InstantAIGate.Domain.Dtos.Config; // Provides access to ModelRegistryStatus
 
 namespace InstantAIGate.Admin.Pages
 {
@@ -24,7 +25,7 @@ namespace InstantAIGate.Admin.Pages
         public Dictionary<string, ModelRegistryStatus> ActiveModelsTelemetry { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
         [BindProperty]
-        public ModelConfig SelectedSettings { get; set; } = new();
+        public ModelSettings ModelSettings { get; set; } = new();
 
         public AIModelsModel(
             IHttpClientFactory httpClientFactory,
@@ -90,7 +91,7 @@ namespace InstantAIGate.Admin.Pages
 
         public async Task<IActionResult> OnPostLoadAsync()
         {
-            _logger.LogInformation("Processing model deployment request. Target path: {RepoId}", SelectedSettings.RepoId);
+            _logger.LogInformation("Processing model deployment request. Target path: {RepoId}", ModelSettings.RepoId);
 
             if (!ModelState.IsValid)
             {
@@ -105,28 +106,28 @@ namespace InstantAIGate.Admin.Pages
                 var url = $"{_apiOptions.Value.BaseUrl}/api/admin/models/load";
 
                 // Map complete structural configuration package to the administrative control plane endpoint
-                ModelConfig requestBody = new()
+                ModelSettings requestBody = new()
                 {
-                    RepoId = SelectedSettings.RepoId,
-                    ContextSize = SelectedSettings.ContextSize,
-                    GpuLayerCount = SelectedSettings.GpuLayerCount,
-                    FlashAttention = SelectedSettings.FlashAttention,
-                    Threads = SelectedSettings.Threads > 0 ? SelectedSettings.Threads : 4,
-                    MaxContexts = SelectedSettings.MaxContexts > 0 ? SelectedSettings.MaxContexts : 2,
-                    BatchSize = SelectedSettings.BatchSize,
-                    Embeddings = SelectedSettings.Embeddings,
-                    KvCacheQuantization = SelectedSettings.KvCacheQuantization,
-                    MainGpu = SelectedSettings.MainGpu,
-                    UseMemoryLock = SelectedSettings.UseMemoryLock
+                    RepoId = ModelSettings.RepoId,
+                    ContextSize = ModelSettings.ContextSize,
+                    GpuLayerCount = ModelSettings.GpuLayerCount,
+                    FlashAttention = ModelSettings.FlashAttention,
+                    Threads = ModelSettings.Threads > 0 ? ModelSettings.Threads : 4,
+                    MaxContexts = ModelSettings.MaxContexts > 0 ? ModelSettings.MaxContexts : 2,
+                    BatchSize = ModelSettings.BatchSize,
+                    Embeddings = ModelSettings.Embeddings,
+                    KvCacheQuantization = ModelSettings.KvCacheQuantization,
+                    MainGPU = ModelSettings.MainGPU,
+                    UseMemoryLock = ModelSettings.UseMemoryLock
 
                 };
 
-                _logger.LogInformation("Sending structural load request for model: {RepoId}", SelectedSettings.RepoId);
+                _logger.LogInformation("Sending structural load request for model: {RepoId}", ModelSettings.RepoId);
                 var response = await client.PostAsJsonAsync(url, requestBody);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    _logger.LogInformation("Model {RepoId} successfully allocated inside runtime bounds.", SelectedSettings.RepoId);
+                    _logger.LogInformation("Model {RepoId} successfully allocated inside runtime bounds.", ModelSettings.RepoId);
                     return RedirectToPage();
                 }
 

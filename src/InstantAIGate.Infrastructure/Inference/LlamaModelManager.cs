@@ -1,7 +1,7 @@
-﻿using InstantAIGate.Application.Dtos.Config;
-using InstantAIGate.Application.Dtos.Inference;
+﻿using InstantAIGate.Application.Dtos.Inference;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
+using InstantAIGate.Domain.Dtos.Config;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System;
@@ -28,11 +28,11 @@ namespace InstantAIGate.Infrastructure.Inference
         private readonly IModelPathProvider _pathProvider;
         private readonly ILogger<LlamaModelManager> _logger;
 
-        private readonly ConcurrentDictionary<string, ModelLoadSettings> _activeModels = new();
+        private readonly ConcurrentDictionary<string, ModelSettings> _activeModels = new();
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _contextSemaphores = new();
         private readonly SemaphoreSlim _globalLock = new(1, 1);
 
-        public IReadOnlyDictionary<string, ModelLoadSettings> ActiveModels => _activeModels;
+        public IReadOnlyDictionary<string, ModelSettings> ActiveModels => _activeModels;
         public IReadOnlyDictionary<string, SemaphoreSlim> UserSemaphores => _contextSemaphores;
 
         public LlamaModelManager(
@@ -45,7 +45,7 @@ namespace InstantAIGate.Infrastructure.Inference
             _logger = logger;
         }
 
-        public async Task LoadModelAsync(ModelLoadSettings config, CancellationToken ct = default)
+        public async Task LoadModelAsync(ModelSettings config, CancellationToken ct = default)
         {
             await _globalLock.WaitAsync(ct);
             try

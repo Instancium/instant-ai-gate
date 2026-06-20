@@ -4,8 +4,8 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<AssemblyVersion>1.0.0</AssemblyVersion>
-		<FileVersion>1.0.0</FileVersion>
+		<AssemblyVersion>1.0.3</AssemblyVersion>
+		<FileVersion>1.0.3</FileVersion>
 		<UserSecretsId>74b93ca4-f7e8-4676-8a92-5363822e1c85</UserSecretsId>
 	</PropertyGroup>
 

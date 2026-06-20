@@ -1,5 +1,5 @@
-﻿using InstantAIGate.Application.Dtos.Config;
-using InstantAIGate.Application.Dtos.Inference;
+﻿using InstantAIGate.Application.Dtos.Inference;
+using InstantAIGate.Domain.Dtos.Config;
 
 namespace InstantAIGate.Application.Interfaces.Inference
 {
@@ -8,7 +8,7 @@ namespace InstantAIGate.Application.Interfaces.Inference
     /// </summary>
     public interface IModelProvider : IDisposable
     {
-        Task InitializeAsync(ModelLoadSettings config, CancellationToken ct = default);
+        Task InitializeAsync(ModelSettings config, CancellationToken ct = default);
 
         void UnloadModel(string modelPath);
 
