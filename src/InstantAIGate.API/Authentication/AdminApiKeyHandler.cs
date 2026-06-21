@@ -1,7 +1,6 @@
 ﻿using InstantAIGate.API.Config;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -15,7 +14,7 @@ namespace InstantAIGate.API.Authentication
     public class AdminApiKeyRequirement : IAuthorizationRequirement { }
 
     /// <summary>
-    /// Custom authentication handler for validating API keys via X-Api-Key header.
+    /// Custom authentication handler for validating API keys via X-Api-Key header or query string.
     /// </summary>
     public class AdminApiKeyHandler : AuthenticationHandler<AuthenticationSchemeOptions>
     {
@@ -36,7 +35,7 @@ namespace InstantAIGate.API.Authentication
         }
 
         /// <summary>
-        /// Handles authentication by validating the API key from request headers.
+        /// Handles authentication by validating the API key from request headers or query string.
         /// </summary>
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
@@ -52,8 +51,21 @@ namespace InstantAIGate.API.Authentication
                 return Task.FromResult(AuthenticateResult.Success(skipTicket));
             }
 
-            // Check for X-Api-Key header
-            if (!Request.Headers.TryGetValue(ApiKeyHeaderName, out var extractedApiKey))
+            string? extractedApiKey = null;
+
+            // 1. Try to get the API key from the headers
+            if (Request.Headers.TryGetValue(ApiKeyHeaderName, out var headerApiKey))
+            {
+                extractedApiKey = headerApiKey.ToString();
+            }
+            // 2. FALLBACK: Try to get the API key from the query string (Required for EventSource/SSE)
+            else if (Request.Query.TryGetValue("apiKey", out var queryApiKey))
+            {
+                extractedApiKey = queryApiKey.ToString();
+            }
+
+            // If no key was found in either location
+            if (string.IsNullOrWhiteSpace(extractedApiKey))
             {
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
@@ -88,7 +100,7 @@ namespace InstantAIGate.API.Authentication
             var result = new
             {
                 error = "Unauthorized",
-                message = $"Invalid or missing API Key. Provide '{ApiKeyHeaderName}' header."
+                message = $"Invalid or missing API Key. Provide '{ApiKeyHeaderName}' header or '?apiKey=' query parameter."
             };
 
             await Response.WriteAsync(JsonSerializer.Serialize(result));
