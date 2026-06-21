@@ -12,9 +12,9 @@ if (-not $isAdmin) {
 Write-Host "Starting InstantAIGate Production Deployment..." -ForegroundColor Cyan
 
 # 2. DEFINE VARIABLES & GITHUB DOWNLOAD LINKS
-$apiZipUrl      = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.2/api-win-x64.zip" 
-$adminZipUrl    = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.2/admin-win-x64.zip"
-$runtimeZipUrl  = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.2/instant-ai-gate-runtime-v1.0.2-win-x64.zip"
+$apiZipUrl      = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.3/api-win-x64.zip" 
+$adminZipUrl    = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.3/admin-win-x64.zip"
+$runtimeZipUrl  = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.3/runtime-win-x64.zip"
 
 # Port Bindings
 $apiPort   = 49154

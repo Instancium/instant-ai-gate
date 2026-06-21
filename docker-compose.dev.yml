@@ -4,7 +4,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.build
+      dockerfile: Dockerfile.dev
       target: api-runtime
     container_name: instant-ai-gate-api
     restart: unless-stopped
@@ -34,7 +34,7 @@ services:
   admin:
     build:
       context: .
-      dockerfile: Dockerfile.build
+      dockerfile: Dockerfile.dev
       target: admin-runtime
     container_name: instant-ai-gate-admin
     restart: unless-stopped

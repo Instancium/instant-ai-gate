@@ -38,7 +38,7 @@ RUN curl -fSL "https://github.com/Instancium/instant-ai-gate/releases/download/v
 COPY src/ src/
 
 # Define build argument for application versioning (defaults to 1.0.2)
-ARG BUILD_VERSION=1.0.2
+ARG BUILD_VERSION=1.0.3
 
 # Publish API as self-contained (with GitVersion bypass flag added)
 RUN dotnet publish "src/InstantAIGate.API/InstantAIGate.API.csproj" \
