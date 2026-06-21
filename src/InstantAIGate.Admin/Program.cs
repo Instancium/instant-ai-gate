@@ -7,7 +7,8 @@ using System.ClientModel;
 var argsOptions = WindowsServiceConfigurator.GetOptions(args);
 var builder = WebApplication.CreateBuilder(argsOptions);
 
-WindowsServiceConfigurator.ConfigureHost(builder, args, "InstantAIGate.Admin");
+WindowsServiceConfigurator.ConfigureHost(builder, args, "InstantAIGate_Admin",
+    "Infrastructure dashboard and management UI for secure on-premise LLM orchestration and resource tuning.");
 
 // Add services to the container.
 builder.Services.AddRazorPages();

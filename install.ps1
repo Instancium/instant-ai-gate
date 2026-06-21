@@ -1,149 +1,140 @@
 # =====================================================================
-# InstantAIGate - Production Windows Service Deployment Script
+# InstantAIGate - Production Deployment (NATIVE POWERSHELL SERVICES)
 # =====================================================================
 
-# 1. ENFORCE ADMINISTRATOR PRIVILEGES
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
     Write-Error "Administrator rights are required. Please open PowerShell as Administrator."
     exit
 }
 
-Write-Host "Starting InstantAIGate Production Deployment..." -ForegroundColor Cyan
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ProgressPreference = 'SilentlyContinue'
 
-# 2. DEFINE VARIABLES & GITHUB DOWNLOAD LINKS
+# --- SHA256 HASHES ---
+$KnownHashes = @{
+    "api-win-x64.zip"     = "4d4a137aac2b79f433e10f46c91cf7b7f53ca80f2d768c212fb8802837b62661"
+    "admin-win-x64.zip"   = "ee07217c1e8ca2d2ede0bf760b22131404ce1be4455dcfc4924a9dce3c1c058c"
+    "runtime-win-x64.zip" = "d2b26c02b21e1aeeeb60253740f50cefda98685987735f26fab8ee6c0b7f7aef"
+}
+
 $apiZipUrl      = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.3/api-win-x64.zip" 
 $adminZipUrl    = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.3/admin-win-x64.zip"
 $runtimeZipUrl  = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.3/runtime-win-x64.zip"
 
-# Port Bindings
 $apiPort   = 49154
 $adminPort = 49155
 
-# Strict Windows target folder paths
 $baseAppDir       = Join-Path -Path $env:ProgramFiles -ChildPath "InstantAIGate"
 $apiDirectory     = Join-Path -Path $baseAppDir -ChildPath "API"
 $adminDirectory   = Join-Path -Path $baseAppDir -ChildPath "Admin"
 $runtimeDirectory = Join-Path -Path $apiDirectory -ChildPath ".runtimes"
 $dataDirectory    = Join-Path -Path $env:ProgramData -ChildPath "InstantAIGate\Models"
-
-# Temporary download directory
 $tempDir          = Join-Path -Path $env:TEMP -ChildPath "InstantAIGateDeploy"
 
-# 3. PREPARE TEMPORARY DIRECTORY
-if (Test-Path -Path $tempDir) { Remove-Item -Path $tempDir -Recurse -Force }
-New-Item -ItemType Directory -Path $tempDir | Out-Null
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+foreach ($dir in @($apiDirectory, $adminDirectory, $runtimeDirectory, $dataDirectory)) {
+    if (-not (Test-Path -Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+}
 
-# 4. STOP EXISTING SERVICES (If updating)
-Write-Host "Stopping existing services (if any)..."
+function Invoke-SafeDownload {
+    param([string]$url, [string]$zipPath, [string]$fileName)
+    
+    $expectedHash = $KnownHashes[$fileName]
+    $valid = $false
+    
+    if (Test-Path $zipPath) {
+        $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
+        if ($actualHash -eq $expectedHash.ToLower()) {
+            Write-Host "Hash for $fileName is correct." -ForegroundColor Green
+            $valid = $true
+        } else {
+            Write-Host "Hash mismatch! Removing corrupted $fileName..." -ForegroundColor Red
+            Remove-Item $zipPath -Force
+        }
+    }
+
+    if (-not $valid) {
+        Write-Host "Downloading $fileName..." -ForegroundColor Cyan
+        try {
+            $wc = New-Object System.Net.WebClient
+            $wc.Headers.Add("User-Agent", "Mozilla/5.0")
+            $wc.DownloadFile($url, $zipPath)
+            
+            $newHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
+            if ($newHash -ne $expectedHash.ToLower()) { throw "Downloaded file $fileName is corrupted! Hash: $newHash" }
+        }
+        catch {
+            Write-Error "Failed to download $fileName. Error: $_"
+            exit
+        }
+    }
+}
+
 Stop-Service -Name "InstantAIGate_API" -ErrorAction SilentlyContinue
 Stop-Service -Name "InstantAIGate_Admin" -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 
-# 5. CREATE TARGET DIRECTORIES
-Write-Host "Creating secure application directories..."
-$directories = @($apiDirectory, $adminDirectory, $runtimeDirectory, $dataDirectory)
-foreach ($dir in $directories) {
-    if (-not (Test-Path -Path $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+Invoke-SafeDownload $apiZipUrl "$tempDir\api-win-x64.zip" "api-win-x64.zip"
+Invoke-SafeDownload $adminZipUrl "$tempDir\admin-win-x64.zip" "admin-win-x64.zip"
+Invoke-SafeDownload $runtimeZipUrl "$tempDir\runtime-win-x64.zip" "runtime-win-x64.zip"
+
+Expand-Archive -Path "$tempDir\api-win-x64.zip" -DestinationPath $apiDirectory -Force
+Expand-Archive -Path "$tempDir\admin-win-x64.zip" -DestinationPath $adminDirectory -Force
+Expand-Archive -Path "$tempDir\runtime-win-x64.zip" -DestinationPath $runtimeDirectory -Force
+
+foreach ($d in @($apiDirectory, $adminDirectory)) {
+    if (Test-Path "$d\publish") {
+        Copy-Item "$d\publish\*" $d -Recurse -Force
+        Remove-Item "$d\publish" -Recurse -Force
     }
 }
 
-# 6. DOWNLOAD, EXTRACT, AND FLATTEN ARCHIVES
-Write-Host "Downloading and extracting API files..."
-Invoke-WebRequest -Uri $apiZipUrl -OutFile "$tempDir\api.zip"
-Expand-Archive -Path "$tempDir\api.zip" -DestinationPath $apiDirectory -Force
-
-if (Test-Path -Path (Join-Path $apiDirectory "publish")) {
-    Write-Host "Flattening API directory structure (merging folders)..."
-    Copy-Item -Path "$apiDirectory\publish\*" -Destination $apiDirectory -Recurse -Force
-    Remove-Item -Path "$apiDirectory\publish" -Recurse -Force
-}
-
-Write-Host "Downloading and extracting Admin files..."
-Invoke-WebRequest -Uri $adminZipUrl -OutFile "$tempDir\admin.zip"
-Expand-Archive -Path "$tempDir\admin.zip" -DestinationPath $adminDirectory -Force
-
-if (Test-Path -Path (Join-Path $adminDirectory "publish")) {
-    Write-Host "Flattening Admin directory structure (merging folders)..."
-    Copy-Item -Path "$adminDirectory\publish\*" -Destination $adminDirectory -Recurse -Force
-    Remove-Item -Path "$adminDirectory\publish" -Recurse -Force
-}
-
-Write-Host "Downloading and extracting multi-backend Runtime Drivers..."
-Invoke-WebRequest -Uri $runtimeZipUrl -OutFile "$tempDir\runtime.zip"
-Expand-Archive -Path "$tempDir\runtime.zip" -DestinationPath $runtimeDirectory -Force
-
-if (Test-Path (Join-Path $runtimeDirectory "win-x64\cuda")) {
-    Write-Host "[OK] Runtime structure successfully deployed." -ForegroundColor Green
-} else {
-    Write-Host "[WARNING] Could not verify win-x64\cuda structure. Please check the ZIP contents." -ForegroundColor Yellow
-}
-
-# 7. CONFIGURE APPSETTINGS (Auto-generate Secure Keys, Paths, Ports & CORS)
-Write-Host "Injecting secure configurations and port bindings..."
-$apiConfigPath   = Join-Path -Path $apiDirectory -ChildPath "appsettings.json"
-$adminConfigPath = Join-Path -Path $adminDirectory -ChildPath "appsettings.json"
-
-$secureApiKey = [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
+$apiConfigPath   = Join-Path $apiDirectory "appsettings.json"
+$adminConfigPath = Join-Path $adminDirectory "appsettings.json"
+$secureApiKey    = [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
 
 if (Test-Path $apiConfigPath) {
-    $apiJson = Get-Content -Path $apiConfigPath -Raw | ConvertFrom-Json
-    
+    $apiJson = Get-Content $apiConfigPath -Raw | ConvertFrom-Json
     $apiJson.Storage.RootPath = $dataDirectory
     $apiJson.ApiKeyOptions.AdminKey = $secureApiKey
-    
-    # Update CORS settings dynamically based on the Admin port BEFORE saving
-    if ($null -ne $apiJson.CorsSettings) {
-        $apiJson.CorsSettings.AllowedOrigins = @("http://localhost:$adminPort", "http://127.0.0.1:$adminPort")
-    }
-    
+    if ($apiJson.CorsSettings) { $apiJson.CorsSettings.AllowedOrigins = @("http://localhost:$adminPort", "http://127.0.0.1:$adminPort") }
     $apiJson | Add-Member -MemberType NoteProperty -Name "Urls" -Value "http://*:$apiPort" -Force
-    
-    # Save the modified JSON back to the file
-    $apiJson | ConvertTo-Json -Depth 10 | Set-Content -Path $apiConfigPath
+    $apiJson | ConvertTo-Json -Depth 10 | Set-Content $apiConfigPath
 }
-
 if (Test-Path $adminConfigPath) {
-    $adminJson = Get-Content -Path $adminConfigPath -Raw | ConvertFrom-Json
+    $adminJson = Get-Content $adminConfigPath -Raw | ConvertFrom-Json
     $adminJson.APIClientOptions.AdminApiKey = $secureApiKey
     $adminJson.APIClientOptions.BaseUrl = "http://127.0.0.1:$apiPort"
     $adminJson.APIClientOptions.PublicUrl = "http://127.0.0.1:$apiPort"
     $adminJson | Add-Member -MemberType NoteProperty -Name "Urls" -Value "http://*:$adminPort" -Force
-    $adminJson | ConvertTo-Json -Depth 10 | Set-Content -Path $adminConfigPath
+    $adminJson | ConvertTo-Json -Depth 10 | Set-Content $adminConfigPath
 }
 
-# 8. CREATE AND START WINDOWS SERVICES
-Write-Host "Configuring Windows Services..."
-$apiExePath   = Join-Path -Path $apiDirectory -ChildPath "InstantAIGate.API.exe"
-$adminExePath = Join-Path -Path $adminDirectory -ChildPath "InstantAIGate.Admin.exe"
+$apiExePath   = Join-Path $apiDirectory "InstantAIGate.API.exe"
+$adminExePath = Join-Path $adminDirectory "InstantAIGate.Admin.exe"
 
-$apiServiceQuery = Get-Service -Name "InstantAIGate_API" -ErrorAction SilentlyContinue
-if (-not $apiServiceQuery) {
-    sc.exe create "InstantAIGate_API" binPath= "\`"$apiExePath\`" --run-as-service" start= auto
+# REMOVE AND RECREATE SERVICES USING NATIVE CMDLETS
+if (Get-Service -Name "InstantAIGate_API" -ErrorAction SilentlyContinue) { 
+    Stop-Service -Name "InstantAIGate_API" -Force
+    sc.exe delete "InstantAIGate_API" 
 }
-
-$adminServiceQuery = Get-Service -Name "InstantAIGate_Admin" -ErrorAction SilentlyContinue
-if (-not $adminServiceQuery) {
-    sc.exe create "InstantAIGate_Admin" binPath= "\`"$adminExePath\`" --run-as-service" start= auto
+if (Get-Service -Name "InstantAIGate_Admin" -ErrorAction SilentlyContinue) { 
+    Stop-Service -Name "InstantAIGate_Admin" -Force
+    sc.exe delete "InstantAIGate_Admin" 
 }
+Start-Sleep -Seconds 2
 
-Write-Host "Starting services..."
+New-Service -Name "InstantAIGate_API" -BinaryPathName "$apiExePath --run-as-service" -DisplayName "InstantAIGate API" -StartupType Automatic
+New-Service -Name "InstantAIGate_Admin" -BinaryPathName "$adminExePath --run-as-service" -DisplayName "InstantAIGate Admin" -StartupType Automatic
+
 Start-Service -Name "InstantAIGate_API"
 Start-Service -Name "InstantAIGate_Admin"
 
-# 9. OPEN WINDOWS FIREWALL PORTS
-Write-Host "Configuring Windows Firewall..."
-New-NetFirewallRule -DisplayName "InstantAIGate API (Port $apiPort)" -Direction Inbound -LocalPort $apiPort -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
-New-NetFirewallRule -DisplayName "InstantAIGate Admin (Port $adminPort)" -Direction Inbound -LocalPort $adminPort -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
-
-# 10. CLEANUP
-Write-Host "Cleaning up temporary files..."
-Remove-Item -Path $tempDir -Recurse -Force
+New-NetFirewallRule -DisplayName "InstantAIGate API" -Direction Inbound -LocalPort $apiPort -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+New-NetFirewallRule -DisplayName "InstantAIGate Admin" -Direction Inbound -LocalPort $adminPort -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
 
 Write-Host "=====================================================================" -ForegroundColor Green
-Write-Host "Production Deployment Complete! App downloaded, extracted, and services are active." -ForegroundColor Green
-Write-Host "API URL:   http://localhost:$apiPort" -ForegroundColor Cyan
-Write-Host "Admin URL: http://localhost:$adminPort" -ForegroundColor Cyan
-Write-Host "Models should be placed in: $dataDirectory" -ForegroundColor Yellow
+Write-Host "Deployment Complete! Services are active." -ForegroundColor Green
+Write-Host "API: http://localhost:$apiPort | Admin: http://localhost:$adminPort" -ForegroundColor Cyan
 Write-Host "=====================================================================" -ForegroundColor Green

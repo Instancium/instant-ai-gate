@@ -1,4 +1,7 @@
-﻿using Microsoft.Extensions.Hosting.WindowsServices;
+﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.WindowsServices;
+using System.Diagnostics;
+using System.ServiceProcess; 
 
 namespace InstantAIGate.Admin.Extensions
 {
@@ -18,7 +21,7 @@ namespace InstantAIGate.Admin.Extensions
             };
         }
 
-        public static void ConfigureHost(WebApplicationBuilder builder, string[] args, string serviceName)
+        public static void ConfigureHost(WebApplicationBuilder builder, string[] args, string serviceName, string description)
         {
             if (ShouldRunAsService(args))
             {
@@ -26,6 +29,29 @@ namespace InstantAIGate.Admin.Extensions
                 {
                     options.ServiceName = serviceName;
                 });
+                EnsureServiceDescription(serviceName, description);
+            }
+        }
+
+        private static void EnsureServiceDescription(string serviceName, string description)
+        {
+            try
+            {
+                using var sc = new ServiceController(serviceName);
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "sc",
+                    Arguments = $"description \"{serviceName}\" \"{description}\"",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    Verb = "runas" 
+                };
+
+                using var process = Process.Start(psi);
+                process?.WaitForExit();
+            }
+            catch
+            {
             }
         }
     }

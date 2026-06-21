@@ -6,8 +6,8 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<UseAppHost>true</UseAppHost>
 		<UserSecretsId>9b40a094-b959-4566-8a02-29b99fe7d07c</UserSecretsId>
-		<AssemblyVersion>1.0.3</AssemblyVersion>
-		<FileVersion>1.0.3</FileVersion>
+		<AssemblyVersion>1.0.4</AssemblyVersion>
+		<FileVersion>1.0.4</FileVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

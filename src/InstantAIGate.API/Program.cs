@@ -14,7 +14,8 @@ Console.InputEncoding = Encoding.UTF8;
 var argsOptions = WindowsServiceConfigurator.GetOptions(args);
 var builder = WebApplication.CreateBuilder(argsOptions);
 
-WindowsServiceConfigurator.ConfigureHost(builder, args, "InstantAIGate.API");
+WindowsServiceConfigurator.ConfigureHost(builder, args, "InstantAIGate_API",
+    "OpenAI-compatible gateway service providing secure, low-latency access to local Large Language Models.");
 
 builder.Services.AddMemoryCache();
 
