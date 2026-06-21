@@ -12,16 +12,21 @@ if (-not $isAdmin) {
 Write-Host "Starting InstantAIGate Local Build & TEST Deployment..." -ForegroundColor Cyan
 
 # 2. DEFINE PROJECT SOURCE PATHS & BUILD VARIABLES
-$apiSourcePath    = "./src/InstantAIGate.API/InstantAIGate.API.csproj"
-$adminSourcePath  = "./src/InstantAIGate.Admin/InstantAIGate.Admin.csproj"
+# Dynamically resolve paths relative to where this script is located
+$apiSourcePath    = Join-Path -Path $PSScriptRoot -ChildPath "src\InstantAIGate.API\InstantAIGate.API.csproj"
+$adminSourcePath  = Join-Path -Path $PSScriptRoot -ChildPath "src\InstantAIGate.Admin\InstantAIGate.Admin.csproj"
 
-$testBuildsDir    = "C:\Temp\TestBuilds"
+# Use the Windows Temporary folder for builds
+$testBuildsDir    = Join-Path -Path $env:TEMP -ChildPath "InstantAIGate_TestBuilds"
 $tempPublishDir   = Join-Path -Path $env:TEMP -ChildPath "InstantAIGate_Publish"
 
 # Local ZIP paths
 $apiLocalZip      = Join-Path -Path $testBuildsDir -ChildPath "api-win-x64.zip"
 $adminLocalZip    = Join-Path -Path $testBuildsDir -ChildPath "admin-win-x64.zip"
 $runtimeLocalZip  = Join-Path -Path $testBuildsDir -ChildPath "instant-ai-gate-runtime-v1.0.2-win-x64.zip"
+
+# Runtime Download Fallback
+$runtimeZipUrl    = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.2/instant-ai-gate-runtime-v1.0.2-win-x64.zip"
 
 # Port Bindings
 $apiPort   = 49154
@@ -39,19 +44,29 @@ Write-Host ""
 $buildChoice = Read-Host "Do you want to compile and build the projects from source? (Y/N)"
 
 if ($buildChoice -eq 'Y' -or $buildChoice -eq 'y') {
+    
+    # SAFETY CHECK: Ensure the project files actually exist
+    if (-not (Test-Path $apiSourcePath)) { Write-Error "API project file not found at: $apiSourcePath"; exit }
+    if (-not (Test-Path $adminSourcePath)) { Write-Error "Admin project file not found at: $adminSourcePath"; exit }
+
     Write-Host "Preparing build directories..."
     if (-not (Test-Path -Path $testBuildsDir)) { New-Item -ItemType Directory -Path $testBuildsDir -Force | Out-Null }
     if (Test-Path -Path $tempPublishDir) { Remove-Item -Path $tempPublishDir -Recurse -Force }
     New-Item -ItemType Directory -Path $tempPublishDir | Out-Null
 
-    # Changed to --self-contained true so it doesn't rely on the system's .NET runtime
     Write-Host "Building and Compiling API Project..." -ForegroundColor Yellow
     dotnet publish $apiSourcePath -c Release -r win-x64 --self-contained true -o "$tempPublishDir\API"
+    
+    if ($LASTEXITCODE -ne 0) { Write-Error "API Build failed! Aborting deployment."; exit }
+    
     Write-Host "Zipping API Project..."
     Compress-Archive -Path "$tempPublishDir\API\*" -DestinationPath $apiLocalZip -Force
 
     Write-Host "Building and Compiling Admin Project..." -ForegroundColor Yellow
     dotnet publish $adminSourcePath -c Release -r win-x64 --self-contained true -o "$tempPublishDir\Admin"
+    
+    if ($LASTEXITCODE -ne 0) { Write-Error "Admin Build failed! Aborting deployment."; exit }
+    
     Write-Host "Zipping Admin Project..."
     Compress-Archive -Path "$tempPublishDir\Admin\*" -DestinationPath $adminLocalZip -Force
 
@@ -61,13 +76,14 @@ if ($buildChoice -eq 'Y' -or $buildChoice -eq 'y') {
     Write-Host "Skipping build step. Using existing ZIP files in $testBuildsDir..." -ForegroundColor Yellow
 }
 
-# 4. VERIFY LOCAL ZIP FILES EXIST BEFORE RUNNING
-$zipFiles = @($apiLocalZip, $adminLocalZip, $runtimeLocalZip)
-foreach ($zip in $zipFiles) {
-    if (-not (Test-Path -Path $zip)) {
-        Write-Error "Test ZIP file not found: $zip. Please ensure it exists before deploying."
-        exit
-    }
+# 4. VERIFY ZIP FILES & FETCH RUNTIME IF MISSING
+if (-not (Test-Path -Path $apiLocalZip)) { Write-Error "Missing API archive: $apiLocalZip"; exit }
+if (-not (Test-Path -Path $adminLocalZip)) { Write-Error "Missing Admin archive: $adminLocalZip"; exit }
+
+if (-not (Test-Path -Path $runtimeLocalZip)) {
+    Write-Host "Runtime archive not found locally. Downloading from GitHub..." -ForegroundColor Yellow
+    if (-not (Test-Path -Path $testBuildsDir)) { New-Item -ItemType Directory -Path $testBuildsDir -Force | Out-Null }
+    Invoke-WebRequest -Uri $runtimeZipUrl -OutFile $runtimeLocalZip
 }
 
 # 5. STOP EXISTING SERVICES (If updating)
@@ -126,14 +142,12 @@ if (Test-Path $apiConfigPath) {
     $apiJson.Storage.RootPath = $dataDirectory
     $apiJson.ApiKeyOptions.AdminKey = $secureApiKey
     
-    # Update CORS settings dynamically based on the Admin port BEFORE saving
     if ($null -ne $apiJson.CorsSettings) {
         $apiJson.CorsSettings.AllowedOrigins = @("http://localhost:$adminPort", "http://127.0.0.1:$adminPort")
     }
     
     $apiJson | Add-Member -MemberType NoteProperty -Name "Urls" -Value "http://*:$apiPort" -Force
     
-    # Save the modified JSON back to the file
     $apiJson | ConvertTo-Json -Depth 10 | Set-Content -Path $apiConfigPath
 }
 
