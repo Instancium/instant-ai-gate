@@ -1,6 +1,6 @@
-\---
+---
 
-\## Trademark \& Branding Notice
+## Trademark \& Branding Notice
 
 
 
@@ -12,17 +12,17 @@ Instead, all branding materials, trademarks, and logos associated with Instanciu
 
 
 
-\### Permitted Use:
+### Permitted Use:
 
-\* You may use the official logos and name solely to refer to and link to this original project.
+* You may use the official logos and name solely to refer to and link to this original project.
 
 
 
-\### Restrictions:
+### Restrictions:
 
-\* You may not modify the logos or branding assets.
+* You may not modify the logos or branding assets.
 
-\* You may not use the branding for commercial purposes.
+* You may not use the branding for commercial purposes.
 
-\* You may not use the name or logos in a way that implies official endorsement, sponsorship, or affiliation with Instancium or its projects without explicit prior written permission from Instancium.
+* You may not use the name or logos in a way that implies official endorsement, sponsorship, or affiliation with Instancium or its projects without explicit prior written permission from Instancium.
 
