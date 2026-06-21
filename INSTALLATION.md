@@ -21,7 +21,62 @@
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License">
 </p>
 
-## Easy Start: Running with Docker Compose
+
+## Deployment Options
+
+**InstantAIGate** is a fully cross-platform solution engineered to adapt seamlessly to your infrastructure preferences. Whether you are running a cloud-native Linux cluster or integrating directly into an enterprise Windows ecosystem, the gateway delivers identical high-performance local AI inference capabilities.
+
+You can choose the deployment path that best fits your environment:
+* **Windows Native Service:** Lightweight, bare-metal deployment running directly as native background Windows Services via PowerShell.
+* **Containerized (Linux):** Standardized, isolated deployment via Docker Compose with pre-baked hardware acceleration.
+
+---
+
+## 🪟 Windows Native Installation (PowerShell)
+
+If you prefer to run **InstantAIGate** as a native Windows service rather than using Docker, we provide an automated PowerShell deployment script. This script handles the downloading of binaries, configuration of local services, and necessary firewall rules.
+
+### 1. Prerequisites
+* **Operating System:** Windows 10/11 or Windows Server.
+* **Permissions:** You must have **Administrator** privileges to install the Windows services and configure firewall rules.
+
+### 2. Execution Steps
+
+**Download the Installer:**
+Download the [install.ps1](https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.4/install.ps1) file from the official release page.
+
+**Open PowerShell:**
+Right-click the PowerShell icon and select **"Run as Administrator"**.
+
+**Run the Script:**
+Navigate to the folder where you downloaded `install.ps1` and run the script:
+
+```powershell
+.\install.ps1
+```
+*The script will automatically stop existing services, download the latest version, install the binaries, and restart the services for you.*
+
+### 3. Installation Directories
+The installer organizes your application into standard Windows system directories:
+
+| Component | Path | Description |
+| :--- | :--- | :--- |
+| **Application Files** | `%ProgramFiles%\InstantAIGate` | Contains the core API and Admin executables. |
+| **Model Data** | `%ProgramData%\InstantAIGate\Models` | Storage location for your AI models and runtime data. |
+
+### 4. Accessing the Gateway
+Once the installation script completes, the `InstantAIGate_API` and `InstantAIGate_Admin` services will be running in the background. You can access them via your web browser:
+
+* **Management UI Console:** [http://localhost:49155/](http://localhost:49155/)
+* **Core Processing Inference API:** [http://localhost:49154/](http://localhost:49154/)
+
+> 💡 **Tip:** If you cannot access the links, ensure the Windows Services "InstantAIGate API" and "InstantAIGate Admin" are running in your Services console (`services.msc`).
+
+
+---
+
+
+## 🐋 Easy Start: Running with Docker Compose
 
 Deploying the entire high-performance AI gateway infrastructure is now completely automated and takes just seconds. 
 
