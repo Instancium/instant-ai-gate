@@ -44,7 +44,7 @@ If you prefer to run **InstantAIGate** as a native Windows service rather than u
 ### 2. Execution Steps
 
 **Download the Installer:**
-Download the [install.ps1](https://github.com/Instancium/instant-ai-gate/releases/download/latest/install.ps1) file from the official release page.
+Download the [install.ps1](https://github.com/Instancium/instant-ai-gate/releases/latest/download/install.ps1) file from the official release page.
 
 **Open PowerShell:**
 Right-click the PowerShell icon and select **"Run as Administrator"**.
