@@ -2,6 +2,7 @@
 using InstantAIGate.Application.Interfaces.Storage;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
@@ -9,19 +10,18 @@ namespace InstantAIGate.API.Controllers
 {
     [ApiController]
     [Route("api/admin/fetch")]
-    [Authorize(Policy = "AdminApiKeyPolicy")]
+    [Authorize(Policy = "AdminApiKeyPolicy")] // Secure entire controller by default
     public class AdminFetchController : ControllerBase
     {
         private readonly IModelRegistry _modelRegistry;
         private readonly IModelStorageService _storageService;
         private readonly ILogger<AdminFetchController> _logger;
 
-        // Shared cross-thread synchronization maps for detached background jobs
         private static readonly ConcurrentDictionary<string, CancellationTokenSource> _fetchCancellations = new();
         private static readonly ConcurrentDictionary<string, double> _liveProgressRegistry = new();
         private static readonly ConcurrentDictionary<string, string> _currentRunningFiles = new();
 
-        public AdminFetchController(IModelRegistry modelRegistry, 
+        public AdminFetchController(IModelRegistry modelRegistry,
             IModelStorageService storageService,
             ILogger<AdminFetchController> logger)
         {
@@ -30,9 +30,6 @@ namespace InstantAIGate.API.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// Spawns an isolated non-blocking asynchronous worker task to download model binary artifacts.
-        /// </summary>
         [HttpPost("start")]
         public async Task<IActionResult> StartFetch([FromQuery] string repoId)
         {
@@ -50,7 +47,6 @@ namespace InstantAIGate.API.Controllers
             _fetchCancellations[repoId] = cts;
             _liveProgressRegistry[repoId] = 0.0;
 
-            // Detach pipeline thread to maintain execution lifespan across frontend tab navigation actions
             _ = Task.Run(async () =>
             {
                 try
@@ -83,9 +79,6 @@ namespace InstantAIGate.API.Controllers
             return Accepted(new { status = "Model pipeline fetch operation launched in background." });
         }
 
-        /// <summary>
-        /// Signal termination handle allowing instant cancellation of running network download streams.
-        /// </summary>
         [HttpPost("cancel")]
         public IActionResult CancelFetch([FromQuery] string repoId)
         {
@@ -103,11 +96,37 @@ namespace InstantAIGate.API.Controllers
         }
 
         /// <summary>
+        /// Issues a one-time, short-lived ticket for connection to SSE.
+        /// This endpoint inherits the controller-level [Authorize] attribute.
+        /// </summary>
+        [HttpPost("stream-ticket")]
+        public IActionResult GetStreamTicket([FromServices] IMemoryCache cache)
+        {
+            var ticket = Guid.NewGuid().ToString("N");
+            // The ticket lasts only 15 seconds—just long enough to open EventSource
+            cache.Set(ticket, true, TimeSpan.FromSeconds(15));
+            return Ok(new { ticket });
+        }
+
+        /// <summary>
         /// Long-lived continuous network feed reporting storage layout progress streams.
+        /// Allowed anonymously, but strictly validated via the short-lived ticket.
         /// </summary>
         [HttpGet("progress-stream")]
-        public async Task StreamProgress(CancellationToken clientCt)
+        [AllowAnonymous] // Bypass main auth header checks to allow browser EventSource connection
+        public async Task StreamProgress([FromQuery] string? ticket, [FromServices] IMemoryCache cache, CancellationToken clientCt)
         {
+            // Strictly validate and consume the 15-second ticket
+            if (string.IsNullOrEmpty(ticket) || !cache.TryGetValue(ticket, out _))
+            {
+                Response.StatusCode = 401;
+                await Response.WriteAsync("Unauthorized: Invalid or expired stream ticket.");
+                return;
+            }
+
+            // Burn the ticket so it cannot be reused
+            cache.Remove(ticket);
+
             Response.ContentType = "text/event-stream";
             Response.Headers.Append("Cache-Control", "no-cache");
             Response.Headers.Append("Connection", "keep-alive");
@@ -125,7 +144,6 @@ namespace InstantAIGate.API.Controllers
 
                     var payload = JsonSerializer.Serialize(snapshot);
 
-                    // The following line will throw an exception when the connection is broken
                     await Response.WriteAsync($"data: {payload}\n\n", clientCt);
                     await Response.Body.FlushAsync(clientCt);
 
@@ -134,12 +152,10 @@ namespace InstantAIGate.API.Controllers
             }
             catch (OperationCanceledException)
             {
-                // This exception is expected.
-                // It occurs whenever the user navigates away from the page or reloads it. No action required.
+                // Expected when user navigates away
             }
             catch (Exception ex)
             {
-                // Real errors (for example, network failures) can be logged here.
                 _logger.LogError(ex, "SSE stream error occurred.");
             }
         }

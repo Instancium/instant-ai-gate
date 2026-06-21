@@ -5,7 +5,7 @@ using System.Text.Json;
 using InstantAIGate.Admin.Config;
 using InstantAIGate.Admin.Dtos;
 using InstantAIGate.Application.Dtos.Inference;
-using InstantAIGate.Domain.Dtos.Config; // Provides access to ModelRegistryStatus
+using InstantAIGate.Domain.Dtos.Config;
 
 namespace InstantAIGate.Admin.Pages
 {
@@ -18,10 +18,7 @@ namespace InstantAIGate.Admin.Pages
         public string APIUrl { get; set; }
         public List<ModelViewItem> Models { get; set; } = new();
 
-        // High-performance HashSet containing active model repository identifiers for O(1) checks in Razor syntax
         public HashSet<string> ActiveModelRepoIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-        // Rich operational telemetry storage dictionary keyed by logical RepoId for data plane rendering
         public Dictionary<string, ModelRegistryStatus> ActiveModelsTelemetry { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
         [BindProperty]
@@ -44,12 +41,43 @@ namespace InstantAIGate.Admin.Pages
             return Page();
         }
 
+        // --- NEW SECURE HANDLER FOR TICKETS ---
+        public async Task<IActionResult> OnPostGetStreamTicketAsync()
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                var url = $"{_apiOptions.Value.BaseUrl}/api/admin/fetch/stream-ticket";
+
+                var request = new HttpRequestMessage(HttpMethod.Post, url);
+
+                // SECURE: Attach the API key here on the server. The browser never sees it.
+                request.Headers.Add("X-Api-Key", _apiOptions.Value.AdminApiKey);
+
+                var response = await client.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Failed to acquire stream ticket from API. Status: {StatusCode}", response.StatusCode);
+                    return new StatusCodeResult((int)response.StatusCode);
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                return Content(json, "application/json");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error occurred while requesting stream ticket proxy.");
+                return new StatusCodeResult(500);
+            }
+        }
+        // --------------------------------------
+
         public async Task<IActionResult> OnPostStartDownloadAsync([FromQuery] string repoId)
         {
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                // ROUTING ADJUSTMENT: Target the dedicated Fetch micro-controller
                 var url = $"{_apiOptions.Value.BaseUrl}/api/admin/fetch/start?repoId={Uri.EscapeDataString(repoId)}";
 
                 _logger.LogInformation("Requesting background asset acquisition for: {RepoId}", repoId);
@@ -69,13 +97,11 @@ namespace InstantAIGate.Admin.Pages
             return RedirectToPage();
         }
 
-
         public async Task<IActionResult> OnPostCancelDownloadAsync([FromQuery] string repoId)
         {
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                // ROUTING ADJUSTMENT: Target the dedicated Fetch micro-controller
                 var url = $"{_apiOptions.Value.BaseUrl}/api/admin/fetch/cancel?repoId={Uri.EscapeDataString(repoId)}";
 
                 _logger.LogInformation("Sending structural kill handle packet for: {RepoId}", repoId);
@@ -105,7 +131,6 @@ namespace InstantAIGate.Admin.Pages
                 var client = _httpClientFactory.CreateClient();
                 var url = $"{_apiOptions.Value.BaseUrl}/api/admin/models/load";
 
-                // Map complete structural configuration package to the administrative control plane endpoint
                 ModelSettings requestBody = new()
                 {
                     RepoId = ModelSettings.RepoId,
@@ -119,7 +144,6 @@ namespace InstantAIGate.Admin.Pages
                     KvCacheQuantization = ModelSettings.KvCacheQuantization,
                     MainGPU = ModelSettings.MainGPU,
                     UseMemoryLock = ModelSettings.UseMemoryLock
-
                 };
 
                 _logger.LogInformation("Sending structural load request for model: {RepoId}", ModelSettings.RepoId);
@@ -152,9 +176,8 @@ namespace InstantAIGate.Admin.Pages
                 var client = _httpClientFactory.CreateClient();
                 var url = $"{_apiOptions.Value.BaseUrl}/api/admin/models/unload";
 
-                _logger.LogInformation("Requesting VRAM/RA M release for model: {RepoId}", repoId);
+                _logger.LogInformation("Requesting VRAM/RAM release for model: {RepoId}", repoId);
 
-                // Multi-model eviction subsystem expects an explicit payload enclosing the target RepoId
                 var response = await client.PostAsJsonAsync(url, new { RepoId = repoId });
 
                 if (response.IsSuccessStatusCode)
@@ -181,7 +204,6 @@ namespace InstantAIGate.Admin.Pages
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
 
-                // 1. Fetch system catalog registry from control plane
                 var response = await client.GetAsync($"{_apiOptions.Value.BaseUrl}/api/admin/models");
                 if (response.IsSuccessStatusCode)
                 {
@@ -189,7 +211,6 @@ namespace InstantAIGate.Admin.Pages
                     Models = JsonSerializer.Deserialize<List<ModelViewItem>>(json, options) ?? new();
                 }
 
-                // 2. Fetch live hardware and execution telemetry for active compute allocations
                 var activeResponse = await client.GetAsync($"{_apiOptions.Value.BaseUrl}/api/admin/models/active/telemetry");
 
                 ActiveModelRepoIds.Clear();
@@ -197,7 +218,6 @@ namespace InstantAIGate.Admin.Pages
 
                 if (activeResponse.IsSuccessStatusCode)
                 {
-                    // Safe, strongly-typed deserialization utilizing the matching architectural DTO record
                     var telemetryData = await activeResponse.Content.ReadFromJsonAsync<List<ModelRegistryStatus>>(options);
 
                     if (telemetryData != null)
@@ -206,7 +226,6 @@ namespace InstantAIGate.Admin.Pages
                         {
                             if (!string.IsNullOrWhiteSpace(status.RepoId))
                             {
-                                // Track logical keys in both O(1) set and the full telemetry profile dictionary
                                 ActiveModelRepoIds.Add(status.RepoId);
                                 ActiveModelsTelemetry[status.RepoId] = status;
                             }
