@@ -4,10 +4,8 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<!-- Disable producing a native apphost.exe to avoid file-lock issues during development -->
-		<UseAppHost>false</UseAppHost>
+		<UseAppHost>true</UseAppHost>
 		<UserSecretsId>9b40a094-b959-4566-8a02-29b99fe7d07c</UserSecretsId>
-		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
 		<AssemblyVersion>1.0.3</AssemblyVersion>
 		<FileVersion>1.0.3</FileVersion>
 	</PropertyGroup>
