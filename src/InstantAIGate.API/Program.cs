@@ -1,17 +1,20 @@
 using InstantAIGate.API.Authentication;
 using InstantAIGate.API.Config;
+using InstantAIGate.API.Extensions;
 using InstantAIGate.API.Hub;
 using InstantAIGate.API.Services;
 using InstantAIGate.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authorization;
 using System.Text;
 using System.Text.Json;
 
 Console.OutputEncoding = Encoding.UTF8;
 Console.InputEncoding = Encoding.UTF8;
 
-var builder = WebApplication.CreateBuilder(args);
+var argsOptions = WindowsServiceConfigurator.GetOptions(args);
+var builder = WebApplication.CreateBuilder(argsOptions);
+
+WindowsServiceConfigurator.ConfigureHost(builder, args, "InstantAIGate.API");
 
 builder.Services.Configure<ApiKeyOptions>(
     builder.Configuration.GetSection("ApiKeyOptions"));

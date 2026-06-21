@@ -1,9 +1,13 @@
 using InstantAIGate.Admin;
 using InstantAIGate.Admin.Config;
+using InstantAIGate.Admin.Extensions;
 using OpenAI;
 using System.ClientModel;
 
-var builder = WebApplication.CreateBuilder(args);
+var argsOptions = WindowsServiceConfigurator.GetOptions(args);
+var builder = WebApplication.CreateBuilder(argsOptions);
+
+WindowsServiceConfigurator.ConfigureHost(builder, args, "InstantAIGate.Admin");
 
 // Add services to the container.
 builder.Services.AddRazorPages();
