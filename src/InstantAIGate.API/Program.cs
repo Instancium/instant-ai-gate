@@ -16,6 +16,8 @@ var builder = WebApplication.CreateBuilder(argsOptions);
 
 WindowsServiceConfigurator.ConfigureHost(builder, args, "InstantAIGate.API");
 
+builder.Services.AddMemoryCache();
+
 builder.Services.Configure<ApiKeyOptions>(
     builder.Configuration.GetSection("ApiKeyOptions"));
 

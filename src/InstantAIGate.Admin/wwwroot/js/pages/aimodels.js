@@ -3,22 +3,43 @@ document.addEventListener("DOMContentLoaded", () => {
     initializeLiveDownloadTelemetry();
 });
 
-function initializeLiveDownloadTelemetry() {
+async function initializeLiveDownloadTelemetry() {
     if (!window.PageConfig || !window.PageConfig.apiUrl) {
         console.error("Page configuration context missing.");
         return;
     }
 
-    const sseUrl = `${window.PageConfig.apiUrl}/api/admin/fetch/progress-stream`;
-    const eventSource = new EventSource(sseUrl);
-
     const tokenElement = document.querySelector('input[name="__RequestVerificationToken"]');
     const rvt = tokenElement ? tokenElement.value : '';
+
+    // --- 1. SECURELY REQUEST TICKET FROM LOCAL RAZOR HANDLER ---
+    let ticket;
+    try {
+        const response = await fetch('?handler=GetStreamTicket', {
+            method: 'POST',
+            headers: {
+                'RequestVerificationToken': rvt
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to obtain stream ticket from Razor backend. Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        ticket = data.ticket;
+    } catch (error) {
+        console.error("Stream connection failed during ticket phase:", error);
+        return;
+    }
+
+    // --- 2. OPEN STREAM DIRECTLY TO API USING OBTAINED TICKET ---
+    const sseUrl = `${window.PageConfig.apiUrl}/api/admin/fetch/progress-stream?ticket=${ticket}`;
+    const eventSource = new EventSource(sseUrl);
 
     const trackedDownloads = new Map();
     const displayNames = new Map();
 
-    // 1. Collect DisplayNames from the DOM on page load to use later in button callbacks
     // Mapping of repoId -> displayName collected at DOM ready to avoid recomputing later
     document.querySelectorAll('.data-table tbody tr').forEach(tr => {
         const titleEl = tr.querySelector('.model-title');
@@ -28,12 +49,12 @@ function initializeLiveDownloadTelemetry() {
         }
     });
 
-    // 2. Initialize existing download cancellation forms with a special class to prevent duplication
+    // Initialize existing download cancellation forms with a special class to prevent duplication
     document.querySelectorAll('form[action*="handler=CancelDownload"]').forEach(form => {
         form.classList.add('cancel-download-form');
     });
 
-    // Ensure the above forms are marked so UI updates won't add duplicate cancel forms when streaming updates arrive.
+    // Handle incoming telemetry stream
     eventSource.onmessage = (event) => {
         const activeDownloads = JSON.parse(event.data);
         const currentSafeIds = new Set();
@@ -76,20 +97,17 @@ function initializeLiveDownloadTelemetry() {
 
             // --- Dynamic Action Buttons Update ---
             if (actionsCell) {
-                // GUARD: Do not overwrite the actions cell if the model is currently active or unloading from VRAM
                 if (actionsCell.querySelector('.unload-btn')) {
                     return;
                 }
 
                 if (isCompleted) {
-                    // Download successful -> Provide the configuration drawer trigger
                     actionsCell.innerHTML = `
                         <button onclick="openConfigDrawer('${item.repoId}', '${displayName.replace(/'/g, "\\'")}')" class="btn-secondary">
                             <i class="bi bi-power"></i> Configure & Load
                         </button>
                     `;
                 } else if (isFailed) {
-                    // Error/Cancellation -> Restore the default download button
                     actionsCell.innerHTML = `
                         <form action="?handler=StartDownload&repoId=${encodeURIComponent(item.repoId)}" method="post" class="inline-form">
                             <input type="hidden" name="__RequestVerificationToken" value="${rvt}" />
@@ -99,7 +117,6 @@ function initializeLiveDownloadTelemetry() {
                         </form>
                     `;
                 } else if (isDownloading) {
-                    // In progress -> Show the Cancel form
                     if (!actionsCell.querySelector('.cancel-download-form')) {
                         actionsCell.innerHTML = `
                             <form action="?handler=CancelDownload&repoId=${encodeURIComponent(item.repoId)}" method="post" class="inline-form cancel-download-form">
@@ -114,7 +131,7 @@ function initializeLiveDownloadTelemetry() {
             }
         });
 
-        // 3. Handle tasks that have disappeared from the server's active downloads stream
+        // Handle tasks that have disappeared from the server's active downloads stream
         for (const [safeId, data] of trackedDownloads.entries()) {
             if (!currentSafeIds.has(safeId)) {
                 const statusCell = document.getElementById(`status-cell-${safeId}`);
@@ -138,16 +155,20 @@ function initializeLiveDownloadTelemetry() {
     };
 
     eventSource.onerror = (err) => {
-        console.warn("SSE stream channel dropped. Reconnecting automatically...", err);
+        console.warn("SSE stream channel dropped. Reconnecting automatically...");
+        eventSource.close();
+
+        // Automatic reconnection fallback
+        setTimeout(() => {
+            initializeLiveDownloadTelemetry();
+        }, 3000);
     };
 }
 
 function showUnloadLoading(formElement) {
-
     const button = formElement.querySelector('.unload-btn');
     const icon = formElement.querySelector('.animate-icon');
     const text = formElement.querySelector('.btn-text');
-
     const actionLink = formElement.closest('td').querySelector('.console-link, .embedding-lab-link');
 
     if (button) {
@@ -163,7 +184,6 @@ function showUnloadLoading(formElement) {
         actionLink.classList.add('pointer-events-none', 'opacity-40');
     }
 
-    // Guard the sliding side panel's global context (if utilized)
     if (typeof isDrawerLoading !== 'undefined') {
         isDrawerLoading = true;
     }
