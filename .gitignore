@@ -6,6 +6,7 @@
 # AI models folder
 storage/models/
 .runtimes/
+build
 
 # AI models files .gguf
 *.gguf

@@ -1,4 +1,5 @@
-# ===== ИГНОРИРУЕМ ВСЁ ПО УМОЛЧАНИЮ =====
+build/
+
 **/bin
 **/obj
 **/.git
@@ -11,14 +12,12 @@
 **/.DS_Store
 **/Thumbs.db
 
-# ===== МОДЕЛИ ИИ (САМОЕ ВАЖНОЕ!) =====
 storage/
 **/*.gguf
 **/*.bin
 **/*.safetensors
 **/*.onnx
 
-# ===== ЛОГИ И ВРЕМЕННЫЕ ФАЙЛЫ =====
 **/logs
 **/log
 **/tmp
@@ -27,28 +26,23 @@ storage/
 **/*.log
 **/*.tmp
 
-# ===== DOCKER И CI/CD =====
 **/docker-compose*.yml
 **/Dockerfile*
 **/.dockerignore
 **/.docker
 
-# ===== ДОКУМЕНТАЦИЯ =====
 **/README.md
 **/LICENSE
 **/docs
 **/*.md
 
-# ===== RUNTIMES (копируем selectively в Dockerfile) =====
 
-
-# ===== TESTS =====
 **/tests
 **/Tests
 **/*.Tests
 **/*.Test
 
-# ===== ПРОЧЕЕ =====
+
 **/.env*
 **/*.user
 **/*.suo
