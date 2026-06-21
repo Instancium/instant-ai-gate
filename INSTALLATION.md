@@ -74,6 +74,36 @@ Once the installation script completes, the `InstantAIGate_API` and `InstantAIGa
 > 💡 **Tip:** If you cannot access the links, ensure the Windows Services "InstantAIGate API" and "InstantAIGate Admin" are running in your Services console (`services.msc`).
 
 
+### 🕵️‍♂️ Advanced: Zero-Trust Compilation from Source
+
+If you prefer a **zero-trust approach** (building the binaries yourself instead of downloading pre-compiled packages), you can audit and execute the build pipeline entirely from source code.
+
+#### Prerequisites
+* **Source Repository:** Clone the repository locally: `git clone https://github.com/Instancium/instant-ai-gate.git`
+* **Development Kit:** You must have the **.NET 10 SDK** (or later) installed on your machine.
+* **Permissions:** An elevated **Administrator** PowerShell terminal.
+* **Drivers / Runtimes:** The development script operates entirely **offline** and does not download compute cores automatically. Before running it, you must download the latest compute runtimes package [runtime-win-x64.zip](https://github.com/Instancium/instant-ai-gate/releases/latest/download/runtime-win-x64.zip), unpack its contents, and place them into the `.runtimes\win-x64` directory inside your cloned repository root.
+
+#### Compilation & Deployment Steps
+
+1. Open your repository's root directory.
+2. Verify that your native drivers/compute cores are present under the `.runtimes\win-x64` folder.
+3. Launch PowerShell as **Administrator** and run the local development deployment script:
+
+```powershell
+.\install.dev.ps1
+```
+
+#### ⚙️ What happens under the hood?
+
+When executed, the script operates entirely offline/locally without fetching unknown binaries from remote servers:
+
+* **Interactive Compilation:** The script prompts you `(Y/N)` to build the C# projects. Choosing **Yes** triggers native `.NET SDK` publication (`dotnet publish`) targeting `win-x64` in a temporary directory, creating fresh, clean `.exe` binaries straight from your checked-out code.
+* **Local Archiving:** It automatically packages your existing local driver directories (`.runtimes\win-x64`) into a local zip artifact inside a newly created `./build/` folder.
+* **Service Lifecycle Management:** It stops any active instances, extracts your freshly built local packages directly into `%ProgramFiles%\InstantAIGate`, sets up secure sandboxed paths under `%ProgramData%`, auto-generates unique 64-character GUID API security keys, and registers native Windows Background Services (`sc.exe`).
+
+> 💡 **Tip:** If you need further custom network alterations, deep architectural verification, or specific environment optimizations, feel free to feed the `install.dev.ps1` script file directly into your preferred AI Coding Assistant to ask for tailored adjustments.
+
 ---
 
 
