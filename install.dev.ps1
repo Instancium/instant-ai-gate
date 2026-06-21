@@ -1,5 +1,5 @@
 # =====================================================================
-# InstantAIGate - Local ZIP Test Windows Service Deployment Script
+# InstantAIGate - Local Build & Test Windows Service Deployment Script
 # =====================================================================
 
 # 1. ENFORCE ADMINISTRATOR PRIVILEGES
@@ -9,12 +9,19 @@ if (-not $isAdmin) {
     exit
 }
 
-Write-Host "Starting InstantAIGate TEST Deployment (Local ZIP Extraction)..." -ForegroundColor Cyan
+Write-Host "Starting InstantAIGate Local Build & TEST Deployment..." -ForegroundColor Cyan
 
-# 2. DEFINE VARIABLES & LOCAL ZIP FILE PATHS
-$apiLocalZip      = "C:\Temp\TestBuilds\api-win-x64.zip"
-$adminLocalZip    = "C:\Temp\TestBuilds\admin-win-x64.zip"
-$runtimeLocalZip  = "C:\Temp\TestBuilds\instant-ai-gate-runtime-v1.0.2-win-x64.zip"
+# 2. DEFINE PROJECT SOURCE PATHS & BUILD VARIABLES
+$apiSourcePath    = "./src/InstantAIGate.API/InstantAIGate.API.csproj"
+$adminSourcePath  = "./src/InstantAIGate.Admin/InstantAIGate.Admin.csproj"
+
+$testBuildsDir    = "C:\Temp\TestBuilds"
+$tempPublishDir   = Join-Path -Path $env:TEMP -ChildPath "InstantAIGate_Publish"
+
+# Local ZIP paths
+$apiLocalZip      = Join-Path -Path $testBuildsDir -ChildPath "api-win-x64.zip"
+$adminLocalZip    = Join-Path -Path $testBuildsDir -ChildPath "admin-win-x64.zip"
+$runtimeLocalZip  = Join-Path -Path $testBuildsDir -ChildPath "instant-ai-gate-runtime-v1.0.2-win-x64.zip"
 
 # Port Bindings
 $apiPort   = 49154
@@ -27,22 +34,49 @@ $adminDirectory   = Join-Path -Path $baseAppDir -ChildPath "Admin"
 $runtimeDirectory = Join-Path -Path $apiDirectory -ChildPath ".runtimes"
 $dataDirectory    = Join-Path -Path $env:ProgramData -ChildPath "InstantAIGate\Models"
 
-# 3. VERIFY LOCAL ZIP FILES EXIST BEFORE RUNNING
+# 3. INTERACTIVE PROMPT: BUILD OR SKIP?
+Write-Host ""
+$buildChoice = Read-Host "Do you want to compile and build the projects from source? (Y/N)"
+
+if ($buildChoice -eq 'Y' -or $buildChoice -eq 'y') {
+    Write-Host "Preparing build directories..."
+    if (-not (Test-Path -Path $testBuildsDir)) { New-Item -ItemType Directory -Path $testBuildsDir -Force | Out-Null }
+    if (Test-Path -Path $tempPublishDir) { Remove-Item -Path $tempPublishDir -Recurse -Force }
+    New-Item -ItemType Directory -Path $tempPublishDir | Out-Null
+
+    # Changed to --self-contained true so it doesn't rely on the system's .NET runtime
+    Write-Host "Building and Compiling API Project..." -ForegroundColor Yellow
+    dotnet publish $apiSourcePath -c Release -r win-x64 --self-contained true -o "$tempPublishDir\API"
+    Write-Host "Zipping API Project..."
+    Compress-Archive -Path "$tempPublishDir\API\*" -DestinationPath $apiLocalZip -Force
+
+    Write-Host "Building and Compiling Admin Project..." -ForegroundColor Yellow
+    dotnet publish $adminSourcePath -c Release -r win-x64 --self-contained true -o "$tempPublishDir\Admin"
+    Write-Host "Zipping Admin Project..."
+    Compress-Archive -Path "$tempPublishDir\Admin\*" -DestinationPath $adminLocalZip -Force
+
+    Write-Host "Cleaning up temporary build files..."
+    Remove-Item -Path $tempPublishDir -Recurse -Force
+} else {
+    Write-Host "Skipping build step. Using existing ZIP files in $testBuildsDir..." -ForegroundColor Yellow
+}
+
+# 4. VERIFY LOCAL ZIP FILES EXIST BEFORE RUNNING
 $zipFiles = @($apiLocalZip, $adminLocalZip, $runtimeLocalZip)
 foreach ($zip in $zipFiles) {
     if (-not (Test-Path -Path $zip)) {
-        Write-Error "Test ZIP file not found: $zip. Please verify paths in Section 2."
+        Write-Error "Test ZIP file not found: $zip. Please ensure it exists before deploying."
         exit
     }
 }
 
-# 4. STOP EXISTING SERVICES (If updating)
+# 5. STOP EXISTING SERVICES (If updating)
 Write-Host "Stopping existing services (if any)..."
 Stop-Service -Name "InstantAIGate_API" -ErrorAction SilentlyContinue
 Stop-Service -Name "InstantAIGate_Admin" -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 
-# 5. CREATE TARGET DIRECTORIES
+# 6. CREATE TARGET DIRECTORIES
 Write-Host "Creating secure application directories..."
 $directories = @($apiDirectory, $adminDirectory, $runtimeDirectory, $dataDirectory)
 foreach ($dir in $directories) {
@@ -51,7 +85,7 @@ foreach ($dir in $directories) {
     }
 }
 
-# 6. EXTRACT LOCAL ARCHIVES AND FLATTEN STRUCTURE
+# 7. EXTRACT LOCAL ARCHIVES AND FLATTEN STRUCTURE
 Write-Host "Extracting API files from local ZIP..."
 Expand-Archive -Path $apiLocalZip -DestinationPath $apiDirectory -Force
 
@@ -79,7 +113,7 @@ if (Test-Path (Join-Path $runtimeDirectory "win-x64\cuda")) {
     Write-Host "[WARNING] Could not verify win-x64\cuda structure. Please check the ZIP contents." -ForegroundColor Yellow
 }
 
-# 7. CONFIGURE APPSETTINGS (Auto-generate Secure Keys, Paths, Ports & CORS)
+# 8. CONFIGURE APPSETTINGS (Auto-generate Secure Keys, Paths, Ports & CORS)
 Write-Host "Injecting secure configurations and port bindings..."
 $apiConfigPath   = Join-Path -Path $apiDirectory -ChildPath "appsettings.json"
 $adminConfigPath = Join-Path -Path $adminDirectory -ChildPath "appsettings.json"
@@ -112,7 +146,7 @@ if (Test-Path $adminConfigPath) {
     $adminJson | ConvertTo-Json -Depth 10 | Set-Content -Path $adminConfigPath
 }
 
-# 8. CREATE AND START WINDOWS SERVICES
+# 9. CREATE AND START WINDOWS SERVICES
 Write-Host "Configuring Windows Services..."
 $apiExePath   = Join-Path -Path $apiDirectory -ChildPath "InstantAIGate.API.exe"
 $adminExePath = Join-Path -Path $adminDirectory -ChildPath "InstantAIGate.Admin.exe"
@@ -131,13 +165,13 @@ Write-Host "Starting services..."
 Start-Service -Name "InstantAIGate_API"
 Start-Service -Name "InstantAIGate_Admin"
 
-# 9. OPEN WINDOWS FIREWALL PORTS
+# 10. OPEN WINDOWS FIREWALL PORTS
 Write-Host "Configuring Windows Firewall..."
 New-NetFirewallRule -DisplayName "InstantAIGate API (Port $apiPort)" -Direction Inbound -LocalPort $apiPort -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
 New-NetFirewallRule -DisplayName "InstantAIGate Admin (Port $adminPort)" -Direction Inbound -LocalPort $adminPort -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
 
 Write-Host "=====================================================================" -ForegroundColor Green
-Write-Host "TEST Deployment Complete! Archives extracted and services are active." -ForegroundColor Green
+Write-Host "TEST Deployment Complete! App extracted and services are active." -ForegroundColor Green
 Write-Host "API URL:   http://localhost:$apiPort" -ForegroundColor Cyan
 Write-Host "Admin URL: http://localhost:$adminPort" -ForegroundColor Cyan
 Write-Host "Models should be placed in: $dataDirectory" -ForegroundColor Yellow

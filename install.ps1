@@ -1,5 +1,5 @@
 # =====================================================================
-# InstantAIGate - Full Windows Service Deployment Script
+# InstantAIGate - Production Windows Service Deployment Script
 # =====================================================================
 
 # 1. ENFORCE ADMINISTRATOR PRIVILEGES
@@ -9,9 +9,9 @@ if (-not $isAdmin) {
     exit
 }
 
-Write-Host "Starting InstantAIGate Deployment..." -ForegroundColor Cyan
+Write-Host "Starting InstantAIGate Production Deployment..." -ForegroundColor Cyan
 
-# 2. DEFINE VARIABLES & DOWNLOAD LINKS
+# 2. DEFINE VARIABLES & GITHUB DOWNLOAD LINKS
 $apiZipUrl      = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.2/api-win-x64.zip" 
 $adminZipUrl    = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.2/admin-win-x64.zip"
 $runtimeZipUrl  = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.2/instant-ai-gate-runtime-v1.0.2-win-x64.zip"
@@ -20,7 +20,7 @@ $runtimeZipUrl  = "https://github.com/Instancium/instant-ai-gate/releases/downlo
 $apiPort   = 49154
 $adminPort = 49155
 
-# Strict Windows folder paths
+# Strict Windows target folder paths
 $baseAppDir       = Join-Path -Path $env:ProgramFiles -ChildPath "InstantAIGate"
 $apiDirectory     = Join-Path -Path $baseAppDir -ChildPath "API"
 $adminDirectory   = Join-Path -Path $baseAppDir -ChildPath "Admin"
@@ -49,14 +49,26 @@ foreach ($dir in $directories) {
     }
 }
 
-# 6. DOWNLOAD AND EXTRACT FILES
+# 6. DOWNLOAD, EXTRACT, AND FLATTEN ARCHIVES
 Write-Host "Downloading and extracting API files..."
 Invoke-WebRequest -Uri $apiZipUrl -OutFile "$tempDir\api.zip"
 Expand-Archive -Path "$tempDir\api.zip" -DestinationPath $apiDirectory -Force
 
+if (Test-Path -Path (Join-Path $apiDirectory "publish")) {
+    Write-Host "Flattening API directory structure (merging folders)..."
+    Copy-Item -Path "$apiDirectory\publish\*" -Destination $apiDirectory -Recurse -Force
+    Remove-Item -Path "$apiDirectory\publish" -Recurse -Force
+}
+
 Write-Host "Downloading and extracting Admin files..."
 Invoke-WebRequest -Uri $adminZipUrl -OutFile "$tempDir\admin.zip"
 Expand-Archive -Path "$tempDir\admin.zip" -DestinationPath $adminDirectory -Force
+
+if (Test-Path -Path (Join-Path $adminDirectory "publish")) {
+    Write-Host "Flattening Admin directory structure (merging folders)..."
+    Copy-Item -Path "$adminDirectory\publish\*" -Destination $adminDirectory -Recurse -Force
+    Remove-Item -Path "$adminDirectory\publish" -Recurse -Force
+}
 
 Write-Host "Downloading and extracting multi-backend Runtime Drivers..."
 Invoke-WebRequest -Uri $runtimeZipUrl -OutFile "$tempDir\runtime.zip"
@@ -68,7 +80,7 @@ if (Test-Path (Join-Path $runtimeDirectory "win-x64\cuda")) {
     Write-Host "[WARNING] Could not verify win-x64\cuda structure. Please check the ZIP contents." -ForegroundColor Yellow
 }
 
-# 7. CONFIGURE APPSETTINGS (Auto-generate Secure Keys, Paths & Ports)
+# 7. CONFIGURE APPSETTINGS (Auto-generate Secure Keys, Paths, Ports & CORS)
 Write-Host "Injecting secure configurations and port bindings..."
 $apiConfigPath   = Join-Path -Path $apiDirectory -ChildPath "appsettings.json"
 $adminConfigPath = Join-Path -Path $adminDirectory -ChildPath "appsettings.json"
@@ -77,9 +89,18 @@ $secureApiKey = [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"
 
 if (Test-Path $apiConfigPath) {
     $apiJson = Get-Content -Path $apiConfigPath -Raw | ConvertFrom-Json
+    
     $apiJson.Storage.RootPath = $dataDirectory
     $apiJson.ApiKeyOptions.AdminKey = $secureApiKey
+    
+    # Update CORS settings dynamically based on the Admin port BEFORE saving
+    if ($null -ne $apiJson.CorsSettings) {
+        $apiJson.CorsSettings.AllowedOrigins = @("http://localhost:$adminPort", "http://127.0.0.1:$adminPort")
+    }
+    
     $apiJson | Add-Member -MemberType NoteProperty -Name "Urls" -Value "http://*:$apiPort" -Force
+    
+    # Save the modified JSON back to the file
     $apiJson | ConvertTo-Json -Depth 10 | Set-Content -Path $apiConfigPath
 }
 
@@ -121,8 +142,8 @@ Write-Host "Cleaning up temporary files..."
 Remove-Item -Path $tempDir -Recurse -Force
 
 Write-Host "=====================================================================" -ForegroundColor Green
-Write-Host "Deployment Complete! InstantAIGate is now running securely on Windows." -ForegroundColor Green
-Write-Host "API Port: $apiPort" -ForegroundColor Cyan
-Write-Host "Admin Port: $adminPort" -ForegroundColor Cyan
+Write-Host "Production Deployment Complete! App downloaded, extracted, and services are active." -ForegroundColor Green
+Write-Host "API URL:   http://localhost:$apiPort" -ForegroundColor Cyan
+Write-Host "Admin URL: http://localhost:$adminPort" -ForegroundColor Cyan
 Write-Host "Models should be placed in: $dataDirectory" -ForegroundColor Yellow
 Write-Host "=====================================================================" -ForegroundColor Green
