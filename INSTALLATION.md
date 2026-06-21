@@ -53,7 +53,7 @@ Right-click the PowerShell icon and select **"Run as Administrator"**.
 Navigate to the folder where you downloaded `install.ps1` and run the script:
 
 ```powershell
-.\install.ps1
+PowerShell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 *The script will automatically stop existing services, download the latest version, install the binaries, and restart the services for you.*
 
