@@ -13,13 +13,13 @@ $ProgressPreference = 'SilentlyContinue'
 
 # --- SHA256 HASHES ---
 $KnownHashes = @{
-    "api-win-x64.zip"     = "4d4a137aac2b79f433e10f46c91cf7b7f53ca80f2d768c212fb8802837b62661"
-    "admin-win-x64.zip"   = "ee07217c1e8ca2d2ede0bf760b22131404ce1be4455dcfc4924a9dce3c1c058c"
+    "admin-win-x64.zip"   = "8cdb440111d98aa28c6696bfedd459f948b94f9fdb3d520e2c92d7ec70f47ff0"
+    "api-win-x64.zip"     = "de9dcc0bf835db2597e74bb006f58011ee413b895798b9d7634fa24b172ad296"
     "runtime-win-x64.zip" = "d2b26c02b21e1aeeeb60253740f50cefda98685987735f26fab8ee6c0b7f7aef"
 }
 
-$apiZipUrl      = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.3/api-win-x64.zip" 
-$adminZipUrl    = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.3/admin-win-x64.zip"
+$apiZipUrl      = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.4/api-win-x64.zip" 
+$adminZipUrl    = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.4/admin-win-x64.zip"
 $runtimeZipUrl  = "https://github.com/Instancium/instant-ai-gate/releases/download/v1.0.3/runtime-win-x64.zip"
 
 $apiPort   = 49154
