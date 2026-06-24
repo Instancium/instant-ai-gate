@@ -56,6 +56,8 @@ the platform enables fine-grained configuration of model parameters, putting tot
   enabling you to run specific background LLM tasks strictly on the CPU. This hybrid resource allocation maximizes hardware efficiency and dramatically reduces overall
   infrastructure costs.
 
+* **📦 Zero Python Dependency & Native .NET 10**
+  Built purely in C# and compiled as a standalone binary. No virtual environments, no conflicting pip packages, and no messy Python wrappers. Predictable deployment for both Windows and Linux Enterprise servers.
 
 ## Technical Architecture & High-Level Design
 
@@ -181,7 +183,7 @@ For the full, detailed list of third-party components, verification sources, and
 </details>
 
 ## 📄 License & Trademark
-Copyright (c) 2026 Instancium (https://instancium.com). All rights reserved.
+Copyright (c) 2026 Instancium™ (https://instancium.com). All rights reserved.
 
 This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE.txt) file for details.
 
