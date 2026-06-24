@@ -20,6 +20,7 @@ namespace InstantAIGate.Infrastructure.Inference
     {
         Task<LlamaModel> AcquireModelAsync(string repoId, CancellationToken ct = default);
         Task<LlamaContext> AcquireContextAsync(string repoId, CancellationToken ct = default);
+        IReadOnlyDictionary<string, ModelSettings> ActiveModels { get; }
     }
 
     public sealed class LlamaModelManager : ILlamaModelManager, IModelManager, IDisposable

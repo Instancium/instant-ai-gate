@@ -77,6 +77,21 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             using var model = await _modelManager.AcquireModelAsync(request.Model, ct);
             using var context = await _modelManager.AcquireContextAsync(request.Model, ct);
 
+            // ==========================================
+            // CLEAN CONFIGURATION RETRIEVAL
+            // ==========================================
+            if (!_modelManager.ActiveModels.TryGetValue(request.Model, out var modelSettings))
+            {
+                throw new InvalidOperationException($"Configuration for model '{request.Model}' not found in active registry.");
+            }
+
+            int nBatchLimit = (int)modelSettings.BatchSize;
+            if (nBatchLimit <= 0)
+            {
+                nBatchLimit = 512;
+                _logger.LogWarning("Invalid BatchSize in settings for '{Model}'. Falling back to 512.", request.Model);
+            }
+
             IntPtr vocab = _nativeApi.ModelGetVocab(model.Handle);
             IntPtr ctxHandle = context.Handle;
 
@@ -110,24 +125,14 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             IntPtr sampler = _nativeApi.SamplerChainInit(chainParams);
 
             // === SAMPLER CHAIN CONFIGURATION ===
-            // Phase 1: Use parameters from request instead of hardcoded values
-
-            // Top-K sampling: limits selection to K most likely tokens
             _nativeApi.SamplerChainAdd(sampler, _nativeApi.SamplerInitTopK(request.TopK));
-
-            // Top-P (nucleus) sampling: limits selection by cumulative probability
             _nativeApi.SamplerChainAdd(sampler, _nativeApi.SamplerInitTopP(request.TopP, (nuint)1));
 
-            // Temperature sampling: controls output randomness
             float temperature = request.Temperature > 0 ? request.Temperature : 0.7f;
             _nativeApi.SamplerChainAdd(sampler, _nativeApi.SamplerInitTemp(temperature));
 
-            // Random seed: use request.Seed if provided, otherwise use random value
             uint seed = request.Seed.HasValue ? (uint)request.Seed.Value : (uint)Random.Shared.Next();
             _nativeApi.SamplerChainAdd(sampler, _nativeApi.SamplerInitDist(seed));
-
-            // Repetition penalties: combines repeat, frequency, and presence penalties
-            // Only add if at least one penalty is non-default
 
             IntPtr repetitionSampler = _nativeApi.SamplerInitRepetition(
                 1.1f,
@@ -135,7 +140,6 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 request.PresencePenalty
             );
 
-            // Only add to chain if sampler was successfully created
             if (repetitionSampler != IntPtr.Zero)
             {
                 _nativeApi.SamplerChainAdd(sampler, repetitionSampler);
@@ -145,12 +149,14 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 _logger.LogWarning("Repetition sampler creation failed. Penalties will not be applied.");
             }
 
-
             int eos = _nativeApi.VocabEos(vocab);
             int currentPos = 0;
             int generated = 0;
 
-            int maxBatchSize = Math.Max(nTokens, 1);
+            // ==========================================
+            // MEMORY ALLOCATION BASED ON MODEL BATCH SIZE
+            // ==========================================
+            int maxBatchSize = nBatchLimit;
 
             int[] batchTokens = new int[maxBatchSize];
             int[] batchPos = new int[maxBatchSize];
@@ -180,34 +186,29 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
             try
             {
-                while (generated < maxTokens)
+                // ==========================================
+                // PHASE 1: PROMPT INGESTION (Chunking)
+                // ==========================================
+                int lastEvalBatchSize = 0;
+                for (int i = 0; i < nTokens; i += nBatchLimit)
                 {
                     ct.ThrowIfCancellationRequested();
 
-                    int batchSize = generated == 0 ? nTokens : 1;
+                    int evalBatchSize = Math.Min(nTokens - i, nBatchLimit);
+                    lastEvalBatchSize = evalBatchSize;
 
-                    if (generated == 0)
+                    for (int j = 0; j < evalBatchSize; j++)
                     {
-                        Array.Copy(tokens, batchTokens, nTokens);
-                        for (int i = 0; i < nTokens; i++)
-                        {
-                            batchPos[i] = i;
-                            batchNSeq[i] = 1;
-                            batchLogits[i] = (sbyte)(i == nTokens - 1 ? 1 : 0);
-                        }
-                        currentPos = nTokens;
-                    }
-                    else
-                    {
-                        batchTokens[0] = tokens[nTokens + generated - 1];
-                        batchPos[0] = currentPos++;
-                        batchNSeq[0] = 1;
-                        batchLogits[0] = 1;
+                        batchTokens[j] = tokens[i + j];
+                        batchPos[j] = i + j;
+                        batchNSeq[j] = 1;
+                        // Logits are only required for the final token of the complete prompt
+                        batchLogits[j] = (sbyte)((i + j == nTokens - 1) ? 1 : 0);
                     }
 
                     int result = _nativeApi.Decode(
                         ctxHandle,
-                        batchSize,
+                        evalBatchSize,
                         hTokens.AddrOfPinnedObject(),
                         hPos.AddrOfPinnedObject(),
                         hNSeq.AddrOfPinnedObject(),
@@ -216,11 +217,51 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
                     if (result != 0)
                     {
-                        _logger.LogWarning("llama_decode returned error code: {Code}", result);
+                        _logger.LogWarning("llama_decode returned error code during prompt eval: {Code}", result);
                         yield break;
                     }
+                }
 
-                    int token = _nativeApi.SamplerSample(sampler, ctxHandle, batchSize - 1);
+                currentPos = nTokens;
+
+                // ==========================================
+                // PHASE 2: TOKEN GENERATION LOOP
+                // ==========================================
+                while (generated < maxTokens)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    int logitIndex = 0;
+
+                    if (generated == 0)
+                    {
+                        // First generation relies on the last evaluated chunk
+                        logitIndex = lastEvalBatchSize - 1;
+                    }
+                    else
+                    {
+                        // Decode a single newly generated token
+                        batchTokens[0] = tokens[nTokens + generated - 1];
+                        batchPos[0] = currentPos++;
+                        batchNSeq[0] = 1;
+                        batchLogits[0] = 1;
+
+                        int result = _nativeApi.Decode(
+                            ctxHandle,
+                            1,
+                            hTokens.AddrOfPinnedObject(),
+                            hPos.AddrOfPinnedObject(),
+                            hNSeq.AddrOfPinnedObject(),
+                            hSeqIdPtrs.AddrOfPinnedObject(),
+                            hLogits.AddrOfPinnedObject());
+
+                        if (result != 0)
+                        {
+                            _logger.LogWarning("llama_decode returned error code during generation: {Code}", result);
+                            yield break;
+                        }
+                    }
+
+                    int token = _nativeApi.SamplerSample(sampler, ctxHandle, logitIndex);
 
                     if (token == eos || token < 0)
                         yield break;
@@ -247,13 +288,11 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
                             string currentText = accumulatedText.ToString();
 
-                            // Check for EOS markers in generated text
                             if (currentText.Contains("<|im_end|>") || currentText.Contains("<|endoftext|>"))
                             {
                                 yield break;
                             }
 
-                            // Check for custom stop sequences from request
                             if (request.Stop != null && request.Stop.Count > 0)
                             {
                                 bool stopSequenceFound = false;
