@@ -39,23 +39,17 @@ If you prefer to run **InstantAIGate** as a native Windows service rather than u
 
 ### 1. Prerequisites
 * **Operating System:** Windows 10/11 or Windows Server.
-* **Permissions:** You must have **Administrator** privileges to install the Windows services and configure firewall rules.
+* **Permissions:** You must have **Administrator** privileges (the installer will automatically prompt you for them).
 
 ### 2. Execution Steps
 
-**Download the Installer:**
-Download the [install.ps1](https://github.com/Instancium/instant-ai-gate/releases/latest/download/install.ps1) file from the official release page.
+* **Download the Installer:**
+  Download the [install.bat](https://github.com/Instancium/instant-ai-gate/releases/latest/download/install.bat) file to your computer.
 
-**Open PowerShell:**
-Right-click the PowerShell icon and select **"Run as Administrator"**.
+* **Run the Installer:**
+  Double-click the `install.bat` file.
 
-**Run the Script:**
-Navigate to the folder where you downloaded `install.ps1` and run the script:
-
-```powershell
-PowerShell -ExecutionPolicy Bypass -File .\install.ps1
-```
-*The script will automatically stop existing services, download the latest version, install the binaries, and restart the services for you.*
+> *The installer will automatically download the necessary scripts and binaries, configure local services, set up firewall rules, and start InstantAIGate for you.*
 
 ### 3. Installation Directories
 The installer organizes your application into standard Windows system directories:
