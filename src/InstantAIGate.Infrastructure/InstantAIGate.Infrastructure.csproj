@@ -4,10 +4,29 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<AssemblyVersion>1.0.0</AssemblyVersion>
-		<FileVersion>1.0.0</FileVersion>
 	</PropertyGroup>
 
+	<PropertyGroup>
+		<Version>1.0.5</Version>
+		<AssemblyVersion>1.0.5</AssemblyVersion>
+		<FileVersion>1.0.5</FileVersion>
+
+		<Title>InstantAIGate</Title>
+		<Product>InstantAIGate Middleware</Product>
+		<Description>Standardized. Secure. Instant Deployment. Lightweight middleware providing a self-hosted, monitored foundation for local AI applications. Fully OpenAI-compatible API on native .NET 10.</Description>
+
+		<Copyright>Copyright © 2026 Instancium™ (https://instancium.com). All rights reserved.</Copyright>
+
+		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+
+		<PackageTags>AI;LLM;Middleware;OpenAI-API;LocalAI;On-Premise;DotNet10</PackageTags>
+		<RepositoryType>git</RepositoryType>
+		<RepositoryUrl>https://github.com/Instancium/instant-ai-gate</RepositoryUrl>
+		<PackageProjectUrl>https://instancium.com</PackageProjectUrl>
+	</PropertyGroup>
+	
+	
 	<ItemGroup>
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
 	</ItemGroup>
