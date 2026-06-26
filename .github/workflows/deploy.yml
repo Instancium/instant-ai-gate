@@ -46,9 +46,9 @@ jobs:
           images: ghcr.io/${{ github.repository }}/instant-ai-gate-admin
           tags: |
             type=raw,value=latest
-            type=sha,format=short
+            type=raw,value=${{ steps.version.outputs.version }}
 
-      # Step 5: Log in to GitHub Container Registry
+      # Step 6: Log in to GitHub Container Registry
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -56,7 +56,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 6: Build and Push the API Container
+      # Step 7: Build and Push the API Container
       - name: Build and Push API Image
         uses: docker/build-push-action@v6
         with:
@@ -66,11 +66,11 @@ jobs:
           tags: ${{ steps.meta-api.outputs.tags }}
           labels: ${{ steps.meta-api.outputs.labels }}
           build-args: |
-            BUILD_VERSION=${{ github.ref_name }}
+            BUILD_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha # Uses GitHub Actions native cache storage
           cache-to: type=gha,mode=max
 
-      # Step 7: Build and Push the Admin Container
+      # Step 8: Build and Push the Admin Container
       - name: Build and Push Admin Image
         uses: docker/build-push-action@v6
         with:
@@ -80,6 +80,6 @@ jobs:
           tags: ${{ steps.meta-admin.outputs.tags }}
           labels: ${{ steps.meta-admin.outputs.labels }}
           build-args: |
-            BUILD_VERSION=${{ github.ref_name }}
+            BUILD_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
