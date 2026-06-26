@@ -20,10 +20,6 @@ RUN --mount=type=cache,id=nuget,target=/root/.nuget/packages \
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dotnet-build
 WORKDIR /src
 
-# Define build argument for application versioning (defaults to 1.0.2)
-ARG BUILD_VERSION=1.0.5
-ENV APP_VERSION=${BUILD_VERSION:-1.0.5}
-
 # Install utilities required for downloading and extracting runtime assets
 RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
 
@@ -40,6 +36,10 @@ RUN curl -fSL "https://github.com/Instancium/instant-ai-gate/releases/download/v
 
 # Now copy ALL source code
 COPY src/ src/
+
+# Define build argument for application versioning (defaults to 1.0.2)
+ARG BUILD_VERSION=1.0.5
+ENV APP_VERSION=${BUILD_VERSION:-1.0.5}
 
 # Publish API as self-contained (with GitVersion bypass flag added)
 RUN dotnet publish "src/InstantAIGate.API/InstantAIGate.API.csproj" \
