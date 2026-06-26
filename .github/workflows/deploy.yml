@@ -66,7 +66,7 @@ jobs:
           tags: ${{ steps.meta-api.outputs.tags }}
           labels: ${{ steps.meta-api.outputs.labels }}
           build-args: |
-            BUILD_VERSION=${{ steps.meta-api.outputs.version }}
+            BUILD_VERSION=${{ steps.get-tag.outputs.tag }}
           cache-from: type=gha # Uses GitHub Actions native cache storage
           cache-to: type=gha,mode=max
 
@@ -80,6 +80,6 @@ jobs:
           tags: ${{ steps.meta-admin.outputs.tags }}
           labels: ${{ steps.meta-admin.outputs.labels }}
           build-args: |
-            BUILD_VERSION=${{ steps.meta-admin.outputs.version }}
+            BUILD_VERSION=${{ steps.get-tag.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
