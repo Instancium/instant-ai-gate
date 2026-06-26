@@ -43,7 +43,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}/instant-ai-gate-api
           tags: |
             type=raw,value=latest
-            type=sha,format=short
+            type=raw,value=${{ steps.version.outputs.version }}
 
       - name: Extract Docker Metadata for Admin
         id: meta-admin
