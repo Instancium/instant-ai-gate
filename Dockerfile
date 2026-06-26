@@ -22,6 +22,7 @@ WORKDIR /src
 
 # Define build argument for application versioning (defaults to 1.0.2)
 ARG BUILD_VERSION=1.0.5
+ENV APP_VERSION=${BUILD_VERSION:-1.0.5}
 
 # Install utilities required for downloading and extracting runtime assets
 RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
