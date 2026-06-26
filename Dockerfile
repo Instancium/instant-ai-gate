@@ -39,6 +39,7 @@ COPY src/ src/
 
 # Define build argument for application versioning (defaults to 1.0.2)
 ARG BUILD_VERSION=1.0.5
+ENV APP_VERSION=${BUILD_VERSION:-1.0.5}
 
 # Publish API as self-contained (with GitVersion bypass flag added)
 RUN dotnet publish "src/InstantAIGate.API/InstantAIGate.API.csproj" \
