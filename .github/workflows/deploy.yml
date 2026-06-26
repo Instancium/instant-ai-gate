@@ -1,0 +1,81 @@
+name: Build and Publish Containers to GHCR
+
+# 1. Trigger the workflow only when changes are pushed to the main branch
+on:
+  push:
+    branches:
+      - main
+
+# 2. Grant permissions to the GITHUB_TOKEN to write packages
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      
+      # Step 1: Check out the repository code onto the runner
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up QEMU for multi-architecture support
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Step 3: Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Step 4: Extract metadata (tags, labels) for Docker images
+      # This automatically tags the images as 'latest' and with the short Git commit SHA
+      - name: Extract Docker Metadata for API
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/instantaigate-api
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Extract Docker Metadata for Admin
+        id: meta-admin
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/instantaigate-admin
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      # Step 5: Log in to GitHub Container Registry
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 6: Build and Push the API Container
+      - name: Build and Push API Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.dev
+          push: true
+          tags: ${{ id.meta-api.outputs.tags }}
+          labels: ${{ id.meta-api.outputs.labels }}
+          cache-from: type=gha # Uses GitHub Actions native cache storage
+          cache-to: type=gha,mode=max
+
+      # Step 7: Build and Push the Admin Container
+      - name: Build and Push Admin Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.dev # Change path if Admin uses a standalone file
+          push: true
+          tags: ${{ id.meta-admin.outputs.tags }}
+          labels: ${{ id.meta-admin.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
