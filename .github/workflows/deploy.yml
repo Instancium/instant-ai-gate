@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 # 2. Grant permissions to the GITHUB_TOKEN to write packages
 permissions:
