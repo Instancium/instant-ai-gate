@@ -14,6 +14,8 @@ RUN --mount=type=cache,id=nuget,target=/root/.nuget/packages \
     dotnet restore "src/InstantAIGate.API/InstantAIGate.API.csproj" && \
     dotnet restore "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj"
 
+ARG BUILD_VERSION=1.0.5
+
 # ==========================================
 # 2. Build & Publish (LOCAL FAST BUILD)
 # ==========================================
@@ -35,8 +37,6 @@ RUN dotnet restore "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj"
 COPY .runtimes/ .runtimes/
 
 COPY src/ src/
-
-ARG BUILD_VERSION=1.0.5
 
 # Publish API
 RUN dotnet publish "src/InstantAIGate.API/InstantAIGate.API.csproj" \
