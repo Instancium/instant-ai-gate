@@ -97,68 +97,87 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
                     if (nTokens <= 0) continue;
 
-                    int[] batchTokens = new int[nTokens];
-                    int[] batchPos = new int[nTokens];
-                    int[] batchNSeqId = new int[nTokens];
-                    sbyte[] batchLogits = new sbyte[nTokens];
-
-                    Array.Copy(tokens, batchTokens, nTokens);
-                    for (int i = 0; i < nTokens; i++)
+                    if (nTokens > nCtx)
                     {
-                        batchPos[i] = i;
-                        batchNSeqId[i] = 1;
-                        batchLogits[i] = 1;
+                        _logger.LogWarning("Input text exceeds context size ({Tokens}/{Limit}). Truncating to context limit.", nTokens, nCtx);
+                        nTokens = (int)nCtx;
                     }
 
-                    GCHandle hTokens = GCHandle.Alloc(batchTokens, GCHandleType.Pinned);
-                    GCHandle hPos = GCHandle.Alloc(batchPos, GCHandleType.Pinned);
-                    GCHandle hNSeqId = GCHandle.Alloc(batchNSeqId, GCHandleType.Pinned);
-                    GCHandle hLogits = GCHandle.Alloc(batchLogits, GCHandleType.Pinned);
+                    int maxBatchSize = (int)nBatch;
+                    int[] batchTokens = new int[maxBatchSize];
+                    int[] batchPos = new int[maxBatchSize];
+                    int[] batchNSeqId = new int[maxBatchSize];
+                    sbyte[] batchLogits = new sbyte[maxBatchSize];
 
                     int[] seqIdArray = { 0 };
                     GCHandle hSeqIdArray = GCHandle.Alloc(seqIdArray, GCHandleType.Pinned);
                     IntPtr seqIdPtr = hSeqIdArray.AddrOfPinnedObject();
 
-                    IntPtr[] seqIdPtrs = new IntPtr[nTokens];
-                    for (int i = 0; i < nTokens; i++) seqIdPtrs[i] = seqIdPtr;
+                    IntPtr[] seqIdPtrs = new IntPtr[maxBatchSize];
+                    for (int i = 0; i < maxBatchSize; i++) seqIdPtrs[i] = seqIdPtr;
+
+                    GCHandle hTokens = GCHandle.Alloc(batchTokens, GCHandleType.Pinned);
+                    GCHandle hPos = GCHandle.Alloc(batchPos, GCHandleType.Pinned);
+                    GCHandle hNSeqId = GCHandle.Alloc(batchNSeqId, GCHandleType.Pinned);
+                    GCHandle hLogits = GCHandle.Alloc(batchLogits, GCHandleType.Pinned);
                     GCHandle hSeqIds = GCHandle.Alloc(seqIdPtrs, GCHandleType.Pinned);
 
                     try
                     {
                         _nativeApi.ClearMemory(_nativeApi.GetMemory(embeddingContext.Handle), true);
 
-                        int decodeStatus = _nativeApi.Decode(
-                            embeddingContext.Handle,
-                            nTokens,
-                            hTokens.AddrOfPinnedObject(),
-                            hPos.AddrOfPinnedObject(),
-                            hNSeqId.AddrOfPinnedObject(),
-                            hSeqIds.AddrOfPinnedObject(),
-                            hLogits.AddrOfPinnedObject());
-
-                        if (decodeStatus != 0)
-                        {
-                            _logger.LogError("Embedding execution tracking failed. Error code: {Code}", decodeStatus);
-                            continue;
-                        }
-
                         float[] aggregatedSentenceVector = new float[embeddingLength];
                         int validVectorsCount = 0;
+                        bool decodeFailed = false;
 
-                        for (int i = 0; i < nTokens; i++)
+                        for (int i = 0; i < nTokens; i += maxBatchSize)
                         {
-                            IntPtr ptrEmbeddingsIth = _nativeApi.GetEmbeddingsIth(embeddingContext.Handle, i);
-                            if (ptrEmbeddingsIth != IntPtr.Zero)
+                            ct.ThrowIfCancellationRequested();
+
+                            int evalSize = Math.Min(nTokens - i, maxBatchSize);
+
+                            for (int j = 0; j < evalSize; j++)
                             {
-                                float[] tokenVector = new float[embeddingLength];
-                                Marshal.Copy(ptrEmbeddingsIth, tokenVector, 0, embeddingLength);
+                                batchTokens[j] = tokens[i + j];
+                                batchPos[j] = i + j;
+                                batchNSeqId[j] = 1;
+                                batchLogits[j] = 1;
+                            }
 
-                                for (int v = 0; v < embeddingLength; v++)
-                                    aggregatedSentenceVector[v] += tokenVector[v];
+                            int decodeStatus = _nativeApi.Decode(
+                                embeddingContext.Handle,
+                                evalSize,
+                                hTokens.AddrOfPinnedObject(),
+                                hPos.AddrOfPinnedObject(),
+                                hNSeqId.AddrOfPinnedObject(),
+                                hSeqIds.AddrOfPinnedObject(),
+                                hLogits.AddrOfPinnedObject());
 
-                                validVectorsCount++;
+                            if (decodeStatus != 0)
+                            {
+                                _logger.LogError("Embedding execution tracking failed on chunk. Error code: {Code}", decodeStatus);
+                                decodeFailed = true;
+                                break;
+                            }
+
+                            for (int j = 0; j < evalSize; j++)
+                            {
+                                IntPtr ptrEmbeddingsIth = _nativeApi.GetEmbeddingsIth(embeddingContext.Handle, j);
+                                if (ptrEmbeddingsIth != IntPtr.Zero)
+                                {
+                                    float[] tokenVector = new float[embeddingLength];
+                                    Marshal.Copy(ptrEmbeddingsIth, tokenVector, 0, embeddingLength);
+
+                                    for (int v = 0; v < embeddingLength; v++)
+                                        aggregatedSentenceVector[v] += tokenVector[v];
+
+                                    validVectorsCount++;
+                                }
                             }
                         }
+
+                        if (decodeFailed)
+                            continue;
 
                         if (validVectorsCount == 0)
                         {
