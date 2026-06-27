@@ -15,6 +15,8 @@ builder.Services.AddRazorPages();
 builder.Services.AddRazorPages()
     .AddRazorRuntimeCompilation();
 
+builder.Services.AddHealthChecks();
+
 builder.Services.AddHttpClient();
 builder.Services.Configure<APIClientOptions>(builder.Configuration.GetSection("APIClientOptions"));
 builder.Services.AddTransient<ApiKeyHandler>();
@@ -49,5 +51,7 @@ app.UseAuthorization();
 app.MapStaticAssets();
 app.MapRazorPages()
    .WithStaticAssets();
+
+app.MapHealthChecks("/health");
 
 app.Run();
