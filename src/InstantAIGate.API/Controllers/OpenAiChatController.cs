@@ -9,6 +9,9 @@ using System.Text.Unicode;
 
 namespace InstantAIGate.API.Controllers
 {
+    /// <summary>
+    /// Handles requests for chat completions following the OpenAI API specification.
+    /// </summary>
     [ApiController]
     [Route("v1/chat")]
     public class OpenAiChatController(IChatAdapter chatAdapter) : ControllerBase
@@ -20,108 +23,106 @@ namespace InstantAIGate.API.Controllers
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
+        /// <summary>
+        /// Generates a model response for the given chat conversation.
+        /// </summary>
+        /// <param name="request">The chat completion request payload.</param>
+        /// <returns>An OpenAI-compliant chat completion response.</returns>
         [HttpPost("completions")]
         public async Task<IActionResult> CreateChatCompletion([FromBody] OpenAiChatRequest? request)
         {
-            // Validation
             if (request == null || string.IsNullOrWhiteSpace(request.Model))
             {
-                return BadRequest(new
-                {
-                    error = new
-                    {
-                        message = "The 'model' parameter is required and cannot be null.",
-                        type = "invalid_request_error",
-                        code = "missing_required_parameter"
-                    }
-                });
+                return BadRequest(CreateErrorResponse("The 'model' parameter is required and cannot be null.", "invalid_request_error", "missing_required_parameter"));
             }
 
             if (request.Messages == null || request.Messages.Count == 0)
             {
-                return BadRequest(new
-                {
-                    error = new
-                    {
-                        message = "The 'messages' array is required and must contain at least one message object.",
-                        type = "invalid_request_error",
-                        code = "missing_required_parameter"
-                    }
-                });
+                return BadRequest(CreateErrorResponse("The 'messages' array is required and must contain at least one message object.", "invalid_request_error", "missing_required_parameter"));
             }
 
             if (request.Temperature.HasValue && (request.Temperature < 0 || request.Temperature > 2))
             {
-                return BadRequest(new
-                {
-                    error = new
-                    {
-                        message = "Temperature must be between 0 and 2.",
-                        type = "invalid_request_error",
-                        code = "invalid_value"
-                    }
-                });
+                return BadRequest(CreateErrorResponse("Temperature must be between 0 and 2.", "invalid_request_error", "invalid_value"));
             }
 
             if (request.TopP.HasValue && (request.TopP < 0 || request.TopP > 1))
             {
-                return BadRequest(new
-                {
-                    error = new
-                    {
-                        message = "Top_p must be between 0 and 1.",
-                        type = "invalid_request_error",
-                        code = "invalid_value"
-                    }
-                });
+                return BadRequest(CreateErrorResponse("Top_p must be between 0 and 1.", "invalid_request_error", "invalid_value"));
             }
 
             var targetModel = request.Model;
             var chatRequest = MapToLlamaChatRequest(request);
             var chatId = $"chatcmpl-{Guid.NewGuid():N}"[..20];
-            var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var createdTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-            // STREAMING MODE
             if (request.Stream == true)
             {
-                Response.ContentType = "text/event-stream";
-                Response.Headers.Append("Cache-Control", "no-cache");
-                Response.Headers.Append("Connection", "keep-alive");
-                Response.Headers.Append("X-Accel-Buffering", "no");
-
-                try
-                {
-                    await foreach (var token in chatAdapter.StreamAsync(chatRequest, HttpContext.RequestAborted))
-                    {
-                        if (string.IsNullOrWhiteSpace(token)) continue;
-                        await WriteSseAsync(BuildChunk(token, targetModel, chatId, created));
-                    }
-
-                    await WriteSseAsync(BuildChunk(string.Empty, targetModel, chatId, created, finishReason: "stop"));
-                    await Response.WriteAsync("data: [DONE]\n\n", HttpContext.RequestAborted);
-                    await Response.Body.FlushAsync(HttpContext.RequestAborted);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Client aborted
-                }
-                catch (InvalidOperationException ex)
-                {
-                    await WriteSseAsync(BuildChunk(string.Empty, targetModel, chatId, created, finishReason: ex.Message));
-                }
-                catch (Exception)
-                {
-                    await WriteSseAsync(BuildChunk(string.Empty, targetModel, chatId, created, finishReason: "internal_server_error"));
-                }
-
-                return new EmptyResult();
+                return await HandleStreamingResponseAsync(chatRequest, targetModel, chatId, createdTimestamp);
             }
 
-            // NON-STREAMING MODE
+            return await HandleStandardResponseAsync(chatRequest, targetModel, chatId, createdTimestamp, request.Messages);
+        }
+
+        private static object CreateErrorResponse(string message, string type, string code)
+        {
+            return new
+            {
+                error = new
+                {
+                    message,
+                    type,
+                    code
+                }
+            };
+        }
+
+        private async Task<IActionResult> HandleStreamingResponseAsync(LlamaChatRequest chatRequest, string targetModel, string chatId, long createdTimestamp)
+        {
+            Response.ContentType = "text/event-stream";
+            Response.Headers.Append("Cache-Control", "no-cache");
+            Response.Headers.Append("Connection", "keep-alive");
+            Response.Headers.Append("X-Accel-Buffering", "no");
+
+            try
+            {
+                await foreach (var token in chatAdapter.StreamAsync(chatRequest, HttpContext.RequestAborted))
+                {
+                    if (string.IsNullOrWhiteSpace(token)) continue;
+                    await WriteSseAsync(BuildChunk(token, targetModel, chatId, createdTimestamp));
+                }
+
+                await WriteSseAsync(BuildChunk(string.Empty, targetModel, chatId, createdTimestamp, finishReason: "stop"));
+                await Response.WriteAsync("data: [DONE]\n\n", HttpContext.RequestAborted);
+                await Response.Body.FlushAsync(HttpContext.RequestAborted);
+            }
+            catch (OperationCanceledException)
+            {
+                // Connection aborted by client
+            }
+            catch (InvalidOperationException ex)
+            {
+                await WriteSseAsync(BuildChunk(string.Empty, targetModel, chatId, createdTimestamp, finishReason: ex.Message));
+            }
+            catch (Exception)
+            {
+                await WriteSseAsync(BuildChunk(string.Empty, targetModel, chatId, createdTimestamp, finishReason: "internal_server_error"));
+            }
+
+            return new EmptyResult();
+        }
+
+        private async Task<IActionResult> HandleStandardResponseAsync(LlamaChatRequest chatRequest, string targetModel, string chatId, long createdTimestamp, List<OpenAiMessage> originalMessages)
+        {
             try
             {
                 var content = await chatAdapter.GenerateAsync(chatRequest, HttpContext.RequestAborted);
-                return Ok(BuildFullResponse(content, targetModel, chatId, created));
+
+                int promptTokens = EstimatePromptTokens(originalMessages);
+                int completionTokens = EstimateTokens(content);
+                int totalTokens = promptTokens + completionTokens;
+
+                return Ok(BuildFullResponse(content, targetModel, chatId, createdTimestamp, "stop", promptTokens, completionTokens, totalTokens));
             }
             catch (InvalidOperationException ex)
             {
@@ -141,20 +142,20 @@ namespace InstantAIGate.API.Controllers
 
         /// <summary>
         /// Maps a single OpenAI message to the internal ChatMessage format,
-        /// handling both plain text and multimodal content (text, images, audio).
+        /// handling both plain text and multimodal content.
         /// </summary>
-        private ChatMessage MapMessage(OpenAiMessage m)
+        private ChatMessage MapMessage(OpenAiMessage message)
         {
-            var (textContent, contentParts) = MapContent(m.Content);
+            var (textContent, contentParts) = MapContent(message.Content);
 
             return new ChatMessage
             {
-                Role = m.Role?.ToLowerInvariant() ?? "user",
+                Role = message.Role?.ToLowerInvariant() ?? "user",
                 Content = textContent,
                 ContentParts = contentParts,
-                Name = m.Name,
-                ToolCallId = m.ToolCallId,
-                ToolCalls = m.ToolCalls?.Select(tc => new ToolCall
+                Name = message.Name,
+                ToolCallId = message.ToolCallId,
+                ToolCalls = message.ToolCalls?.Select(tc => new ToolCall
                 {
                     Id = tc.Id,
                     Type = tc.Type,
@@ -168,30 +169,26 @@ namespace InstantAIGate.API.Controllers
         }
 
         /// <summary>
-        /// Processes the Content field which can be either a string or an array of content parts.
-        /// Returns the extracted text content and the list of multimodal content parts.
+        /// Processes the Content field to extract text and multimodal components.
         /// </summary>
         private (string textContent, List<ContentPart>? contentParts) MapContent(object? content)
         {
             if (content == null)
                 return (string.Empty, null);
 
-            // Case 1: Simple string content
             if (content is string textContent)
                 return (textContent, null);
 
-            // Case 2: JsonElement from deserialization (most common case)
-            if (content is System.Text.Json.JsonElement jsonElement)
+            if (content is JsonElement jsonElement)
             {
                 return jsonElement.ValueKind switch
                 {
-                    System.Text.Json.JsonValueKind.String => (jsonElement.GetString() ?? string.Empty, null),
-                    System.Text.Json.JsonValueKind.Array => MapContentArray(jsonElement),
+                    JsonValueKind.String => (jsonElement.GetString() ?? string.Empty, null),
+                    JsonValueKind.Array => MapContentArray(jsonElement),
                     _ => (content.ToString() ?? string.Empty, null)
                 };
             }
 
-            // Case 3: Already deserialized list
             if (content is List<OpenAiContentPart> parts)
             {
                 return MapContentParts(parts);
@@ -203,7 +200,7 @@ namespace InstantAIGate.API.Controllers
         /// <summary>
         /// Maps a JSON array of content parts to text and multimodal parts.
         /// </summary>
-        private (string textContent, List<ContentPart>? contentParts) MapContentArray(System.Text.Json.JsonElement jsonArray)
+        private (string textContent, List<ContentPart>? contentParts) MapContentArray(JsonElement jsonArray)
         {
             var textParts = new List<string>();
             var contentParts = new List<ContentPart>();
@@ -226,7 +223,7 @@ namespace InstantAIGate.API.Controllers
                         break;
 
                     case "image_url":
-                        if (item.TryGetProperty("image_url", out var imgProp) && imgProp.ValueKind == System.Text.Json.JsonValueKind.Object)
+                        if (item.TryGetProperty("image_url", out var imgProp) && imgProp.ValueKind == JsonValueKind.Object)
                         {
                             var url = imgProp.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? string.Empty : string.Empty;
                             var detail = imgProp.TryGetProperty("detail", out var detailProp) ? detailProp.GetString() : null;
@@ -239,7 +236,7 @@ namespace InstantAIGate.API.Controllers
                         break;
 
                     case "input_audio":
-                        if (item.TryGetProperty("input_audio", out var audioProp) && audioProp.ValueKind == System.Text.Json.JsonValueKind.Object)
+                        if (item.TryGetProperty("input_audio", out var audioProp) && audioProp.ValueKind == JsonValueKind.Object)
                         {
                             var data = audioProp.TryGetProperty("data", out var dataProp) ? dataProp.GetString() ?? string.Empty : string.Empty;
                             var format = audioProp.TryGetProperty("format", out var formatProp) ? formatProp.GetString() ?? "wav" : "wav";
@@ -322,7 +319,7 @@ namespace InstantAIGate.API.Controllers
                 Model = request.Model,
                 Messages = (request.Messages ?? Enumerable.Empty<OpenAiMessage>())
                     .OfType<OpenAiMessage>()
-                    .Select(m => MapMessage(m))
+                    .Select(MapMessage)
                     .Where(m => !string.IsNullOrEmpty(m.Content) || m.ContentParts?.Count > 0 || m.ToolCalls?.Count > 0)
                     .ToList(),
 
@@ -460,6 +457,40 @@ namespace InstantAIGate.API.Controllers
             }
         }
 
+        /// <summary>
+        /// Approximates the token count of a given text.
+        /// Replace this with a proper tokenizer implementation for production.
+        /// </summary>
+        private static int EstimateTokens(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return 0;
+            return (int)Math.Ceiling(text.Length / 4.0);
+        }
+
+        /// <summary>
+        /// Approximates the total prompt token count across all messages.
+        /// </summary>
+        private static int EstimatePromptTokens(IEnumerable<OpenAiMessage>? messages)
+        {
+            if (messages == null) return 0;
+
+            int tokenCount = 0;
+            foreach (var message in messages)
+            {
+                tokenCount += 4; // Base overhead per message
+
+                if (message.Content is string text)
+                {
+                    tokenCount += EstimateTokens(text);
+                }
+                else if (message.Content is JsonElement element)
+                {
+                    tokenCount += EstimateTokens(element.ToString());
+                }
+            }
+            return tokenCount;
+        }
+
         #endregion
 
         #region SSE Helpers
@@ -475,14 +506,14 @@ namespace InstantAIGate.API.Controllers
             string content,
             string model,
             string chatId,
-            long created,
+            long createdTimestamp,
             string? finishReason = null)
         {
             return new
             {
                 id = chatId,
                 @object = "chat.completion.chunk",
-                created,
+                created = createdTimestamp,
                 model,
                 choices = new[]
                 {
@@ -502,14 +533,17 @@ namespace InstantAIGate.API.Controllers
             string content,
             string model,
             string chatId,
-            long created,
-            string? finishReason = "stop")
+            long createdTimestamp,
+            string? finishReason = "stop",
+            int promptTokens = 0,
+            int completionTokens = 0,
+            int totalTokens = 0)
         {
             return new
             {
                 id = chatId,
                 @object = "chat.completion",
-                created,
+                created = createdTimestamp,
                 model,
                 choices = new[]
                 {
@@ -522,9 +556,9 @@ namespace InstantAIGate.API.Controllers
                 },
                 usage = new
                 {
-                    prompt_tokens = 0,
-                    completion_tokens = 0,
-                    total_tokens = 0
+                    prompt_tokens = promptTokens,
+                    completion_tokens = completionTokens,
+                    total_tokens = totalTokens
                 }
             };
         }

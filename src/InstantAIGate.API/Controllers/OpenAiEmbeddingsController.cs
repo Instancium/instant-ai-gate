@@ -5,21 +5,29 @@ using System.Text.Json;
 
 namespace InstantAiGate.Api.Controllers
 {
+    /// <summary>
+    /// Handles requests for text embeddings following the OpenAI API specification.
+    /// </summary>
     [ApiController]
-    [Route("v1/embeddings")] // Strict OpenAI API specification compliance
+    [Route("v1/embeddings")]
     public class OpenAiEmbeddingsController(IEmbeddingAdapter embeddingAdapter) : ControllerBase
     {
+        /// <summary>
+        /// Generates vector embeddings for the provided input text.
+        /// </summary>
+        /// <param name="request">The embedding request payload containing input text and model identifier.</param>
+        /// <param name="ct">Cancellation token for the request.</param>
+        /// <returns>An OpenAI-compliant embedding response.</returns>
         [HttpPost]
         public async Task<IActionResult> CreateEmbedding([FromBody] OpenAiEmbeddingRequest request, CancellationToken ct)
         {
-            if (request == null || request.Input == null || string.IsNullOrWhiteSpace(request.Model))
+            if (request?.Input == null || string.IsNullOrWhiteSpace(request.Model))
             {
                 return BadRequest(new { error = "Invalid request. Both 'input' and 'model' parameters are required." });
             }
 
             try
             {
-                // 1. Normalize the incoming flexible input (can be a single string or an array of strings)
                 var inputs = NormalizeInput(request.Input);
 
                 if (inputs.Count == 0)
@@ -27,33 +35,28 @@ namespace InstantAiGate.Api.Controllers
                     return BadRequest(new { error = "Input text payload cannot be empty." });
                 }
 
-                // 2. Delegate the block array of strings to the structural adapter.
-                // The new adapter internally applies Mean Pooling and returns a clean, flat IReadOnlyList<float[]>.
                 IReadOnlyList<float[]> sentenceVectors = await embeddingAdapter.GetEmbeddingAsync(request.Model, inputs, ct);
 
-                // 3. Directly map the computed sentence vectors into the OpenAI-compliant layout
-                var embeddingDataList = new List<OpenAiEmbeddingData>();
+                var embeddingDataList = new List<OpenAiEmbeddingData>(sentenceVectors.Count);
 
                 for (int i = 0; i < sentenceVectors.Count; i++)
                 {
-                    // Since the adapter handles pooling internally, sentenceVectors[i] is already the direct float[] array.
-                    var finalVector = sentenceVectors[i];
-
                     embeddingDataList.Add(new OpenAiEmbeddingData(
-                        Embedding: finalVector ?? Array.Empty<float>(), // Fallback to an empty vector if null safely
+                        Embedding: sentenceVectors[i] ?? Array.Empty<float>(),
                         Index: i
                     ));
                 }
 
-                // 4. Build the standardized OpenAI-compatible response envelope
+                int totalTokens = CalculateTotalTokens(inputs);
+
                 var response = new OpenAiEmbeddingResponse
                 {
                     model = request.Model,
                     data = embeddingDataList,
                     usage = new OpenAiUsage
                     {
-                        PromptTokens = 0, // Telemetry metadata to be enhanced later
-                        TotalTokens = 0,
+                        PromptTokens = totalTokens,
+                        TotalTokens = totalTokens,
                     }
                 };
 
@@ -74,10 +77,10 @@ namespace InstantAiGate.Api.Controllers
         }
 
         /// <summary>
-        /// Normalizes the incoming flexible JSON element into a uniform string array layout.
-        /// Under the OpenAI specification, the 'input' property can arrive as a string ("text") or an array of strings (["text1", "text2"]).
+        /// Normalizes flexible JSON input into a uniform list of strings.
+        /// Accommodates both single string and array of strings as per OpenAI specification.
         /// </summary>
-        private List<string> NormalizeInput(object input)
+        private static List<string> NormalizeInput(object input)
         {
             var list = new List<string>();
 
@@ -107,6 +110,23 @@ namespace InstantAiGate.Api.Controllers
             }
 
             return list;
+        }
+
+        /// <summary>
+        /// Approximates token count based on string length.
+        /// Assumes ~4 characters per token as a standard heuristic.
+        /// </summary>
+        private static int CalculateTotalTokens(IEnumerable<string> inputs)
+        {
+            int tokenCount = 0;
+            foreach (var text in inputs)
+            {
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    tokenCount += (int)Math.Ceiling(text.Length / 4.0);
+                }
+            }
+            return tokenCount;
         }
     }
 }
