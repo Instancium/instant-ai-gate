@@ -11,6 +11,9 @@ build
 # AI models files .gguf
 *.gguf
 
+# Test planning and coverage documentation
+TEST_*.md
+
 
 # User-specific files
 *.rsuser
