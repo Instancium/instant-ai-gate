@@ -239,7 +239,7 @@ public class NativeLibraryLoaderTests
     public void BackendInfo_ValidPath_ParsesCorrectly()
     {
         // Arrange
-        var expectedPath = Path.Combine("C:", "app", "runtimes", "win-x64", "native", "cuda");
+        var expectedPath = Path.Combine("C:\\", "app", "runtimes", "win-x64", "native", "cuda");
 
         // Act
         var backend = new NativeBackendInfo
