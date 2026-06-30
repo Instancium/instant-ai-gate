@@ -234,9 +234,8 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        result.Should().BeOfType<ObjectResult>();
-        var objectResult = result as ObjectResult;
-        objectResult!.StatusCode.Should().Be(500);
+        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(500);
 
         var errorJson = System.Text.Json.JsonSerializer.Serialize(objectResult.Value);
         errorJson.Should().Contain("ModelListRetrievalError");
@@ -255,9 +254,8 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        result.Should().BeOfType<ObjectResult>();
-        var objectResult = result as ObjectResult;
-        objectResult!.StatusCode.Should().Be(500);
+        var objectResult = result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(500);
     }
 
     #endregion
