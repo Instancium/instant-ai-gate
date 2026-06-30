@@ -294,10 +294,11 @@ public class OpenAiEmbeddingsControllerTests
 
         // Assert
         var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiEmbeddingResponse;
+        okResult.Should().NotBeNull();
+        okResult!.Value.Should().BeOfType<OpenAiEmbeddingResponse>();
+        var response = (OpenAiEmbeddingResponse)okResult.Value;
 
-        response.Should().NotBeNull();
-        response!.model.Should().NotBeNullOrEmpty();
+        response.model.Should().NotBeNullOrEmpty();
         response.data.Should().NotBeNull();
         response.usage.Should().NotBeNull();
     }
@@ -325,8 +326,10 @@ public class OpenAiEmbeddingsControllerTests
 
         // Assert
         var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiEmbeddingResponse;
-        response!.model.Should().Be(modelName);
+        okResult.Should().NotBeNull();
+        okResult!.Value.Should().BeOfType<OpenAiEmbeddingResponse>();
+        var response = (OpenAiEmbeddingResponse)okResult.Value;
+        response.model.Should().Be(modelName);
     }
 
     [Fact]
