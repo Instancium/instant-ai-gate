@@ -44,12 +44,10 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        result.Should().BeOfType<OkObjectResult>();
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<OpenAiModelListResponse>().Subject;
 
-        response.Should().NotBeNull();
-        response!.data.Should().HaveCount(3);
+        response.data.Should().HaveCount(3);
         response.data.Select(m => m.id).Should().Contain(activeModels);
     }
 
@@ -67,12 +65,10 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        result.Should().BeOfType<OkObjectResult>();
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<OpenAiModelListResponse>().Subject;
 
-        response.Should().NotBeNull();
-        response!.data.Should().BeEmpty();
+        response.data.Should().BeEmpty();
     }
 
     [Fact]
