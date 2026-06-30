@@ -83,12 +83,10 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        result.Should().BeOfType<OkObjectResult>();
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<OpenAiModelListResponse>().Subject;
 
-        response.Should().NotBeNull();
-        response!.data.Should().NotBeNull();
+        response.data.Should().NotBeNull();
         response.data.Should().BeEmpty();
     }
 
