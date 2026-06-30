@@ -41,7 +41,7 @@ jobs:
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/instancium/instant-ai-gate-api-beta
+          images: ghcr.io/instancium/instant-ai-gate-api
           tags: |
             type=raw,value=latest
             type=raw,value=${{ steps.version.outputs.version }}
@@ -50,7 +50,7 @@ jobs:
         id: meta-admin
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/instancium/instant-ai-gate-admin-beta
+          images: ghcr.io/instancium/instant-ai-gate-admin
           tags: |
             type=raw,value=latest
             type=raw,value=${{ steps.version.outputs.version }}
