@@ -291,7 +291,6 @@ public class CrossPlatformBackendTests
         var sut = CreateSut();
 
         // Act
-        var allBackends = sut.GetAllBackends();
         var availableBackends = sut.GetAvailableBackends();
 
         // Assert
