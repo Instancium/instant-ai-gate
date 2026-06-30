@@ -189,9 +189,10 @@ public class OpenAiModelsControllerTests
         // Assert
         var okResult = result as OkObjectResult;
         var response = okResult!.Value as OpenAiModelListResponse;
+        response.Should().NotBeNull();
 
         response!.data.Should().HaveCount(3);
-        response.data.Should().NotContain(m => string.IsNullOrWhiteSpace(m.id));
+        response!.data.Should().NotContain(m => string.IsNullOrWhiteSpace(m.id));
     }
 
     [Fact]
@@ -210,6 +211,7 @@ public class OpenAiModelsControllerTests
         // Assert
         var okResult = result as OkObjectResult;
         var response = okResult!.Value as OpenAiModelListResponse;
+        response.Should().NotBeNull();
 
         response!.data.Should().BeEmpty();
     }
