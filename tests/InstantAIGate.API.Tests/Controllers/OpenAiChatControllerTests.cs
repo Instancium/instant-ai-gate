@@ -231,9 +231,8 @@ public class OpenAiChatControllerTests
         var result = await _sut.CreateChatCompletion(request);
 
         // Assert
-        result.Should().BeOfType<OkObjectResult>();
-        var okResult = result as OkObjectResult;
-        okResult!.Value.Should().NotBeNull();
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        okResult.Value.Should().NotBeNull();
 
         var responseJson = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
         responseJson.Should().Contain(expectedContent);
