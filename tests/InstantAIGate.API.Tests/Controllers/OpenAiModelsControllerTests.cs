@@ -123,11 +123,10 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<OpenAiModelListResponse>(okResult.Value);
 
-        response.Should().NotBeNull();
-        response!.data.Should().NotBeNull();
+        response.data.Should().NotBeNull();
         response.data.Should().HaveCount(1);
         response.data[0].id.Should().Be("phi-3-mini-4k-instruct");
     }
@@ -152,10 +151,10 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<OpenAiModelListResponse>(okResult.Value);
 
-        response!.data.Should().HaveCount(4);
+        response.data.Should().HaveCount(4);
         foreach (var modelId in activeModels)
         {
             response.data.Should().Contain(m => m.id == modelId, 
