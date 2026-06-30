@@ -284,10 +284,10 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
+        var okResult = result.Should().BeOfType<OkObjectResult>().Which;
+        var response = okResult.Value.Should().BeOfType<OpenAiModelListResponse>().Which;
 
-        response!.data.Should().HaveCount(6);
+        response.data.Should().HaveCount(6);
         response.data.Should().Contain(m => m.id.Contains("llama"));
         response.data.Should().Contain(m => m.id.Contains("mistral"));
         response.data.Should().Contain(m => m.id.Contains("qwen"));
@@ -308,10 +308,10 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
+        var okResult = result.Should().BeOfType<OkObjectResult>().Which;
+        var response = okResult.Value.Should().BeOfType<OpenAiModelListResponse>().Which;
 
-        response!.data.Should().ContainSingle();
+        response.data.Should().ContainSingle();
         response.data[0].id.Should().Be("granite-3.1-8b-instruct");
     }
 
@@ -334,10 +334,10 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
+        var okResult = result.Should().BeOfType<OkObjectResult>().Which;
+        var response = okResult.Value.Should().BeOfType<OpenAiModelListResponse>().Which;
 
-        response!.data.Should().HaveCount(3);
+        response.data.Should().HaveCount(3);
         response.data[0].id.Should().Contain("q4_k_m");
         response.data[1].id.Should().Contain("GGUF");
         response.data[2].id.Should().Contain("_");
