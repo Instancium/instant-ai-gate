@@ -187,12 +187,11 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
-        response.Should().NotBeNull();
+        var okResult = result.Should().BeOfType<OkObjectResult>().Which;
+        var response = okResult.Value.Should().BeOfType<OpenAiModelListResponse>().Which;
 
-        response!.data.Should().HaveCount(3);
-        response!.data.Should().NotContain(m => string.IsNullOrWhiteSpace(m.id));
+        response.data.Should().HaveCount(3);
+        response.data.Should().NotContain(m => string.IsNullOrWhiteSpace(m.id));
     }
 
     [Fact]
@@ -209,11 +208,10 @@ public class OpenAiModelsControllerTests
         var result = _sut.GetOpenAiModels();
 
         // Assert
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiModelListResponse;
-        response.Should().NotBeNull();
+        var okResult = result.Should().BeOfType<OkObjectResult>().Which;
+        var response = okResult.Value.Should().BeOfType<OpenAiModelListResponse>().Which;
 
-        response!.data.Should().BeEmpty();
+        response.data.Should().BeEmpty();
     }
 
     #endregion
