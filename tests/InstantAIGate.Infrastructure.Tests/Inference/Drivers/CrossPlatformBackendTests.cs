@@ -67,7 +67,7 @@ public class CrossPlatformBackendTests
     public void IsNativeLibrary_DifferentExtensions_DetectsCorrectly(string filename, bool expectedIsNative)
     {
         // Arrange
-        var tempPath = Path.Combine(Path.GetTempPath(), filename);
+        var tempPath = Path.Combine(Path.GetTempPath(), Path.GetFileName(filename));
 
         // Act
         var isNative = HasNativeExtension(tempPath);
