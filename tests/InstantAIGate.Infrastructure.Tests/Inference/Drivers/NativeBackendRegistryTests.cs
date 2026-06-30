@@ -377,7 +377,7 @@ public class NativeBackendRegistryTests
         }
 
         // Act
-        var resolved = sut.ResolveBackend("auto");
+        sut.ResolveBackend("auto");
 
         // Assert
         _loggerMock.Verify(
