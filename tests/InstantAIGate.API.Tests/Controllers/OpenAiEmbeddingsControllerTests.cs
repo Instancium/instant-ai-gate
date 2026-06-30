@@ -158,7 +158,6 @@ public class OpenAiEmbeddingsControllerTests
     {
         // Arrange
         var inputText = "Embeddings are vector representations of text";
-        var request = CreateValidRequest(inputText);
         var modelName = "nomic-embed-text-v1.5";
         var requestWithModel = new OpenAiEmbeddingRequest
         {
