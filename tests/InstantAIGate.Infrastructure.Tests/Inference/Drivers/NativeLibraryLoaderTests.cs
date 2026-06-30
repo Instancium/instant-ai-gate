@@ -117,7 +117,6 @@ public class NativeLibraryLoaderTests
     public void LoadBackend_DifferentBackendTypes_ReflectsGpuFlag(string backendName, bool isGpu)
     {
         // Arrange
-        var sut = CreateSut();
 
         // Create a realistic backend path based on OS
         var basePath = OperatingSystem.IsWindows() 
