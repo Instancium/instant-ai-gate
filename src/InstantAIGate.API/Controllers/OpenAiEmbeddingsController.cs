@@ -1,6 +1,7 @@
 ﻿using InstantAIGate.API.Dtos;
 using InstantAIGate.Application.Interfaces.Inference;
 using Microsoft.AspNetCore.Mvc;
+using System.Linq;
 using System.Text.Json;
 
 namespace InstantAiGate.Api.Controllers
@@ -119,12 +120,9 @@ namespace InstantAiGate.Api.Controllers
         private static int CalculateTotalTokens(IEnumerable<string> inputs)
         {
             int tokenCount = 0;
-            foreach (var text in inputs)
+            foreach (var text in inputs.Where(text => !string.IsNullOrWhiteSpace(text)))
             {
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    tokenCount += (int)Math.Ceiling(text.Length / 4.0);
-                }
+                tokenCount += (int)Math.Ceiling(text.Length / 4.0);
             }
             return tokenCount;
         }
