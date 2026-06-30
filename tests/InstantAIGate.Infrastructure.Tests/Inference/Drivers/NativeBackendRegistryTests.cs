@@ -135,7 +135,13 @@ public class NativeBackendRegistryTests
         // Assert
         backendUpper.Should().NotBeNull("case-insensitive search should work (uppercase)");
         backendLower.Should().NotBeNull("case-insensitive search should work (lowercase)");
-        backendUpper?.Name.Should().BeEquivalentTo(backendLower?.Name);
+
+        if (backendUpper is null || backendLower is null)
+        {
+            return;
+        }
+
+        backendUpper.Name.Should().BeEquivalentTo(backendLower.Name);
     }
 
     [Fact]
