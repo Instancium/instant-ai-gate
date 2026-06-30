@@ -143,12 +143,10 @@ public class OpenAiEmbeddingsControllerTests
         var result = await _sut.CreateEmbedding(request, CancellationToken.None);
 
         // Assert
-        result.Should().BeOfType<OkObjectResult>();
-        var okResult = result as OkObjectResult;
-        var response = okResult!.Value as OpenAiEmbeddingResponse;
+        var okResult = result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<OpenAiEmbeddingResponse>().Subject;
 
-        response.Should().NotBeNull();
-        response!.data.Should().HaveCount(1);
+        response.data.Should().HaveCount(1);
         response.data[0].Embedding.Should().HaveCount(768);
         response.data[0].Index.Should().Be(0);
     }
