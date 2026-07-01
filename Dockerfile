@@ -89,6 +89,7 @@ RUN cd /app/runtimes/linux-x64/vulkan && \
 
 # This ensures the loader will look for libraries in the right places
 ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64/cuda:/app/runtimes/linux-x64/cpu:/app/runtimes/linux-x64/vulkan:/app:$LD_LIBRARY_PATH
+ENV INSTANTAIGATE_CONFIG_PATH=/app/gateway/config
 
 RUN chmod +x ./InstantAIGate.API
 ENTRYPOINT ["./InstantAIGate.API"]
@@ -99,5 +100,6 @@ ENTRYPOINT ["./InstantAIGate.API"]
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS admin-runtime
 WORKDIR /app
 COPY --from=dotnet-build /app/publish/admin .
+ENV INSTANTAIGATE_CONFIG_PATH=/app/gateway/config
 EXPOSE 80
 ENTRYPOINT ["dotnet", "InstantAIGate.Admin.dll"]
