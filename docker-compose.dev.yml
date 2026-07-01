@@ -12,8 +12,9 @@ services:
       - "127.0.0.1:49152:80"
     volumes:
       - ./storage/models:/app/storage/models
+      - ./data:/app/data
     environment:
-      - ApiKeyOptions__AdminKey=skip
+      - GatewayConfig__RootPath=/app/data
       - Storage__RootPath=/app/storage/models
       - CorsSettings__AllowedOrigins__0=http://localhost:49153
       - CorsSettings__AllowedOrigins__1=http://127.0.0.1:49153
@@ -40,15 +41,17 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:49153:80"
+    volumes:
+      - ./data:/app/data
     depends_on:
       - api
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:80
       - Logging__LogLevel__Default=Warning
+      - GatewayConfig__RootPath=/app/data
       - APIClientOptions__BaseUrl=http://api:80
       - APIClientOptions__PublicUrl=http://127.0.0.1:49152
-      - APIClientOptions__AdminApiKey=skip
     networks:
       - app-network
 
