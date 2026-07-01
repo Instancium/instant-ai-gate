@@ -69,6 +69,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          target: api-runtime
           push: true
           tags: ${{ steps.meta-api.outputs.tags }}
           labels: ${{ steps.meta-api.outputs.labels }}
@@ -83,6 +84,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          target: admin-runtime
           push: true
           tags: ${{ steps.meta-admin.outputs.tags }}
           labels: ${{ steps.meta-admin.outputs.labels }}
