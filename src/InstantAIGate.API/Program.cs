@@ -1,5 +1,4 @@
 using InstantAIGate.API.Authentication;
-using InstantAIGate.API.Config;
 using InstantAIGate.API.Extensions;
 using InstantAIGate.API.Hub;
 using InstantAIGate.API.Services;
