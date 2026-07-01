@@ -20,10 +20,5 @@
         /// The public URL of the API.
         /// </summary>
         public string PublicUrl { get; set; } = string.Empty;
-
-        /// <summary>
-        /// The API key used for authentication.
-        /// </summary>
-        public string AdminApiKey { get; set; } = string.Empty;
     }
 }
