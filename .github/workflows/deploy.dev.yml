@@ -36,24 +36,26 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       # Step 4: Extract metadata (tags, labels) for Docker images
-      # This automatically tags the images as 'latest' and with the short Git commit SHA
+      # This automatically tags the images as 'beta' for dev builds
       - name: Extract Docker Metadata for API
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/instancium/instant-ai-gate-api
+          images: ghcr.io/instancium/instant-ai-gate-api-beta
           tags: |
             type=raw,value=latest
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=dev
+            type=raw,value=${{ steps.version.outputs.version }}-beta
 
       - name: Extract Docker Metadata for Admin
         id: meta-admin
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/instancium/instant-ai-gate-admin
+          images: ghcr.io/instancium/instant-ai-gate-admin-beta
           tags: |
             type=raw,value=latest
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=dev
+            type=raw,value=${{ steps.version.outputs.version }}-beta
 
       # Step 6: Log in to GitHub Container Registry
       - name: Log in to GHCR
