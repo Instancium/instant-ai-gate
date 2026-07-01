@@ -1,0 +1,58 @@
+# ==========================================
+# BETA COMPOSE FILE (For Testing Beta Builds)
+# Uses pre-built beta images from GitHub Container Registry
+# ==========================================
+
+services:
+  api:
+    image: ghcr.io/instancium/instant-ai-gate-api-beta:latest
+    container_name: instant-ai-gate-api-beta
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:49152:80"
+    volumes:
+      - ./storage/models:/app/storage/models
+      - ./gateway/config:/app/gateway/config
+    environment:
+      - INSTANTAIGATE_CONFIG_PATH=/app/gateway/config
+      - Storage__RootPath=/app/storage/models
+      - CorsSettings__AllowedOrigins__0=http://localhost:49153
+      - CorsSettings__AllowedOrigins__1=http://127.0.0.1:49153
+      - Logging__LogLevel__Default=Warning
+      - ASPNETCORE_URLS=http://+:80
+      - ASPNETCORE_ENVIRONMENT=Production
+      - NVIDIA_VISIBLE_DEVICES=all
+    networks:
+      - app-network
+    # GPU Support Configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+
+  admin:
+    image: ghcr.io/instancium/instant-ai-gate-admin-beta:latest
+    container_name: instant-ai-gate-admin-beta
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:49153:80"
+    volumes:
+      - ./gateway/config:/app/gateway/config
+    depends_on:
+      - api
+    environment:
+      - INSTANTAIGATE_CONFIG_PATH=/app/gateway/config
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:80
+      - Logging__LogLevel__Default=Warning
+      - APIClientOptions__BaseUrl=http://api:80
+      - APIClientOptions__PublicUrl=http://127.0.0.1:49152
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

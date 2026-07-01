@@ -1,13 +1,20 @@
 name: Build and Publish Containers to GHCR
 
-# 1. Trigger the workflow only when changes are pushed to the main branch
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Target branch (main for production, develop for beta)'
+        required: true
+        default: 'main'
+        type: choice
+        options:
+          - main
+          - develop
 
-# 2. Grant permissions to the GITHUB_TOKEN to write packages
 permissions:
   contents: read
   packages: write
@@ -16,16 +23,15 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
-      
-      # Step 1: Check out the repository code onto the runner
+
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.target_branch || github.ref }}
 
-      # Step 2: Set up QEMU for multi-architecture support
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # Step 3: Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -35,27 +41,44 @@ jobs:
           VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/InstantAIGate.API/InstantAIGate.API.csproj)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      # Step 4: Extract metadata (tags, labels) for Docker images
-      # This automatically tags the images as 'latest' and with the short Git commit SHA
+      - name: Determine image names and tags
+        id: tags
+        run: |
+          if [ "${{ github.event.inputs.target_branch }}" == "develop" ] || [ "${{ github.ref }}" == "refs/heads/main" ] && [ -z "${{ github.event.inputs.target_branch }}" ]; then
+            if [ "${{ github.event.inputs.target_branch }}" == "develop" ]; then
+              echo "api_image=ghcr.io/instancium/instant-ai-gate-api-beta" >> $GITHUB_OUTPUT
+              echo "admin_image=ghcr.io/instancium/instant-ai-gate-admin-beta" >> $GITHUB_OUTPUT
+              echo "api_tags=latest,dev,${{ steps.version.outputs.version }}-beta" >> $GITHUB_OUTPUT
+              echo "admin_tags=latest,dev,${{ steps.version.outputs.version }}-beta" >> $GITHUB_OUTPUT
+            else
+              echo "api_image=ghcr.io/instancium/instant-ai-gate-api" >> $GITHUB_OUTPUT
+              echo "admin_image=ghcr.io/instancium/instant-ai-gate-admin" >> $GITHUB_OUTPUT
+              echo "api_tags=latest,${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+              echo "admin_tags=latest,${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "api_image=ghcr.io/instancium/instant-ai-gate-api-beta" >> $GITHUB_OUTPUT
+            echo "admin_image=ghcr.io/instancium/instant-ai-gate-admin-beta" >> $GITHUB_OUTPUT
+            echo "api_tags=latest,dev,${{ steps.version.outputs.version }}-beta" >> $GITHUB_OUTPUT
+            echo "admin_tags=latest,dev,${{ steps.version.outputs.version }}-beta" >> $GITHUB_OUTPUT
+          fi
+
       - name: Extract Docker Metadata for API
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/instancium/instant-ai-gate-api
+          images: ${{ steps.tags.outputs.api_image }}
           tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.tags.outputs.api_tags }}
 
       - name: Extract Docker Metadata for Admin
         id: meta-admin
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/instancium/instant-ai-gate-admin
+          images: ${{ steps.tags.outputs.admin_image }}
           tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.tags.outputs.admin_tags }}
 
-      # Step 6: Log in to GitHub Container Registry
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -63,7 +86,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 7: Build and Push the API Container
       - name: Build and Push API Image
         uses: docker/build-push-action@v6
         with:
@@ -75,10 +97,9 @@ jobs:
           labels: ${{ steps.meta-api.outputs.labels }}
           build-args: |
             BUILD_VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=gha # Uses GitHub Actions native cache storage
+          cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Step 8: Build and Push the Admin Container
       - name: Build and Push Admin Image
         uses: docker/build-push-action@v6
         with:
