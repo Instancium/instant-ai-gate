@@ -3,6 +3,7 @@ using InstantAIGate.API.Config;
 using InstantAIGate.API.Extensions;
 using InstantAIGate.API.Hub;
 using InstantAIGate.API.Services;
+using InstantAIGate.Application.Config;
 using InstantAIGate.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using System.Text;
@@ -17,10 +18,40 @@ var builder = WebApplication.CreateBuilder(argsOptions);
 WindowsServiceConfigurator.ConfigureHost(builder, args, "InstantAIGate_API",
     "OpenAI-compatible gateway service providing secure, low-latency access to local Large Language Models.");
 
-builder.Services.AddMemoryCache();
+var gatewayConfig = new GatewayConfig();
+builder.Configuration.Bind("GatewayConfig", gatewayConfig);
 
-builder.Services.Configure<ApiKeyOptions>(
-    builder.Configuration.GetSection("ApiKeyOptions"));
+if (string.IsNullOrWhiteSpace(gatewayConfig.AdminKey))
+{
+    // Named cross-process mutex prevents two API instances from generating different keys simultaneously.
+    using var mutex = new Mutex(false, @"Global\InstantAIGate_AdminKey");
+    mutex.WaitOne();
+    try
+    {
+        // Re-check inside the lock in case another instance just wrote the file.
+        if (File.Exists(gatewayConfig.AdminKeyPath))
+        {
+            gatewayConfig.AdminKey = File.ReadAllText(gatewayConfig.AdminKeyPath).Trim();
+        }
+        else
+        {
+            if (!Directory.Exists(gatewayConfig.RootPath))
+                Directory.CreateDirectory(gatewayConfig.RootPath);
+
+            var secureToken = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(48));
+            File.WriteAllText(gatewayConfig.AdminKeyPath, secureToken);
+            gatewayConfig.AdminKey = secureToken;
+        }
+    }
+    finally
+    {
+        mutex.ReleaseMutex();
+    }
+}
+
+builder.Services.AddSingleton(gatewayConfig);
+
+builder.Services.AddMemoryCache();
 
 builder.Services.AddAuthentication(options =>
 {
