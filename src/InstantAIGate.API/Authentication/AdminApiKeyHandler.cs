@@ -1,5 +1,4 @@
-﻿using InstantAIGate.API.Config;
-using InstantAIGate.Application.Config;
+﻿using InstantAIGate.Application.Config;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
