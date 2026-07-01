@@ -23,117 +23,109 @@
 </p>
 
 
-## Deployment Options
+# 🐋 Easy Start: Running with Docker Compose
 
-**InstantAIGate** is a fully cross-platform solution engineered to adapt seamlessly to your infrastructure preferences. Whether you are running a cloud-native Linux cluster or integrating directly into an enterprise Windows ecosystem, the gateway delivers identical high-performance local AI inference capabilities.
+Deploying the entire high-performance AI gateway infrastructure is completely automated and takes just seconds. We provide pre-built, highly-optimized Docker images hosted on the GitHub Container Registry (GHCR) with native hardware-acceleration drivers (CUDA, Vulkan) already baked in.
 
-You can choose the deployment path that best fits your environment:
-* **Windows Native Service:** Lightweight, bare-metal deployment running directly as native background Windows Services via PowerShell.
-* **Containerized (Linux):** Standardized, isolated deployment via Docker Compose with pre-baked hardware acceleration.
+## 🛠 Prerequisites
 
----
-
-## 🪟 Windows Native Installation (PowerShell)
-
-If you prefer to run **InstantAIGate** as a native Windows service rather than using Docker, we provide an automated PowerShell deployment script. This script handles the downloading of binaries, configuration of local services, and necessary firewall rules.
-
-### 1. Prerequisites
-* **Operating System:** Windows 10/11 or Windows Server.
-* **Permissions:** You must have **Administrator** privileges (the installer will automatically prompt you for them).
-
-### 2. Execution Steps
-
-* **Download the Installer:**
-  Download the [install.bat](https://github.com/Instancium/instant-ai-gate/releases/latest/download/install.bat) file to your computer.
-
-* **Run the Installer:**
-  Double-click the `install.bat` file.
-
-> *The installer will automatically download the necessary scripts and binaries, configure local services, set up firewall rules, and start InstantAIGate for you.*
-
-### 3. Installation Directories
-The installer organizes your application into standard Windows system directories:
-
-| Component | Path | Description |
-| :--- | :--- | :--- |
-| **Application Files** | `%ProgramFiles%\InstantAIGate` | Contains the core API and Admin executables. |
-| **Model Data** | `%ProgramData%\InstantAIGate\Models` | Storage location for your AI models and runtime data. |
-
-### 4. Accessing the Gateway
-Once the installation script completes, the `InstantAIGate_API` and `InstantAIGate_Admin` services will be running in the background. You can access them via your web browser:
-
-* **Management UI Console:** [http://localhost:49155/](http://localhost:49155/)
-* **Core Processing Inference API:** [http://localhost:49154/](http://localhost:49154/)
-
-> 💡 **Tip:** If you cannot access the links, ensure the Windows Services "InstantAIGate API" and "InstantAIGate Admin" are running in your Services console (`services.msc`).
-
-
-### 🕵️‍♂️ Advanced: Zero-Trust Compilation from Source
-
-If you prefer a **zero-trust approach** (building the binaries yourself instead of downloading pre-compiled packages), you can audit and execute the build pipeline entirely from source code.
-
-#### Prerequisites
-* **Source Repository:** Clone the repository locally: `git clone https://github.com/Instancium/instant-ai-gate.git`
-* **Development Kit:** You must have the **.NET 10 SDK** (or later) installed on your machine.
-* **Permissions:** An elevated **Administrator** PowerShell terminal.
-* **Drivers / Runtimes:** The development script operates entirely **offline** and does not download compute cores automatically. Before running it, you must download the latest compute runtimes package [runtime-win-x64.zip](https://github.com/Instancium/instant-ai-gate/releases/latest/download/runtime-win-x64.zip), unpack its contents, and place them into the `.runtimes\win-x64` directory inside your cloned repository root.
-
-#### Compilation & Deployment Steps
-
-1. Open your repository's root directory.
-2. Verify that your native drivers/compute cores are present under the `.runtimes\win-x64` folder.
-3. Launch PowerShell as **Administrator** and run the local development deployment script:
-
-```powershell
-.\install.dev.ps1
-```
-
-#### ⚙️ What happens under the hood?
-
-When executed, the script operates entirely offline/locally without fetching unknown binaries from remote servers:
-
-* **Interactive Compilation:** The script prompts you `(Y/N)` to build the C# projects. Choosing **Yes** triggers native `.NET SDK` publication (`dotnet publish`) targeting `win-x64` in a temporary directory, creating fresh, clean `.exe` binaries straight from your checked-out code.
-* **Local Archiving:** It automatically packages your existing local driver directories (`.runtimes\win-x64`) into a local zip artifact inside a newly created `./build/` folder.
-* **Service Lifecycle Management:** It stops any active instances, extracts your freshly built local packages directly into `%ProgramFiles%\InstantAIGate`, sets up secure sandboxed paths under `%ProgramData%`, auto-generates unique 64-character GUID API security keys, and registers native Windows Background Services (`sc.exe`).
-
-> 💡 **Tip:** If you need further custom network alterations, deep architectural verification, or specific environment optimizations, feel free to feed the `install.dev.ps1` script file directly into your preferred AI Coding Assistant to ask for tailored adjustments.
+Before starting, make sure you have Docker installed on your system:
+* **Windows / macOS / Linux:** Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+* **NVIDIA GPU Users (Linux):** Ensure you have the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed so Docker can access your graphics card.
 
 ---
 
+## 🚀 Deployment Steps
 
-## 🐋 Easy Start: Running with Docker Compose
-
-Deploying the entire high-performance AI gateway infrastructure is now completely automated and takes just seconds. 
-
-We provide pre-built, highly-optimized Docker images hosted on the GitHub Container Registry (GHCR). All native hardware-acceleration drivers (CUDA, Vulkan, CPU backends) are **already baked into these images**, meaning zero compilation time and no massive downloads during setup.
-
-### 1. Clone the Repository
-
-Clone the project repository to your local environment and navigate into the root directory:
-
+### 1. Prepare Workspace
+Create a new directory for the project and navigate into it:
 ```bash
-git clone https://github.com/Instancium/instant-ai-gate.git
-cd instant-ai-gate
+mkdir instant-ai-gate && cd instant-ai-gate
 ```
 
-### 2. Launch the Infrastructure
-Start the gateway in detached mode using Docker Compose:
+### 2. Create Configuration File
+Create a file named `docker-compose.yml` and paste the following production configuration inside it:
+
+```yaml
+# ==========================================
+# PRODUCTION COMPOSE FILE (For End-Users)
+# Uses pre-built images from GitHub Container Registry
+# ==========================================
+services:
+  api:
+    image: ghcr.io/instancium/instant-ai-gate-api:latest
+    container_name: instant-ai-gate-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:49152:80"
+    volumes:
+      - ./storage/models:/app/storage/models
+      - ./gateway/config:/app/gateway/config
+    environment:
+      - INSTANTAIGATE_CONFIG_PATH=/app/gateway/config
+      - Storage__RootPath=/app/storage/models
+      - CorsSettings__AllowedOrigins__0=http://localhost:49153
+      - CorsSettings__AllowedOrigins__1=http://127.0.0.1:49153
+      - Logging__LogLevel__Default=Warning
+      - ASPNETCORE_URLS=http://+:80
+      - ASPNETCORE_ENVIRONMENT=Production
+      - NVIDIA_VISIBLE_DEVICES=all
+    networks:
+      - app-network
+    # GPU Support Configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+
+  admin:
+    image: ghcr.io/instancium/instant-ai-gate-admin:latest
+    container_name: instant-ai-gate-admin
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:49153:80"
+    volumes:
+      - ./gateway/config:/app/gateway/config
+    depends_on:
+      - api
+    environment:
+      - INSTANTAIGATE_CONFIG_PATH=/app/gateway/config
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:80
+      - Logging__LogLevel__Default=Warning
+      - APIClientOptions__BaseUrl=http://api:80
+      - APIClientOptions__PublicUrl=http://127.0.0.1:49152
+    networks:
+      - app-network
+
+networks:
+  app-network: 
+    driver: bridge
+```
+
+### 3. Launch the Infrastructure
+Start the gateway in detached mode. Docker will instantly pull the pre-compiled images from GHCR and automatically route your active hardware devices (including NVIDIA GPUs) to the core:
 ```bash
 docker compose up -d
 ```
-> 💡 **What happens under the hood:**
-> Docker will instantly pull the pre-compiled native Linux-x64 computing cores from GHCR. It will completely bypass any compilation steps and automatically route your active hardware devices (including NVIDIA GPUs) directly to the inference core for maximum performance.
 
-### 3. Access the Gateway Applications
+---
+
+## 🌐 Accessing the Gateway
+
 Once the containers report an active operational status, you can immediately access the local deployment endpoints:
 
-- **Management UI Console:** [http://127.0.0.1:49153/](http://127.0.0.1:49153/)
-- **Core Processing Inference API:** [http://127.0.0.1:49152/](http://127.0.0.1:49152/)
+* **Management UI Console:** [http://127.0.0.1:49153/](http://127.0.0.1:49153/)
+* **Core Processing Inference API:** [http://127.0.0.1:49152/](http://127.0.0.1:49152/)
 
+---
 
+## 🔄 Updating to the Latest Version
 
-> 🔄 **Updating to the latest version**
-> Because everything is pre-built, keeping your gateway up to date is trivial. To fetch the newest features and performance improvements without losing your downloaded models, simply run:
+Because everything is pre-built, keeping your gateway up to date is trivial. To fetch the newest features and performance improvements without losing your downloaded models or settings, simply run:
 
 ```bash
 docker compose pull
