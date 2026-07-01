@@ -1,7 +1,10 @@
 name: Build and DEV Containers to GHCR
 
-# Trigger only on manual dispatch (workflow_dispatch)
+# Trigger on push to develop branch OR manual dispatch
 on:
+  push:
+    branches:
+      - develop
   workflow_dispatch:
 
 # 2. Grant permissions to the GITHUB_TOKEN to write packages
