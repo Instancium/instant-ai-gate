@@ -1,4 +1,5 @@
 ﻿using InstantAIGate.API.Config;
+using InstantAIGate.Application.Config;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
@@ -19,7 +20,7 @@ namespace InstantAIGate.API.Authentication
     public class AdminApiKeyHandler : AuthenticationHandler<AuthenticationSchemeOptions>
     {
         private const string ApiKeyHeaderName = "X-Api-Key";
-        private readonly ApiKeyOptions _options;
+        private readonly GatewayConfig _gatewayConfig;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AdminApiKeyHandler"/> class.
@@ -28,10 +29,10 @@ namespace InstantAIGate.API.Authentication
             IOptionsMonitor<AuthenticationSchemeOptions> schemeOptions,
             ILoggerFactory logger,
             UrlEncoder encoder,
-            IOptions<ApiKeyOptions> apiOptions)
+            GatewayConfig gatewayConfig)
             : base(schemeOptions, logger, encoder)
         {
-            _options = apiOptions.Value;
+            _gatewayConfig = gatewayConfig;
         }
 
         /// <summary>
@@ -40,8 +41,8 @@ namespace InstantAIGate.API.Authentication
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             // If AdminKey is empty or "skip", bypass authentication (for development)
-            if (string.IsNullOrWhiteSpace(_options.AdminKey) ||
-                string.Equals(_options.AdminKey, "skip", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(_gatewayConfig.AdminKey) ||
+                string.Equals(_gatewayConfig.AdminKey, "skip", StringComparison.OrdinalIgnoreCase))
             {
                 var skipClaims = new[] { new Claim(ClaimTypes.Name, "SkipAuth") };
                 var skipIdentity = new ClaimsIdentity(skipClaims, Scheme.Name);
@@ -71,7 +72,7 @@ namespace InstantAIGate.API.Authentication
             }
 
             // Validate the key
-            if (!string.Equals(extractedApiKey, _options.AdminKey, StringComparison.Ordinal))
+            if (!string.Equals(extractedApiKey, _gatewayConfig.AdminKey, StringComparison.Ordinal))
             {
                 return Task.FromResult(AuthenticateResult.Fail("Invalid API Key"));
             }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using System.Text.Json;
 using InstantAIGate.Admin.Config;
 using InstantAIGate.Admin.Dtos;
+using InstantAIGate.Application.Config;
 using InstantAIGate.Application.Dtos.Inference;
 using InstantAIGate.Domain.Dtos.Config;
 
@@ -13,6 +14,7 @@ namespace InstantAIGate.Admin.Pages
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IOptions<APIClientOptions> _apiOptions;
+        private readonly GatewayConfig _gatewayConfig;
         private readonly ILogger<AIModelsModel> _logger;
 
         public string APIUrl { get; set; }
@@ -27,10 +29,12 @@ namespace InstantAIGate.Admin.Pages
         public AIModelsModel(
             IHttpClientFactory httpClientFactory,
             IOptions<APIClientOptions> apiOptions,
+            GatewayConfig gatewayConfig,
             ILogger<AIModelsModel> logger)
         {
             _httpClientFactory = httpClientFactory;
             _apiOptions = apiOptions;
+            _gatewayConfig = gatewayConfig;
             _logger = logger;
             APIUrl = _apiOptions.Value.PublicUrl;
         }
@@ -52,7 +56,7 @@ namespace InstantAIGate.Admin.Pages
                 var request = new HttpRequestMessage(HttpMethod.Post, url);
 
                 // SECURE: Attach the API key here on the server. The browser never sees it.
-                request.Headers.Add("X-Api-Key", _apiOptions.Value.AdminApiKey);
+                request.Headers.Add("X-Api-Key", _gatewayConfig.AdminKey);
 
                 var response = await client.SendAsync(request);
 

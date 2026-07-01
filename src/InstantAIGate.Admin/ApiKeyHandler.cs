@@ -1,26 +1,27 @@
 ﻿using InstantAIGate.Admin.Config;
+using InstantAIGate.Application.Config;
 using Microsoft.Extensions.Options;
 
 namespace InstantAIGate.Admin
 {
     public class ApiKeyHandler : DelegatingHandler
     {
-        private readonly APIClientOptions _options;
+        private readonly GatewayConfig _gatewayConfig;
 
-        public ApiKeyHandler(IOptions<APIClientOptions> options)
+        public ApiKeyHandler(GatewayConfig gatewayConfig)
         {
-            _options = options.Value;
+            _gatewayConfig = gatewayConfig;
         }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            if (!string.IsNullOrWhiteSpace(_options.AdminApiKey) &&
-                !string.Equals(_options.AdminApiKey, "skip", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(_gatewayConfig.AdminKey) &&
+                !string.Equals(_gatewayConfig.AdminKey, "skip", StringComparison.OrdinalIgnoreCase))
             {
                 request.Headers.Remove("X-API-Key");
-                request.Headers.Add("X-API-Key", _options.AdminApiKey);
+                request.Headers.Add("X-API-Key", _gatewayConfig.AdminKey);
             }
 
             return base.SendAsync(request, cancellationToken);
