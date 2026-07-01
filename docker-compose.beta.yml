@@ -1,12 +1,12 @@
 # ==========================================
-# PRODUCTION COMPOSE FILE (For End-Users)
-# Uses pre-built images from GitHub Container Registry
+# BETA COMPOSE FILE (For Testing Beta Builds)
+# Uses pre-built beta images from GitHub Container Registry
 # ==========================================
 
 services:
   api:
-    image: ghcr.io/instancium/instant-ai-gate-api:latest
-    container_name: instant-ai-gate-api
+    image: ghcr.io/instancium/instant-ai-gate-api-beta:latest
+    container_name: instant-ai-gate-api-beta
     restart: unless-stopped
     ports:
       - "127.0.0.1:49152:80"
@@ -34,8 +34,8 @@ services:
               capabilities: [gpu, compute, utility]
 
   admin:
-    image: ghcr.io/instancium/instant-ai-gate-admin:latest
-    container_name: instant-ai-gate-admin
+    image: ghcr.io/instancium/instant-ai-gate-admin-beta:latest
+    container_name: instant-ai-gate-admin-beta
     restart: unless-stopped
     ports:
       - "127.0.0.1:49153:80"
@@ -54,5 +54,5 @@ services:
       - app-network
 
 networks:
-  app-network: 
+  app-network:
     driver: bridge

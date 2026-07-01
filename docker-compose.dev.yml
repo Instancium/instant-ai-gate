@@ -14,7 +14,7 @@ services:
       - ./storage/models:/app/storage/models
       - ./data:/app/data
     environment:
-      - GatewayConfig__RootPath=/app/data
+      - INSTANTAIGATE_CONFIG_PATH=/app/data
       - Storage__RootPath=/app/storage/models
       - CorsSettings__AllowedOrigins__0=http://localhost:49153
       - CorsSettings__AllowedOrigins__1=http://127.0.0.1:49153
@@ -46,10 +46,10 @@ services:
     depends_on:
       - api
     environment:
+      - INSTANTAIGATE_CONFIG_PATH=/app/data
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:80
       - Logging__LogLevel__Default=Warning
-      - GatewayConfig__RootPath=/app/data
       - APIClientOptions__BaseUrl=http://api:80
       - APIClientOptions__PublicUrl=http://127.0.0.1:49152
     networks:
