@@ -11,7 +11,6 @@ var builder = WebApplication.CreateBuilder(argsOptions);
 WindowsServiceConfigurator.ConfigureHost(builder, args, "InstantAIGate_Admin",
     "Infrastructure dashboard and management UI for secure on-premise LLM orchestration and resource tuning.");
 
-
 var gatewayConfig = new GatewayConfig();
 builder.Configuration.Bind("GatewayConfig", gatewayConfig);
 

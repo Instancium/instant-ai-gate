@@ -8,6 +8,12 @@ storage/models/
 .runtimes/
 build
 
+# Gateway configuration folder (contains admin.key and other runtime data)
+gateway/config/
+
+# Admin key file (security)
+admin.key
+
 # AI models files .gguf
 *.gguf
 
