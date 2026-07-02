@@ -10,8 +10,7 @@
 <p align="center">
   <a href="README.md"><b>Overview</b></a> │ 
   <a href="INSTALLATION.md"><b>Installation Guide</b></a> │ 
-  <a href="DATASHEET.md"><b>Technical Data Sheet</b></a> │
-  <a href="SECURITY.md"><b>Security Notes</b></a>
+  <a href="DATASHEET.md"><b>Technical Data Sheet</b></a> 
 </p>
 
 <p align="center">
