@@ -1,20 +1,20 @@
-
+# ==========================================
+# PRODUCTION COMPOSE FILE (For End-Users)
+# Uses pre-built images from GitHub Container Registry
+# ==========================================
 
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-      target: api-runtime
+    image: ghcr.io/instancium/instant-ai-gate-api:latest
     container_name: instant-ai-gate-api
     restart: unless-stopped
     ports:
       - "127.0.0.1:49152:80"
     volumes:
       - ./storage/models:/app/storage/models
-      - ./data:/app/data
+      - ./gateway/config:/app/gateway/config
     environment:
-      - INSTANTAIGATE_CONFIG_PATH=/app/data
+      - INSTANTAIGATE_CONFIG_PATH=/app/gateway/config
       - Storage__RootPath=/app/storage/models
       - CorsSettings__AllowedOrigins__0=http://localhost:49153
       - CorsSettings__AllowedOrigins__1=http://127.0.0.1:49153
@@ -24,6 +24,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
     networks:
       - app-network
+    # GPU Support Configuration
     deploy:
       resources:
         reservations:
@@ -33,20 +34,17 @@ services:
               capabilities: [gpu, compute, utility]
 
   admin:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-      target: admin-runtime
+    image: ghcr.io/instancium/instant-ai-gate-admin:latest
     container_name: instant-ai-gate-admin
     restart: unless-stopped
     ports:
       - "127.0.0.1:49153:80"
     volumes:
-      - ./data:/app/data
+      - ./gateway/config:/app/gateway/config
     depends_on:
       - api
     environment:
-      - INSTANTAIGATE_CONFIG_PATH=/app/data
+      - INSTANTAIGATE_CONFIG_PATH=/app/gateway/config
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:80
       - Logging__LogLevel__Default=Warning

@@ -1,0 +1,111 @@
+name: Publish Runtime Packages
+on:
+  workflow_dispatch: 
+    inputs:
+      version:
+        description: 'Package version (e.g., 1.0.0)'
+        required: true
+        type: string
+      target:
+        description: 'Publish target'
+        required: true
+        type: choice
+        options:
+          - nuget
+          - github
+          - both
+
+env:
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write 
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Validate .runtimes folder
+      run: |
+        if [ ! -d ".runtimes" ]; then
+          echo "::error::.runtimes folder not found"
+          echo "This workflow requires .runtimes folder to build packages"
+          exit 1
+        fi
+        echo "✓ .runtimes folder validated"
+
+    - name: Build Runtime Packages
+      run: |
+        VERSION="${{ github.event.inputs.version }}"
+        echo "Building packages version: $VERSION"
+
+        mkdir -p nuget-packages
+
+        dotnet pack src/Runtimes/InstantAIGate.Runtimes.win-x64.Cpu/ \
+          -c Release \
+          -o nuget-packages \
+          /p:PackageVersion=$VERSION
+
+        dotnet pack src/Runtimes/InstantAIGate.Runtimes.linux-x64.Cpu/ \
+          -c Release \
+          -o nuget-packages \
+          /p:PackageVersion=$VERSION
+
+        dotnet pack src/Runtimes/InstantAIGate.Runtimes.win-x64.Cuda/ \
+          -c Release \
+          -o nuget-packages \
+          /p:PackageVersion=$VERSION
+
+        dotnet pack src/Runtimes/InstantAIGate.Runtimes.linux-x64.Cuda/ \
+          -c Release \
+          -o nuget-packages \
+          /p:PackageVersion=$VERSION
+
+    - name: List built packages
+      run: |
+        echo "Built packages:"
+        ls -lh nuget-packages/*.nupkg
+
+    - name: NuGet login (OIDC)
+      if: github.event.inputs.target == 'nuget' || github.event.inputs.target == 'both'
+      uses: NuGet/login@v1
+      id: login
+      with:
+        user: Instancium
+
+    - name: Publish to NuGet.org
+      if: github.event.inputs.target == 'nuget' || github.event.inputs.target == 'both'
+      run: |
+        dotnet nuget push "nuget-packages/*.nupkg" \
+          --source https://api.nuget.org/v3/index.json \
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
+          --skip-duplicate
+
+    - name: Publish to GitHub Packages
+      if: github.event.inputs.target == 'github' || github.event.inputs.target == 'both'
+      run: |
+        dotnet nuget push "nuget-packages/*.nupkg" \
+          --source https://nuget.pkg.github.com/Instancium/index.json \
+          --api-key ${{ secrets.GITHUB_TOKEN }} \
+          --skip-duplicate
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget-packages
+        path: nuget-packages/*.nupkg
+        retention-days: 30

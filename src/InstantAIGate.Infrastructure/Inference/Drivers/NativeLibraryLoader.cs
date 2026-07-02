@@ -112,6 +112,8 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
 
                 try
                 {
+                    var destDir = Path.GetDirectoryName(destFile);
+                    if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
                     File.Copy(sourceFile, destFile, overwrite: true);
                     if (_options.EnableDebugLogging)
                         _logger.LogDebug("  Copied: {File} (from {Backend})", libFile, backend.Name);

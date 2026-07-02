@@ -1,0 +1,58 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: docker/dev/Dockerfile
+      target: api-runtime
+    container_name: instant-ai-gate-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:49152:80"
+    volumes:
+      - ./storage/models:/app/storage/models
+      - ./data:/app/data
+    environment:
+      - INSTANTAIGATE_CONFIG_PATH=/app/data
+      - Storage__RootPath=/app/storage/models
+      - CorsSettings__AllowedOrigins__0=http://localhost:49153
+      - CorsSettings__AllowedOrigins__1=http://127.0.0.1:49153
+      - Logging__LogLevel__Default=Warning
+      - ASPNETCORE_URLS=http://+:80
+      - ASPNETCORE_ENVIRONMENT=Production
+      - NVIDIA_VISIBLE_DEVICES=all
+    networks:
+      - app-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+
+  admin:
+    build:
+      context: ../..
+      dockerfile: docker/dev/Dockerfile
+      target: admin-runtime
+    container_name: instant-ai-gate-admin
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:49153:80"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - api
+    environment:
+      - INSTANTAIGATE_CONFIG_PATH=/app/data
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:80
+      - Logging__LogLevel__Default=Warning
+      - APIClientOptions__BaseUrl=http://api:80
+      - APIClientOptions__PublicUrl=http://127.0.0.1:49152
+    networks:
+      - app-network
+
+networks:
+  app-network: 
+    driver: bridge

@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	<TargetFramework>netstandard2.0</TargetFramework>
+	<PackageId>InstantAIGate.Runtimes.win-x64.Cpu</PackageId>
+	<Version>1.0.9</Version>
+	<Description>Native CPU runtimes for win-x64</Description>
+	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+	<IncludeBuildOutput>false</IncludeBuildOutput>
+	<Authors>Instancium</Authors>
+	<Company>Instancium</Company>
+	<NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
+	  <PackageReadmeFile>README.md</PackageReadmeFile>
+	  <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+	  <None Include="README.md" Pack="true" PackagePath="\" />
+	<!-- Build props file for automatic content copying -->
+	<None Include="build\InstantAIGate.Runtimes.win-x64.Cpu.props" Pack="true" PackagePath="build\" />
+	<None Include="..\..\..\.runtimes\win-x64\cpu\cpu.7z" 
+		  Pack="true"
+		  PackagePath=".runtimes\win-x64\cpu\" />
+  </ItemGroup>
+
+</Project>
