@@ -28,7 +28,7 @@
 
 	<!-- Determine effective RID for platform-specific runtime packages -->
 	<PropertyGroup>
-		<RuntimePackageVersion>1.0.7</RuntimePackageVersion>
+		<RuntimePackageVersion>1.0.9</RuntimePackageVersion>
 		<EffectiveRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</EffectiveRid>
 		<EffectiveRid Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">win-x64</EffectiveRid>
 		<EffectiveRid Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Linux'))">linux-x64</EffectiveRid>
