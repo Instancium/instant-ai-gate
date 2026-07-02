@@ -16,6 +16,7 @@ public class NativeBackendRegistryTests
 {
     private readonly Mock<ILogger<NativeBackendRegistry>> _loggerMock;
     private readonly NativeLibraryOptions _options;
+    private readonly NativeRuntimeExtractor _extractor;
 
     public NativeBackendRegistryTests()
     {
@@ -25,13 +26,16 @@ public class NativeBackendRegistryTests
             EnableDebugLogging = false,
             PreferredBackend = "auto"
         };
+        _extractor = new NativeRuntimeExtractor(
+            new Mock<ILogger<NativeRuntimeExtractor>>().Object);
     }
 
     private NativeBackendRegistry CreateSut()
     {
         return new NativeBackendRegistry(
             _loggerMock.Object,
-            Options.Create(_options)
+            Options.Create(_options),
+            _extractor
         );
     }
 

@@ -15,6 +15,7 @@ public class CrossPlatformBackendTests
 {
     private readonly Mock<ILogger<NativeBackendRegistry>> _loggerMock;
     private readonly NativeLibraryOptions _options;
+    private readonly NativeRuntimeExtractor _extractor;
 
     public CrossPlatformBackendTests()
     {
@@ -24,13 +25,16 @@ public class CrossPlatformBackendTests
             EnableDebugLogging = true,
             PreferredBackend = "auto"
         };
+        _extractor = new NativeRuntimeExtractor(
+            new Mock<ILogger<NativeRuntimeExtractor>>().Object);
     }
 
     private NativeBackendRegistry CreateSut()
     {
         return new NativeBackendRegistry(
             _loggerMock.Object,
-            Options.Create(_options)
+            Options.Create(_options),
+            _extractor
         );
     }
 

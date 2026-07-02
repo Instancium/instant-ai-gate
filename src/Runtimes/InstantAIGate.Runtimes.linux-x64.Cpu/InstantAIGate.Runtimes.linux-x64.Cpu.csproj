@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<PackageId>InstantAIGate.Runtimes.linux-x64.Cpu</PackageId>
+		<Version>1.0.9</Version>
+		<Description>Native CPU runtimes for linux-x64</Description>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<IncludeBuildOutput>false</IncludeBuildOutput>
+
+		<Authors>Instancium</Authors>
+		<Company>Instancium</Company>
+
+
+		<NoWarn>$(NoWarn);NU5128;NU5100</NoWarn>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+
+	</PropertyGroup>
+
+	  <ItemGroup>
+		  <None Include="README.md" Pack="true" PackagePath="\" />
+		  <!-- Build props file for automatic content copying -->
+		  <None Include="build\InstantAIGate.Runtimes.linux-x64.Cpu.props" Pack="true" PackagePath="build\" />
+		  <!-- Compressed with 7-Zip LZMA2 -mx=9 by scripts/Publish-RuntimePackages.ps1 before dotnet pack -->
+		  <None Include="..\..\..\.runtimes\linux-x64\cpu\cpu.7z"
+				Pack="true"
+				PackagePath=".runtimes\linux-x64\cpu\" />
+	  </ItemGroup>
+
+</Project>
