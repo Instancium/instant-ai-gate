@@ -32,11 +32,13 @@ public class NativeBackendRegistryTests
 
     private NativeBackendRegistry CreateSut()
     {
-        return new NativeBackendRegistry(
+        var registry = new NativeBackendRegistry(
             _loggerMock.Object,
             Options.Create(_options),
             _extractor
         );
+        registry.Refresh();
+        return registry;
     }
 
     [Fact]
