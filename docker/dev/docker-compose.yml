@@ -9,7 +9,7 @@ services:
     ports:
       - "127.0.0.1:49152:80"
     volumes:
-      - ./storage/models:/app/storage/models
+      - ../../storage/models:/app/storage/models
       - ./data:/app/data
     environment:
       - INSTANTAIGATE_CONFIG_PATH=/app/data
