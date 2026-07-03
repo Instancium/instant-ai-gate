@@ -9,6 +9,7 @@ This project uses third-party software components. Below is a list of these comp
 | **OpenAI (.NET Client)** | MIT | NuGet metadata |
 | **Microsoft.AspNetCore.OpenApi** | MIT | OpenAPI/Swagger helpers |
 | **Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation** | MIT | Part of ASP.NET Core shared framework |
+| **[SharpCompress](https://github.com/adamhathcock/sharpcompress)** | MIT | Used for extracting LZMA2/7z native driver archives |
 
 ## 2. Client-Side Libraries (wwwroot/lib)
 
@@ -22,4 +23,4 @@ This project uses third-party software components. Below is a list of these comp
 ## License Texts and Acknowledgements
 
 ### Microsoft & .NET Libraries
-The .NET runtime and ASP.NET Core libraries are licensed under the MIT License by the .NET Foundation. 
+The .NET runtime and ASP.NET Core libraries are licensed under the MIT License by the .NET Foundation.
