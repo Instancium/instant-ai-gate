@@ -169,7 +169,7 @@ graph TD
 InstantAIGate is built using modern, robust technologies on both the backend and frontend:
 
 * **LLM Engine:** [llama.cpp](https://github.com/ggerganov/llama.cpp) (Native integration and drivers for high-performance GGUF inference)
-* **Backend:** .NET 10, ASP.NET Core, OpenAI .NET Client (for API compatibility)
+* **Backend:** .NET 10, ASP.NET Core, OpenAI .NET Client, [SharpCompress](https://github.com/adamhathcock/sharpcompress) (for on-the-fly native library extraction)
 * **Frontend:** Bootstrap Icons, SignalR (for real-time communication)
 
 <details>
