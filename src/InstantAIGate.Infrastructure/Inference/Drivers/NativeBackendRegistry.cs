@@ -29,7 +29,6 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
             _options = options.Value;
             _extractor = extractor;
             _currentRid = GetRuntimeIdentifier();
-            Refresh();
         }
 
         public IReadOnlyList<NativeBackendInfo> GetAllBackends()

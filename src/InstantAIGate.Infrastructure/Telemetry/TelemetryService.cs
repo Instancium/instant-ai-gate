@@ -4,22 +4,24 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Threading;
 using InstantAIGate.Application.Dtos.Telemetry;
 using InstantAIGate.Application.Interfaces;
 using InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Infrastructure.Inference.Drivers;
 using InstantAIGate.Infrastructure.NvmlNative;
 using Microsoft.Extensions.Logging;
 
 namespace InstantAIGate.Infrastructure.Telemetry
 {
+    /// <summary>
+    /// Compiles host operational metrics and maps underlying runtime execution layers.
+    /// </summary>
     public class TelemetryService : ITelemetryService
     {
         private readonly IModelManager _modelManager;
         private readonly NvmlProvider _nvmlProvider;
         private readonly ILogger<TelemetryService> _logger;
 
-        // Fields for calculating CPU Load
         private DateTime _lastCpuCheck = DateTime.UtcNow;
         private TimeSpan _lastCpuTime = TimeSpan.Zero;
         private int _lastCalculatedCpuUsage = 0;
@@ -33,55 +35,66 @@ namespace InstantAIGate.Infrastructure.Telemetry
             _modelManager = modelManager ?? throw new ArgumentNullException(nameof(modelManager));
             _nvmlProvider = nvmlProvider ?? throw new ArgumentNullException(nameof(nvmlProvider));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-            // Initialize the starting checkpoint for CPU tracking
             _lastCpuTime = Process.GetCurrentProcess().TotalProcessorTime;
         }
 
+        /// <summary>
+        /// Retrieves compiled machine architecture telemetry state indicators.
+        /// </summary>
         public SystemTelemetry GetCurrentSystemTelemetry()
         {
-            var telemetry = new SystemTelemetry();
-
-            // 1. Collect Hardware Metrics (GPU)
-            telemetry.Gpu = new GpuStatus
+            var telemetry = new SystemTelemetry
             {
-                UsedMemoryGb = _nvmlProvider.GetUsedMemoryGb(),
-                TotalMemoryGb = _nvmlProvider.GetTotalMemoryGb(),
-                TemperatureCelsius = _nvmlProvider.GetTemperature(),
-                UtilizationPercent = _nvmlProvider.GetUtilization()
+                IsExtractingDrivers = NativeRuntimeExtractor.IsExtracting,
+                Gpu = new GpuStatus
+                {
+                    UsedMemoryGb = _nvmlProvider.GetUsedMemoryGb(),
+                    TotalMemoryGb = _nvmlProvider.GetTotalMemoryGb(),
+                    TemperatureCelsius = _nvmlProvider.GetTemperature(),
+                    UtilizationPercent = _nvmlProvider.GetUtilization()
+                },
+                System = GetSystemHardwareStatus()
             };
 
-            // 2. Collect System Metrics (CPU & RAM)
-            telemetry.System = GetSystemHardwareStatus();
-
-            // 3. Collect Model Metrics from the unified Native Manager
-            var nativeDetails = _modelManager.GetNativeDetails();
-            var activeModels = _modelManager.ActiveModels;
-            var semaphores = _modelManager.UserSemaphores;
-
-            foreach (var detail in nativeDetails)
+            // GUARANTEE: Short-circuit here. Do not execute any code inside _modelManager while files are extracting.
+            if (telemetry.IsExtractingDrivers)
             {
-                var repoId = detail.RepoId;
+                return telemetry;
+            }
 
-                activeModels.TryGetValue(repoId, out var config);
-                semaphores.TryGetValue(repoId, out var sem);
+            try
+            {
+                var nativeDetails = _modelManager.GetNativeDetails();
+                var activeModels = _modelManager.ActiveModels;
+                var semaphores = _modelManager.UserSemaphores;
 
-                int maxUsers = config?.MaxContexts ?? 0;
-                int activeUsers = (sem != null && maxUsers > 0) ? (maxUsers - sem.CurrentCount) : 0;
-
-                telemetry.Models.Add(new ModelTelemetry
+                foreach (var detail in nativeDetails)
                 {
-                    RepoId = repoId,
-                    IsLoaded = true,
-                    ContextSize = detail.ContextSize,
-                    GpuLayers = detail.GpuLayers,
-                    Threads = detail.Threads,
-                    FlashAttention = detail.FlashAttention,
-                    IdleContextsCount = detail.IdleContextsCount,
-                    MaxParallelUsers = maxUsers,
-                    ActiveUsersCount = activeUsers,
-                    IsQueueWaiting = (sem != null && sem.CurrentCount == 0)
-                });
+                    var repoId = detail.RepoId;
+                    activeModels.TryGetValue(repoId, out var config);
+                    semaphores.TryGetValue(repoId, out var sem);
+
+                    int maxUsers = config?.MaxContexts ?? 0;
+                    int activeUsers = (sem != null && maxUsers > 0) ? (maxUsers - sem.CurrentCount) : 0;
+
+                    telemetry.Models.Add(new ModelTelemetry
+                    {
+                        RepoId = repoId,
+                        IsLoaded = true,
+                        ContextSize = detail.ContextSize,
+                        GpuLayers = detail.GpuLayers,
+                        Threads = detail.Threads,
+                        FlashAttention = detail.FlashAttention,
+                        IdleContextsCount = detail.IdleContextsCount,
+                        MaxParallelUsers = maxUsers,
+                        ActiveUsersCount = activeUsers,
+                        IsQueueWaiting = (sem != null && sem.CurrentCount == 0)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Deferred detailed core aggregation metrics while libraries finish mapping routines.");
             }
 
             return telemetry;
@@ -91,7 +104,6 @@ namespace InstantAIGate.Infrastructure.Telemetry
         {
             var status = new SystemHardwareStatus();
 
-            // --- COLLECT RAM METRICS ---
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 GetWindowsMemory(out double totalGb, out double usedGb);
@@ -106,14 +118,11 @@ namespace InstantAIGate.Infrastructure.Telemetry
             }
             else
             {
-                // Fallback for other platforms using the current process working set
                 status.TotalRamGb = 16.0;
                 status.UsedRamGb = Process.GetCurrentProcess().WorkingSet64 / 1024.0 / 1024.0 / 1024.0;
             }
 
-            // --- COLLECT CPU METRICS ---
             status.CpuUtilizationPercent = CalculateCpuUsage();
-
             return status;
         }
 
@@ -123,10 +132,8 @@ namespace InstantAIGate.Infrastructure.Telemetry
             {
                 var currentTime = DateTime.UtcNow;
                 var currentCpuTime = Process.GetCurrentProcess().TotalProcessorTime;
-
                 var timeWindow = currentTime - _lastCpuCheck;
 
-                // Throttling to prevent calculation spam more frequently than every 500ms
                 if (timeWindow.TotalMilliseconds < 500)
                 {
                     return _lastCalculatedCpuUsage;
@@ -203,7 +210,7 @@ namespace InstantAIGate.Infrastructure.Telemetry
             }
             catch
             {
-                // Fallback catch block to swallow exceptions under non-standard sysfs mapping configurations
+                // Fallback context mapping catcher
             }
         }
         #endregion

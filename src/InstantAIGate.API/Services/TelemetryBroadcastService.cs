@@ -24,13 +24,26 @@ namespace InstantAIGate.API.Services
                 try
                 {
                     var snapshot = _telemetryService.GetCurrentSystemTelemetry();
-                    // Broadcast to all clients subscribed to the group
+
                     await _hubContext.Clients.Group("TelemetryConsumers").SendAsync("ReceiveTelemetry", snapshot, stoppingToken);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error broadcasting telemetry");
+                    _logger.LogError(ex, "Error compiling or broadcasting telemetry snapshot.");
+
+                    try
+                    {
+                        var fallbackSnapshot = new InstantAIGate.Application.Dtos.Telemetry.SystemTelemetry
+                        {
+                            IsExtractingDrivers = true
+                        };
+                        await _hubContext.Clients.Group("TelemetryConsumers").SendAsync("ReceiveTelemetry", fallbackSnapshot, stoppingToken);
+                    }
+                    catch
+                    {
+                    }
                 }
+
                 await Task.Delay(1500, stoppingToken);
             }
         }

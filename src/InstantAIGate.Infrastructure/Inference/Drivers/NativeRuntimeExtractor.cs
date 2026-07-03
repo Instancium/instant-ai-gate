@@ -13,8 +13,31 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
     public class NativeRuntimeExtractor
     {
         private const string SentinelFileName = ".extracted";
+        private static readonly object _statusLock = new();
+        private static bool _isExtracting;
 
         private readonly ILogger<NativeRuntimeExtractor> _logger;
+
+        /// <summary>
+        /// Gets a value indicating whether an extraction operation is currently in progress.
+        /// </summary>
+        public static bool IsExtracting
+        {
+            get
+            {
+                lock (_statusLock)
+                {
+                    return _isExtracting;
+                }
+            }
+            private set
+            {
+                lock (_statusLock)
+                {
+                    _isExtracting = value;
+                }
+            }
+        }
 
         public NativeRuntimeExtractor(ILogger<NativeRuntimeExtractor> logger)
         {
@@ -72,6 +95,8 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
 
             try
             {
+                IsExtracting = true;
+
                 using var archive = SevenZipArchive.OpenArchive(archivePath);
                 var entries = archive.Entries.Where(e => !e.IsDirectory).ToList();
                 var total = entries.Count;
@@ -109,6 +134,10 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
                 _logger.LogError(ex,
                     "Failed to extract backend '{Backend}' from {Archive}", backendName, archivePath);
                 throw;
+            }
+            finally
+            {
+                IsExtracting = false;
             }
         }
 
