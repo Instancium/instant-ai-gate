@@ -2,7 +2,6 @@
 (function () {
     'use strict';
 
-    // Initialize theme toggle
     function initThemeToggle() {
         var themeToggleBtn = document.getElementById('theme-toggle');
         var icon = document.getElementById('theme-toggle-icon');
@@ -30,7 +29,6 @@
         });
     }
 
-    // Active navigation links
     function initNavHighlight() {
         var links = document.querySelectorAll('.nav-link');
         if (!links || links.length === 0) return;
@@ -49,7 +47,6 @@
         });
     }
 
-    // Mobile menu (burger)
     function initMobileMenu() {
         var toggleBtn = document.getElementById('mobile-menu-toggle');
         var sidebar = document.getElementById('sidebar-menu');
@@ -89,52 +86,54 @@
         return meta ? meta.getAttribute('content') || '' : '';
     }
 
-    // Modular SignalR without embedding style logic in JS
     function initSignalR() {
         var badge = document.getElementById('global-signalr-badge');
         var apiUrl = getApiUrlFromMeta() || 'http://127.0.0.1:7050';
         if (!badge) return;
 
-        var BADGE_STATE_KEY = 'signalr-badge-state';
+        var BADGE_STATE_KEY = 'signalr-badge-state-raw';
+        var currentStatusState = 'offline';
 
-        function saveBadgeState() {
-            try {
-                var state = { className: badge.className, innerHTML: badge.innerHTML };
-                localStorage.setItem(BADGE_STATE_KEY, JSON.stringify(state));
-            } catch (e) { }
-        }
+        try {
+            var cachedState = localStorage.getItem(BADGE_STATE_KEY);
+            if (cachedState) {
+                currentStatusState = cachedState;
+                applyBadgeDOM(cachedState);
+            }
+        } catch (e) { }
 
-        function restoreBadgeState() {
-            try {
-                var raw = localStorage.getItem(BADGE_STATE_KEY);
-                if (!raw) return;
-                var state = JSON.parse(raw);
-                if (state && state.className) badge.className = state.className;
-                if (state && state.innerHTML) badge.innerHTML = state.innerHTML;
-            } catch (e) { }
-        }
-
-        restoreBadgeState();
-        var wasOffline = false;
         var reconnectTimer = null;
 
-        function setStatus(state) {
-       
+        function applyBadgeDOM(state) {
+            badge.style.backgroundColor = "";
+            badge.style.color = "";
+
             if (state === 'connected') {
                 badge.className = "signalr-badge connected";
                 badge.innerHTML = '<span class="badge-dot animate-pulse"></span><span class="hidden-sm">Ready</span><span class="sm-hidden">✓</span>';
-                window.dispatchEvent(new Event('signalr-connected'));
-                saveBadgeState();
             } else if (state === 'reconnecting') {
                 badge.className = "signalr-badge reconnecting";
                 badge.innerHTML = '<span class="badge-dot animate-pulse"></span><span class="hidden-sm">Reconnecting...</span><span class="sm-hidden">...</span>';
-                wasOffline = true;
-                saveBadgeState();
+            } else if (state === 'updating') {
+                badge.className = "signalr-badge updating-drivers";
+                badge.style.backgroundColor = "#f39c12";
+                badge.style.color = "#fff";
+                badge.innerHTML = '<span class="badge-dot animate-pulse" style="background-color: #fff;"></span><span class="hidden-sm">Updating drivers...</span><span class="sm-hidden">⏳</span>';
             } else {
                 badge.className = "signalr-badge offline";
                 badge.innerHTML = '<span class="badge-dot"></span><span class="hidden-sm">Offline</span><span class="sm-hidden">✗</span>';
-                wasOffline = true;
-                saveBadgeState();
+            }
+        }
+
+        function setStatus(state) {
+            currentStatusState = state;
+            applyBadgeDOM(state);
+            try {
+                localStorage.setItem(BADGE_STATE_KEY, state);
+            } catch (e) { }
+
+            if (state === 'connected') {
+                window.dispatchEvent(new Event('signalr-connected'));
             }
         }
 
@@ -145,8 +144,30 @@
                 .build();
 
             window.HubConnection.onreconnecting(function (error) { setStatus('reconnecting'); });
-            window.HubConnection.onreconnected(function (id) { setStatus('connected'); window.location.reload(); });
+
+            window.HubConnection.onreconnected(function (id) {
+                if (currentStatusState !== 'updating') {
+                    setStatus('connected');
+                }
+                // КРИТИЧНО: При переподключении снова подписываемся на метрики!
+                window.HubConnection.invoke('SubscribeToMetrics').catch(function (e) { console.error(e); });
+            });
+
             window.HubConnection.onclose(function (error) { setStatus('offline'); reconnectTimer = setTimeout(startSignalRConnection, 5000); });
+
+            window.HubConnection.on("ReceiveTelemetry", function (snapshot) {
+                if (!snapshot) return;
+
+                if (snapshot.isExtractingDrivers) {
+                    if (currentStatusState !== 'updating') {
+                        setStatus('updating');
+                    }
+                } else {
+                    if (currentStatusState !== 'connected') {
+                        setStatus('connected');
+                    }
+                }
+            });
         }
 
         function startSignalRConnection() {
@@ -154,7 +175,10 @@
             if (!window.HubConnection) return;
 
             var state = window.HubConnection.state;
-            if (state === 'Connected' || state === 2) { setStatus('connected'); return; }
+            if (state === 'Connected' || state === 2) {
+                if (currentStatusState !== 'updating') setStatus('connected');
+                return;
+            }
             if (state === 'Connecting' || state === 'Reconnecting' || state === 1 || state === 3) {
                 reconnectTimer = setTimeout(startSignalRConnection, 5000);
                 return;
@@ -162,8 +186,14 @@
 
             window.HubConnection.start()
                 .then(function () {
-                    setStatus('connected');
-                    if (wasOffline) { window.location.reload(); return; }
+                    if (currentStatusState !== 'updating') {
+                        setStatus('connected');
+                    }
+
+                    // КРИТИЧНО: Глобально подписываем КАЖДУЮ страницу на получение событий!
+                    return window.HubConnection.invoke('SubscribeToMetrics');
+                })
+                .then(function () {
                     return window.HubConnection.invoke('Ping').catch(function () { return 'No Ping'; });
                 })
                 .then(function (reply) {
