@@ -118,7 +118,7 @@
                 badge.className = "signalr-badge updating-drivers";
                 badge.style.backgroundColor = "#f39c12";
                 badge.style.color = "#fff";
-                badge.innerHTML = '<span class="badge-dot animate-pulse" style="background-color: #fff;"></span><span class="hidden-sm">Updating drivers...</span><span class="sm-hidden">⏳</span>';
+                badge.innerHTML = '<span class="badge-dot animate-pulse" style="background-color: #fff;"></span><span class="hidden-sm">Initializing runtime...</span><span class="sm-hidden">⚙️</span>';
             } else {
                 badge.className = "signalr-badge offline";
                 badge.innerHTML = '<span class="badge-dot"></span><span class="hidden-sm">Offline</span><span class="sm-hidden">✗</span>';
