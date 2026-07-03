@@ -9,6 +9,7 @@ const initialWarningMessage = rootNode ? rootNode.getAttribute('data-warning-mes
 
 let currentStreamReader = null;
 let abortController = null;
+let chatHistory = [];
 
 async function saveSamplingParams() {
     const params = {
@@ -90,6 +91,9 @@ function handlePromptKeydown(e) {
 function clearChatLayout() {
     const scroller = document.getElementById('chat-scroller');
     if (scroller) scroller.innerHTML = '';
+
+    chatHistory = [];
+
     const select = document.getElementById('console-repo-select');
     updateStatusPulse(select && select.value ? 'active' : 'off');
 }
@@ -103,38 +107,57 @@ async function abortInferenceStreaming() {
     resetUiAfterGeneration();
 }
 
+
+/**
+ * Global state requirements. Ensure these are declared at the module level.
+ */
+// let currentStreamReader = null;
+// let abortController = null;
+// let chatHistory = []; 
+
+/**
+ * Executes the streaming inference request against the active AI model.
+ * Manages chat history state for sliding window context, handles UI transitions, 
+ * and processes the Server-Sent Events (SSE) stream.
+ */
 async function executeInferenceStreaming() {
     const repoSelect = document.getElementById('console-repo-select');
-    const input = document.getElementById('user-prompt-input');
+    const promptInput = document.getElementById('user-prompt-input');
     const scroller = document.getElementById('chat-scroller');
     const sendBtn = document.getElementById('send-prompt-btn');
     const stopBtn = document.getElementById('stop-generation-btn');
     const sendIcon = document.getElementById('send-icon');
     const welcomeMsg = document.getElementById('welcome-message');
 
-    if (!repoSelect || !input) return;
+    if (!repoSelect || !promptInput) return;
 
-    const repoId = repoSelect.value;
-    const prompt = input.value.trim();
+    const targetModelId = repoSelect.value;
+    const userPrompt = promptInput.value.trim();
 
-    if (!repoId) {
-        showConsoleAlert("Please select a target model for inference.");
+    if (!targetModelId) {
+        showConsoleAlert("Target model selection is required for inference.");
         return;
     }
-    if (!prompt) return;
 
-    if (welcomeMsg) welcomeMsg.remove();
+    if (!userPrompt) return;
 
-    input.value = '';
-    input.disabled = true;
+    if (welcomeMsg) {
+        welcomeMsg.remove();
+    }
+
+    // Retains conversation context for sliding window evaluation
+    chatHistory.push({ role: "user", content: userPrompt });
+
+    promptInput.value = '';
+    promptInput.disabled = true;
+
     if (sendBtn) sendBtn.disabled = true;
     if (stopBtn) stopBtn.classList.remove('display-none');
     if (sendIcon) sendIcon.className = 'las la-spinner spin-animation';
+
     updateStatusPulse('streaming');
+    appendMessageToDom('user', userPrompt);
 
-    appendMessageToDom('user', prompt);
-
-    // Minimal skeleton template without extra nested classes
     const skeletonHtml = `
         <div class="ai-skeleton">
             <div class="skeleton-dot"></div>
@@ -150,31 +173,38 @@ async function executeInferenceStreaming() {
 
     const aiContainerBox = appendMessageToDom('assistant', skeletonHtml);
 
-    let startTime = null;
+    let requestStartTime = null;
     let firstTokenTime = null;
-    let tokenCount = 0;
+    let generatedTokenCount = 0;
 
-    const skeleton = aiContainerBox.querySelector('.ai-skeleton');
-    const textContainer = aiContainerBox.querySelector('.ai-text-container');
-    const metricsPanel = aiContainerBox.querySelector('.ai-metrics-panel');
-    const ttftEl = aiContainerBox.querySelector('.metrics-ttft');
-    const tpsEl = aiContainerBox.querySelector('.metrics-tps');
+    const skeletonElement = aiContainerBox.querySelector('.ai-skeleton');
+    const textContainerElement = aiContainerBox.querySelector('.ai-text-container');
+    const metricsPanelElement = aiContainerBox.querySelector('.ai-metrics-panel');
+    const ttftElement = aiContainerBox.querySelector('.metrics-ttft');
+    const tpsElement = aiContainerBox.querySelector('.metrics-tps');
 
-  
     marked.setOptions({
         breaks: true,
         gfm: true
     });
 
     abortController = new AbortController();
+    let accumulatedResponse = "";
 
     try {
-        const payload = {
-            model: repoId,
-            messages: [
-                { role: "system", content: document.getElementById('param-system')?.value || "" },
-                { role: "user", content: prompt }
-            ],
+        const systemInstruction = document.getElementById('param-system')?.value || "";
+        const messagesPayload = [];
+
+        // Assembles payload prioritizing system instruction, followed by retained chat history
+        if (systemInstruction.trim() !== "") {
+            messagesPayload.push({ role: "system", content: systemInstruction });
+        }
+
+        messagesPayload.push(...chatHistory);
+
+        const inferencePayload = {
+            model: targetModelId,
+            messages: messagesPayload,
             temperature: parseFloat(document.getElementById('param-temp')?.value || "0.7"),
             top_p: parseFloat(document.getElementById('param-topp')?.value || "0.9"),
             top_k: parseInt(document.getElementById('param-topk')?.value || "40"),
@@ -186,78 +216,93 @@ async function executeInferenceStreaming() {
             stream: true
         };
 
-        startTime = performance.now();
+        requestStartTime = performance.now();
 
         const response = await fetch(`${coreApiUrl}/v1/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(inferencePayload),
             signal: abortController.signal
         });
 
-        if (!response.ok) throw new Error(`Core API rejected generation: ${response.statusText}`);
+        if (!response.ok) {
+            throw new Error(`API rejected generation request: ${response.statusText}`);
+        }
 
         currentStreamReader = response.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let accumulatedResponse = "";
+        const textDecoder = new TextDecoder("utf-8");
 
         while (true) {
             const { value, done } = await currentStreamReader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            const chunk = textDecoder.decode(value, { stream: true });
+            const streamLines = chunk.split('\n');
 
-            for (let line of lines) {
+            for (let line of streamLines) {
                 line = line.trim();
                 if (!line || line === 'data: [DONE]') continue;
 
                 if (line.startsWith('data: ')) {
                     try {
-                        const parsed = JSON.parse(line.slice(6));
-                        const content = parsed.choices[0]?.delta?.content || "";
+                        const parsedStreamData = JSON.parse(line.slice(6));
+                        const deltaContent = parsedStreamData.choices[0]?.delta?.content || "";
 
-                        if (content) {
+                        if (deltaContent) {
                             if (!firstTokenTime) {
                                 firstTokenTime = performance.now();
-                                const ttftValue = ((firstTokenTime - startTime) / 1000).toFixed(2);
-                                if (ttftEl) ttftEl.innerText = `${ttftValue}s`;
-                                if (skeleton) skeleton.remove();
-                                if (metricsPanel) {
-                                    metricsPanel.classList.remove('hidden');
-                                    setTimeout(() => metricsPanel.classList.add('is-visible'), 10);
+                                const timeToFirstToken = ((firstTokenTime - requestStartTime) / 1000).toFixed(2);
+
+                                if (ttftElement) ttftElement.innerText = `${timeToFirstToken}s`;
+                                if (skeletonElement) skeletonElement.remove();
+                                if (metricsPanelElement) {
+                                    metricsPanelElement.classList.remove('hidden');
+                                    setTimeout(() => metricsPanelElement.classList.add('is-visible'), 10);
                                 }
                             }
 
-                            if (textContainer && textContainer.classList.contains('hidden')) {
-                                textContainer.classList.remove('hidden');
+                            if (textContainerElement && textContainerElement.classList.contains('hidden')) {
+                                textContainerElement.classList.remove('hidden');
                             }
 
-                            accumulatedResponse += content;
+                            accumulatedResponse += deltaContent;
 
-                            // Add a space after hash marks if the model omitted it before text/emojis
                             const sanitizedMarkdown = accumulatedResponse.replace(/^(#{1,6})([^\s#])/gm, '$1 $2');
-                            textContainer.innerHTML = marked.parse(sanitizedMarkdown);
+                            textContainerElement.innerHTML = marked.parse(sanitizedMarkdown);
 
-                            tokenCount++;
+                            generatedTokenCount++;
+
+                            // Calculates throughput metrics dynamically
                             if (firstTokenTime) {
-                                const elapsedTime = (performance.now() - firstTokenTime) / 1000;
-                                if (elapsedTime > 0.01) {
-                                    const tpsValue = (tokenCount / elapsedTime).toFixed(1);
-                                    if (tpsEl) tpsEl.innerText = `${tpsValue} t/s`;
+                                const elapsedTimeSeconds = (performance.now() - firstTokenTime) / 1000;
+                                if (elapsedTimeSeconds > 0.01) {
+                                    const tokensPerSecond = (generatedTokenCount / elapsedTimeSeconds).toFixed(1);
+                                    if (tpsElement) tpsElement.innerText = `${tokensPerSecond} t/s`;
                                 }
                             }
 
                             if (scroller) scroller.scrollTop = scroller.scrollHeight;
                         }
-                    } catch (e) {
-                        // Ignore incomplete or control stream chunks
+                    } catch (parseError) {
+                        // Silently ignores incomplete JSON chunks inherent to SSE streaming
                     }
                 }
             }
         }
+
+        // Persists the completed assistant response for future context trimming
+        if (accumulatedResponse.trim() !== "") {
+            chatHistory.push({ role: "assistant", content: accumulatedResponse });
+        }
+
     } catch (error) {
-        if (error.name === 'AbortError') return;
+        if (error.name === 'AbortError') {
+            if (accumulatedResponse.trim() !== "") {
+                chatHistory.push({ role: "assistant", content: accumulatedResponse });
+            }
+            return;
+        }
+
         console.error(error);
         aiContainerBox.innerHTML = `<span class="text-rose-500 font-semibold"><i class="las la-exclamation-triangle"></i> Inference Error: ${error.message}</span>`;
     } finally {
