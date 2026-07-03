@@ -7,9 +7,9 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<Version>1.0.6</Version>
-		<AssemblyVersion>1.0.6</AssemblyVersion>
-		<FileVersion>1.0.6</FileVersion>
+		<Version>1.0.7</Version>
+		<AssemblyVersion>1.0.7</AssemblyVersion>
+		<FileVersion>1.0.7</FileVersion>
 
 		<Title>InstantAIGate</Title>
 		<Product>InstantAIGate Middleware</Product>
@@ -25,13 +25,35 @@
 		<RepositoryUrl>https://github.com/Instancium/instant-ai-gate</RepositoryUrl>
 		<PackageProjectUrl>https://instancium.com</PackageProjectUrl>
 	</PropertyGroup>
-	
-	
+
+	<!-- Determine effective RID for platform-specific runtime packages -->
+	<PropertyGroup>
+		<RuntimePackageVersion>1.0.9</RuntimePackageVersion>
+		<EffectiveRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</EffectiveRid>
+		<EffectiveRid Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">win-x64</EffectiveRid>
+		<EffectiveRid Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Linux'))">linux-x64</EffectiveRid>
+		<EffectiveRid Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('OSX'))">osx-x64</EffectiveRid>
+	</PropertyGroup>
+
+	<!-- Common packages -->
 	<ItemGroup>
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
 		<PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
+		<PackageReference Include="SharpCompress" Version="0.49.1" />
 	</ItemGroup>
 
+	<!-- Platform-specific runtime packages (only for current platform) -->
+	<ItemGroup Condition="'$(EffectiveRid)' == 'win-x64'">
+		<PackageReference Include="InstantAIGate.Runtimes.win-x64.Cpu" Version="$(RuntimePackageVersion)" />
+		<PackageReference Include="InstantAIGate.Runtimes.win-x64.Cuda" Version="$(RuntimePackageVersion)" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(EffectiveRid)' == 'linux-x64'">
+		<PackageReference Include="InstantAIGate.Runtimes.linux-x64.Cpu" Version="$(RuntimePackageVersion)" />
+		<PackageReference Include="InstantAIGate.Runtimes.linux-x64.Cuda" Version="$(RuntimePackageVersion)" />
+	</ItemGroup>
+
+	<!-- Project references -->
 	<ItemGroup>
 		<ProjectReference Include="..\InstantAIGate.Application\InstantAIGate.Application.csproj" />
 	</ItemGroup>

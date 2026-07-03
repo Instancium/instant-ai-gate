@@ -9,24 +9,26 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
 
     /// <summary>
     /// Registry that discovers and manages available native backends.
-    /// Automatically ensures native libraries are copied to the output directory before scanning.
+    /// Automatically extracts compressed backend archives on first run before scanning.
     /// </summary>
     public class NativeBackendRegistry : INativeBackendRegistry
     {
         private readonly ILogger<NativeBackendRegistry> _logger;
         private readonly NativeLibraryOptions _options;
+        private readonly NativeRuntimeExtractor _extractor;
         private readonly object _lock = new();
         private List<NativeBackendInfo> _backends = new();
         private readonly string _currentRid;
 
         public NativeBackendRegistry(
             ILogger<NativeBackendRegistry> logger,
-            IOptions<NativeLibraryOptions> options)
+            IOptions<NativeLibraryOptions> options,
+            NativeRuntimeExtractor extractor)
         {
             _logger = logger;
             _options = options.Value;
+            _extractor = extractor;
             _currentRid = GetRuntimeIdentifier();
-            Refresh();
         }
 
         public IReadOnlyList<NativeBackendInfo> GetAllBackends()
@@ -100,32 +102,32 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
             {
                 _backends.Clear();
 
-                // 1. Ensure files are copied from source to destination
-                EnsureRuntimesCopied();
-
                 var basePath = AppContext.BaseDirectory;
                 var nativePath = Path.Combine(basePath, "runtimes", _currentRid);
+
+                // Extract compressed archives before scanning (no-op if already extracted)
+                _extractor.EnsureExtracted(nativePath);
 
                 _logger.LogInformation("Scanning for native backends at: {Path}", nativePath);
 
                 if (!Directory.Exists(nativePath))
                 {
-                    _logger.LogWarning("Native backends directory not found after copy attempt: {Path}", nativePath);
+                    _logger.LogWarning("Native backends directory not found: {Path}", nativePath);
                     return;
                 }
 
                 foreach (var backendDir in Directory.GetDirectories(nativePath))
                 {
                     var backendName = Path.GetFileName(backendDir);
-                    var libraries = Directory.GetFiles(backendDir)
+                    var libraries = Directory.GetFiles(backendDir, "*", SearchOption.AllDirectories)
                         .Where(f => IsNativeLibrary(f))
-                        .Select(Path.GetFileName)
+                        .Select(f => Path.GetRelativePath(backendDir, f))
                         .ToList();
 
                     var hasLlama = libraries.Any(l =>
-                        string.Equals(l, "llama.dll", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(l, "libllama.so", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(l, "libllama.dylib", StringComparison.OrdinalIgnoreCase));
+                        string.Equals(Path.GetFileName(l), "llama.dll", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(Path.GetFileName(l), "libllama.so", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(Path.GetFileName(l), "libllama.dylib", StringComparison.OrdinalIgnoreCase));
 
                     _backends.Add(new NativeBackendInfo
                     {
@@ -144,81 +146,6 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
                 _logger.LogInformation(
                     "Backend registry refreshed for {Rid}. Found {Total} backends, {Available} available",
                     _currentRid, _backends.Count, _backends.Count(b => b.IsAvailable));
-            }
-        }
-
-        /// <summary>
-        /// Copies the .runtimes folder from the source to the application output directory.
-        /// Automatically searches parent directories to find the source ".runtimes" folder.
-        /// </summary>
-        private void EnsureRuntimesCopied()
-        {
-            var destRuntimesPath = Path.Combine(AppContext.BaseDirectory, "runtimes");
-            var destRidPath = Path.Combine(destRuntimesPath, _currentRid);
-
-            // Check if there are already files in destination
-            if (Directory.Exists(destRidPath) && Directory.GetFiles(destRidPath, "*.so", SearchOption.AllDirectories).Length > 0)
-            {
-                if (_options.EnableDebugLogging)
-                    _logger.LogDebug("Native runtimes already present at {Path}. Skipping copy.", destRidPath);
-                return; // ← The files are already there, no need to copy
-            }
-
-            // Strategy: Search upwards from the base directory to find the ".runtimes" folder.
-            string? sourceRuntimesPath = null;
-            var currentDir = AppContext.BaseDirectory;
-
-            while (currentDir != null)
-            {
-                var potentialPath = Path.Combine(currentDir, ".runtimes");
-                if (Directory.Exists(potentialPath))
-                {
-                    sourceRuntimesPath = potentialPath;
-                    break;
-                }
-                currentDir = Directory.GetParent(currentDir)?.FullName;
-            }
-
-            if (string.IsNullOrEmpty(sourceRuntimesPath))
-            {
-                if (_options.EnableDebugLogging)
-                    _logger.LogDebug("Source '.runtimes' folder not found in any parent directory. Skipping copy.");
-                return;
-            }
-
-            var sourceRidPath = Path.Combine(sourceRuntimesPath, _currentRid);
-
-            if (!Directory.Exists(sourceRidPath))
-            {
-                if (_options.EnableDebugLogging)
-                    _logger.LogDebug("Source folder for {Rid} not found at {Path}. Skipping copy.", _currentRid, sourceRidPath);
-                return;
-            }
-
-            _logger.LogInformation("Copying native runtimes from {Source} to {Dest}", sourceRidPath, destRidPath);
-            CopyDirectory(sourceRidPath, destRidPath);
-            _logger.LogInformation("Native runtimes copied successfully.");
-        }
-
-        /// <summary>
-        /// Recursively copies a directory, overwriting only if the source file is newer.
-        /// </summary>
-        private void CopyDirectory(string sourceDir, string destDir)
-        {
-            Directory.CreateDirectory(destDir);
-
-            foreach (var file in Directory.GetFiles(sourceDir))
-            {
-                var destFile = Path.Combine(destDir, Path.GetFileName(file));
-                if (!File.Exists(destFile) || File.GetLastWriteTime(file) > File.GetLastWriteTime(destFile))
-                {
-                    File.Copy(file, destFile, overwrite: true);
-                }
-            }
-
-            foreach (var dir in Directory.GetDirectories(sourceDir))
-            {
-                CopyDirectory(dir, Path.Combine(destDir, Path.GetFileName(dir)));
             }
         }
 

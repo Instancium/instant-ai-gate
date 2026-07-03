@@ -11,8 +11,8 @@ COPY ["src/InstantAIGate.Infrastructure/InstantAIGate.Infrastructure.csproj", "s
 
 # Restore dependencies WITH CACHING via BuildKit
 RUN --mount=type=cache,id=nuget,target=/root/.nuget/packages \
-    dotnet restore "src/InstantAIGate.API/InstantAIGate.API.csproj" && \
-    dotnet restore "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj"
+	dotnet restore "src/InstantAIGate.API/InstantAIGate.API.csproj" && \
+	dotnet restore "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj"
 
 # ==========================================
 # 2. Build & Publish (LOCAL FAST BUILD)
@@ -32,22 +32,22 @@ RUN dotnet restore "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj"
 # THE MAGIC: Copy pre-downloaded drivers from host machine!
 # No curl, no unzip, instant cache.
 # ==========================================
-COPY .runtimes/ .runtimes/
+#COPY .runtimes/ .runtimes/
 
 COPY src/ src/
 
-ARG BUILD_VERSION=1.0.5
-ENV APP_VERSION=${BUILD_VERSION:-1.0.5}
+ARG BUILD_VERSION=1.0.6
+ENV APP_VERSION=${BUILD_VERSION:-1.0.6}
 
 # Publish API
 RUN dotnet publish "src/InstantAIGate.API/InstantAIGate.API.csproj" \
-    -c Release -o /app/publish/api -r linux-x64 --self-contained true \
-    /p:Version=${BUILD_VERSION}
+	-c Release -o /app/publish/api -r linux-x64 --self-contained true \
+	/p:Version=${BUILD_VERSION}
 
 # Publish Admin
 RUN dotnet publish "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj" \
-    -c Release -o /app/publish/admin \
-    /p:Version=${BUILD_VERSION}
+	-c Release -o /app/publish/admin \
+	/p:Version=${BUILD_VERSION}
 
 # ==========================================
 # 3. API Runtime (CUDA + GPU)
@@ -57,9 +57,9 @@ WORKDIR /app
 
 # Install system dependencies (SINGLE RUN to optimize layers)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libicu-dev \
-    libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+	libicu-dev \
+	libgomp1 \
+	&& rm -rf /var/lib/apt/lists/*
 
 # This is needed so the loader doesn't try to pick up broken libraries from /app
 RUN rm -f /app/*.so /app/*.so.0 2>/dev/null || true
@@ -69,23 +69,23 @@ COPY --from=dotnet-build /app/publish/api .
 EXPOSE 80
 
 # Copy the automated downloaded native libraries from the build container
-COPY --from=dotnet-build /src/.runtimes/linux-x64/ /app/runtimes/linux-x64/
+# COPY --from=dotnet-build /src/.runtimes/linux-x64/ /app/runtimes/linux-x64/
 
 # libllama.so looks for libggml.so.0, but we only have libggml.so
 RUN cd /app/runtimes/linux-x64/cuda && \
-    ln -sf libggml.so libggml.so.0 && \
-    ln -sf libggml-base.so libggml-base.so.0 && \
-    ln -sf libggml-cuda.so libggml-cuda.so.0 && \
-    ln -sf libggml-cpu.so libggml-cpu.so.0 && \
-    ln -sf libllama.so libllama.so.0
+	ln -sf libggml.so libggml.so.0 && \
+	ln -sf libggml-base.so libggml-base.so.0 && \
+	ln -sf libggml-cuda.so libggml-cuda.so.0 && \
+	ln -sf libggml-cpu.so libggml-cpu.so.0 && \
+	ln -sf libllama.so libllama.so.0
 
 RUN cd /app/runtimes/linux-x64/cpu && \
-    ln -sf libggml-base.so libggml-base.so.0 2>/dev/null || true && \
-    ln -sf libggml-cpu.so libggml-cpu.so.0 2>/dev/null || true
+	ln -sf libggml-base.so libggml-base.so.0 2>/dev/null || true && \
+	ln -sf libggml-cpu.so libggml-cpu.so.0 2>/dev/null || true
 
 RUN cd /app/runtimes/linux-x64/vulkan && \
-    ln -sf libggml-base.so libggml-base.so.0 2>/dev/null || true && \
-    ln -sf libggml-vulkan.so libggml-vulkan.so.0 2>/dev/null || true
+	ln -sf libggml-base.so libggml-base.so.0 2>/dev/null || true && \
+	ln -sf libggml-vulkan.so libggml-vulkan.so.0 2>/dev/null || true
 
 # This ensures the loader will look for libraries in the right places
 ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64/cuda:/app/runtimes/linux-x64/cpu:/app/runtimes/linux-x64/vulkan:/app:$LD_LIBRARY_PATH

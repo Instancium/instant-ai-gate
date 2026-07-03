@@ -111,6 +111,12 @@ Start the gateway in detached mode. Docker will instantly pull the pre-compiled 
 docker compose up -d
 ```
 
+⚠️ ATTENTION: FIRST LAUNCH INITIALIZATION > On the very first startup, the API service will automatically extract and initialize heavy native hardware-acceleration drivers (e.g., CUDA libraries) into your mounted volume. This one-time process expands approximately 500MB of data and can take 1 to 3 minutes depending on your disk speed.
+
+During this phase, the Management UI will display an "Updating drivers" status indicator. Please be patient and do not restart the containers until the extraction completes and the status changes to "Ready".
+
+  <img src="media/status-ready.png" alt="InstantAIGate logo" />
+
 ---
 
 ## 🌐 Accessing the Gateway

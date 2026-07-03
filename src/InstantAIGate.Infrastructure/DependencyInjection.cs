@@ -36,6 +36,7 @@ namespace InstantAIGate.Infrastructure
             // --- Native Library Loading Infrastructure ---
             // Handles backend discovery, native DLL loading, and runtime initialization
             services.Configure<NativeLibraryOptions>(_ => { });
+            services.AddSingleton<NativeRuntimeExtractor>();
             services.AddSingleton<INativeBackendRegistry, NativeBackendRegistry>();
             services.AddSingleton<INativeLibraryLoader, NativeLibraryLoader>();
 
