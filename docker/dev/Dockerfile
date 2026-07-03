@@ -32,12 +32,12 @@ RUN dotnet restore "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj"
 # THE MAGIC: Copy pre-downloaded drivers from host machine!
 # No curl, no unzip, instant cache.
 # ==========================================
-COPY .runtimes/ .runtimes/
+#COPY .runtimes/ .runtimes/
 
 COPY src/ src/
 
-ARG BUILD_VERSION=1.0.5
-ENV APP_VERSION=${BUILD_VERSION:-1.0.5}
+ARG BUILD_VERSION=1.0.6
+ENV APP_VERSION=${BUILD_VERSION:-1.0.6}
 
 # Publish API
 RUN dotnet publish "src/InstantAIGate.API/InstantAIGate.API.csproj" \
@@ -69,7 +69,7 @@ COPY --from=dotnet-build /app/publish/api .
 EXPOSE 80
 
 # Copy the automated downloaded native libraries from the build container
-COPY --from=dotnet-build /src/.runtimes/linux-x64/ /app/runtimes/linux-x64/
+# COPY --from=dotnet-build /src/.runtimes/linux-x64/ /app/runtimes/linux-x64/
 
 # libllama.so looks for libggml.so.0, but we only have libggml.so
 RUN cd /app/runtimes/linux-x64/cuda && \
