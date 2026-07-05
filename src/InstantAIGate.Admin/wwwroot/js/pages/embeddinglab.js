@@ -184,7 +184,7 @@
                     gaugeFill.style.background = `linear-gradient(to right, ${color}, #a7f3d0)`;
                 }
 
-                updateChart(vec1, vec2);
+                updateCharts(vec1, vec2, similarity);
 
             } catch (err) {
                 console.error("Analysis error:", err);
@@ -221,66 +221,249 @@
         return await response.json();
     }
 
-    function updateChart(data1, data2) {
+    // --- Update Both Charts ---
+    function updateCharts(vec1, vec2, similarity) {
+        updateLinearChart(vec1, vec2);
+        updateRadar(vec1, vec2, similarity);
+    }
+
+    // --- Linear Chart (Existing) ---
+    function updateLinearChart(data1, data2) {
         const ctx = document.getElementById('vectorChart').getContext('2d');
         if (window.myChart) {
             window.myChart.destroy();
         }
 
-        // Subsampling logic: prevents browser lag with huge vectors
-        const step = Math.ceil(data1.length / 250);
-        const labels = [];
-        const reducedData1 = [];
-        const reducedData2 = [];
+        // Segment vector into 32 chunks for better visualization
+        const numSegments = 32;
+        const segmentSize = Math.ceil(data1.length / numSegments);
 
-        for (let i = 0; i < data1.length; i += step) {
-            labels.push(`Dim ${i}`);
-            reducedData1.push(data1[i]);
-            reducedData2.push(data2[i]);
+        const labels = [];
+        const segmented1 = [];
+        const segmented2 = [];
+        const differences = [];
+
+        for (let i = 0; i < numSegments; i++) {
+            labels.push(`Seg ${i + 1}`);
+
+            // Calculate average magnitude for each segment
+            let sum1 = 0, sum2 = 0;
+            const start = i * segmentSize;
+            const end = Math.min(start + segmentSize, data1.length);
+
+            for (let j = start; j < end; j++) {
+                sum1 += Math.abs(data1[j] || 0);
+                sum2 += Math.abs(data2[j] || 0);
+            }
+
+            const avg1 = sum1 / (end - start);
+            const avg2 = sum2 / (end - start);
+
+            segmented1.push(avg1);
+            segmented2.push(avg2);
+            differences.push(Math.abs(avg1 - avg2));
         }
 
+        // Find top 5 segments with maximum difference
+        const topDiffs = differences
+            .map((diff, idx) => ({ diff, idx }))
+            .sort((a, b) => b.diff - a.diff)
+            .slice(0, 5)
+            .map(d => d.idx);
+
+        // Color segments by difference intensity
+        const maxDiff = Math.max(...differences);
+        const diffColors = differences.map(d => {
+            const intensity = d / maxDiff;
+            return `rgba(239, 68, 68, ${intensity * 0.6})`;
+        });
+
         window.myChart = new Chart(ctx, {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: labels,
                 datasets: [
                     {
-                        label: 'Text 1',
-                        data: reducedData1,
+                        label: 'Text 1 (Avg Magnitude)',
+                        data: segmented1,
+                        backgroundColor: 'rgba(99, 102, 241, 0.7)',
                         borderColor: '#6366f1',
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                        fill: true,
-                        pointRadius: 0, // Hides dots for a cleaner look
-                        borderWidth: 1.5
+                        borderWidth: 1,
+                        order: 2
                     },
                     {
-                        label: 'Text 2',
-                        data: reducedData2,
+                        label: 'Text 2 (Avg Magnitude)',
+                        data: segmented2,
+                        backgroundColor: 'rgba(16, 185, 129, 0.7)',
                         borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 1,
+                        order: 2
+                    },
+                    {
+                        label: 'Difference (|T1 - T2|)',
+                        data: differences,
+                        type: 'line',
+                        borderColor: 'rgba(239, 68, 68, 0.8)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointBackgroundColor: differences.map((d, i) =>
+                            topDiffs.includes(i) ? '#ef4444' : 'rgba(239, 68, 68, 0.5)'
+                        ),
+                        pointBorderColor: '#ef4444',
                         fill: true,
-                        pointRadius: 0,
-                        borderWidth: 1.5
+                        tension: 0.3,
+                        order: 1
                     }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                animation: { duration: 300 }, // Snappier animation
+                animation: { duration: 500 },
                 interaction: {
                     mode: 'index',
                     intersect: false,
                 },
                 scales: {
-                    x: { display: false }, // Hide X axis clutter
-                    y: { beginAtZero: false, grid: { color: 'rgba(0,0,0,0.05)' } }
+                    x: {
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                        ticks: {
+                            color: '#94a3b8',
+                            maxRotation: 45,
+                            callback: function (value, index) {
+                                // Show every 4th label to avoid clutter
+                                return index % 4 === 0 ? this.getLabelForValue(value) : '';
+                            }
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                        ticks: { color: '#94a3b8' }
+                    }
                 },
                 plugins: {
-                    legend: { labels: { color: '#94a3b8' } },
-                    tooltip: { enabled: false } // Too dense to need tooltips
+                    legend: {
+                        labels: { color: '#94a3b8' },
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function (context) {
+                                const idx = context[0].dataIndex;
+                                const start = idx * segmentSize;
+                                const end = Math.min(start + segmentSize, data1.length);
+                                return `Dimensions ${start}-${end}`;
+                            },
+                            label: function (context) {
+                                const label = context.dataset.label || '';
+                                const value = context.parsed.y.toFixed(4);
+                                return `${label}: ${value}`;
+                            }
+                        }
+                    }
                 }
             }
         });
     }
+
+    // --- Radar Chart (With Baseline Normalization) ---
+    async function updateRadar(vec1, vec2, similarity) {
+        const scannerSweep = document.getElementById('radar-scanner-sweep');
+        const groupA = document.getElementById('radar-group-a');
+        const groupB = document.getElementById('radar-group-b');
+        const dotA = document.getElementById('radar-dot-a');
+        const dotB = document.getElementById('radar-dot-b');
+        const laser = document.getElementById('radar-laser');
+        const scoreDisplay = document.getElementById('radar-score-display');
+        const distanceDisplay = document.getElementById('radar-distance-display');
+
+        const CENTER = 100;
+        const RADIUS = 85;
+        const ORBIT_RADIUS = RADIUS * 0.7; // Both points on same orbit
+
+        // Reset visuals
+        scannerSweep.style.display = 'block';
+        groupA.classList.add('radar-hidden');
+        groupB.classList.add('radar-hidden');
+        laser.style.opacity = '0';
+        scoreDisplay.innerText = '---';
+        distanceDisplay.innerText = '---';
+
+        // Apply baseline normalization
+        const baseline = 0.5;
+        let normalizedSimilarity = (similarity - baseline) / (1.0 - baseline);
+        normalizedSimilarity = Math.max(0, Math.min(1, normalizedSimilarity));
+
+        // --- POLAR COORDINATES FROM CENTER ---
+        // Point A: fixed at angle 0 (right side)
+        const angleA = 0;
+        const svgAx = CENTER + ORBIT_RADIUS * Math.cos(angleA);
+        const svgAy = CENTER + ORBIT_RADIUS * Math.sin(angleA);
+
+        // Point B: angle depends on similarity
+        // similarity=1.0 → angle=0 (same as A)
+        // similarity=0.0 → angle=π (opposite side)
+        const angleB = Math.PI * (1 - normalizedSimilarity);
+        const svgBx = CENTER + ORBIT_RADIUS * Math.cos(angleB);
+        const svgBy = CENTER + ORBIT_RADIUS * Math.sin(angleB);
+
+        await delay(800);
+
+        // Plot Point A
+        dotA.setAttribute('cx', svgAx);
+        dotA.setAttribute('cy', svgAy);
+        document.getElementById('radar-label-a').setAttribute('x', svgAx);
+        document.getElementById('radar-label-a').setAttribute('y', svgAy - 10);
+        groupA.classList.remove('radar-hidden');
+
+        await delay(300);
+
+        // Plot Point B
+        dotB.setAttribute('cx', svgBx);
+        dotB.setAttribute('cy', svgBy);
+        document.getElementById('radar-label-b').setAttribute('x', svgBx);
+        document.getElementById('radar-label-b').setAttribute('y', svgBy - 10);
+        groupB.classList.remove('radar-hidden');
+
+        await delay(400);
+
+        // Draw laser
+        laser.setAttribute('x1', svgAx);
+        laser.setAttribute('y1', svgAy);
+        laser.setAttribute('x2', svgBx);
+        laser.setAttribute('y2', svgBy);
+        laser.style.opacity = '1';
+        scannerSweep.style.display = 'none';
+
+        // Display results
+        scoreDisplay.innerText = similarity.toFixed(3);
+
+        // Calculate pixel distance between points
+        const pixelDistance = Math.sqrt(
+            Math.pow(svgBx - svgAx, 2) + Math.pow(svgBy - svgAy, 2)
+        ).toFixed(1);
+        distanceDisplay.innerText = pixelDistance;
+    }
+
+    // Simple 2D projection using first 2 dimensions
+    function projectTo2D(vector) {
+        const x = vector[0] || 0;
+        const y = vector[1] || 0;
+
+        const magnitude = Math.sqrt(x * x + y * y);
+        if (magnitude === 0) return { x: 0, y: 0 };
+
+        return {
+            x: x / magnitude,
+            y: y / magnitude
+        };
+    }
+
+    function delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+
 });

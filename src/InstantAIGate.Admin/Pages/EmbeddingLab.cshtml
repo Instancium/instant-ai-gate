@@ -17,12 +17,6 @@
 </div>
 
 <div class="lab-container">
-    <header class="lab-header">
-        <h1 class="lab-header__title">Embedding Laboratory</h1>
-        <p class="lab-header__subtitle">
-            Explore the "digital fingerprint" of your text. Visualize how language models transform raw text into high-dimensional vectors and analyze semantic proximity in real-time.
-        </p>
-    </header>
 
     <div class="lab-toolbar">
         <h2 class="lab-toolbar__title">Live Comparison Tool</h2>
@@ -86,10 +80,58 @@
         </div>
 
         <div class="lab-main-panel">
-            <div class="chart-container">
-                <canvas id="vectorChart" class="lab-chart"></canvas>
+            <div class="charts-container">
+
+                <!-- Radar Chart -->
+                <div class="chart-wrapper">
+                    <div class="chart-title">Semantic Distance Radar</div>
+                    <div class="radar-screen">
+                        <div class="radar-ring radar-ring-1"></div>
+                        <div class="radar-ring radar-ring-2"></div>
+                        <div class="radar-ring radar-ring-3"></div>
+                        <div class="radar-crosshair-x"></div>
+                        <div class="radar-crosshair-y"></div>
+                        <div class="radar-scanner" id="radar-scanner-sweep"></div>
+
+                        <svg id="radar-canvas" class="radar-canvas" viewBox="0 0 200 200">
+                            <line id="radar-laser" x1="100" y1="100" x2="100" y2="100" />
+
+                            <g id="radar-group-a" class="radar-hidden">
+                                <circle id="radar-dot-a" cx="100" cy="100" r="4" class="radar-dot dot-a" />
+                                <text id="radar-label-a" x="100" y="90" class="radar-label">Text 1</text>
+                            </g>
+
+                            <g id="radar-group-b" class="radar-hidden">
+                                <circle id="radar-dot-b" cx="100" cy="100" r="4" class="radar-dot dot-b" />
+                                <text id="radar-label-b" x="100" y="90" class="radar-label">Text 2</text>
+                            </g>
+                        </svg>
+                    </div>
+
+                    <div class="radar-results-display">
+                        <div class="radar-result-item">
+                            <div class="radar-result-label">Cosine Similarity</div>
+                            <div class="radar-result-value" id="radar-score-display">0.000</div>
+                        </div>
+                        <div class="radar-result-item">
+                            <div class="radar-result-label">Vector Distance</div>
+                            <div class="radar-result-value" id="radar-distance-display">0.000</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Linear Chart -->
+                <div class="chart-wrapper">
+                    <div class="chart-title">Vector Magnitude Analysis</div>
+                    <div class="chart-container">
+                        <canvas id="vectorChart" class="lab-chart"></canvas>
+                    </div>
+                </div>
+
+
             </div>
         </div>
+
     </div>
 
     <footer class="lab-footer-info">
