@@ -168,14 +168,19 @@
                 // Calculate and update similarity
                 const similarity = calculateCosineSimilarity(vec1, vec2);
 
-                // Normalize cosine similarity (-1 to 1) into a 0 to 100 percentage
-                const normalizedSim = Math.max(-1, Math.min(1, similarity));
-                const percentage = Math.round(((normalizedSim + 1) / 2) * 100);
+  
+                const baseline = 0.5;
+                let percentage = Math.round(((similarity - baseline) / (1.0 - baseline)) * 100);
+
+                // Clamp the value between 0 and 100
+                percentage = Math.max(0, Math.min(100, percentage));
 
                 if (similarityText) similarityText.innerText = `${percentage}%`;
                 if (gaugeFill) {
                     gaugeFill.style.width = `${percentage}%`;
-                    let color = percentage < 40 ? "#ef4444" : (percentage < 70 ? "#f59e0b" : "#10b981");
+
+                    // Adjusted color thresholds for the new scale
+                    let color = percentage < 30 ? "#ef4444" : (percentage < 60 ? "#f59e0b" : "#10b981");
                     gaugeFill.style.background = `linear-gradient(to right, ${color}, #a7f3d0)`;
                 }
 
