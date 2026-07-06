@@ -53,7 +53,7 @@ namespace InstantAIGate.API.Controllers
                 {
                     m.RepoId,
                     m.DisplayName,
-                    SizeBytes = resolvedBytes, // CRITICAL FIX: Named explicitly to bind with frontend ModelViewItem tracking
+                    SizeBytes = resolvedBytes, 
                     IsDownloaded = checker.IsModelDownloaded(m),
                     PrimaryLocalPath = checker.GetModelPath(m),
                     Type = m.Type.ToString(),

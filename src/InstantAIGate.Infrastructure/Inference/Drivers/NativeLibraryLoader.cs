@@ -52,7 +52,7 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
 
                 // Copy DLLs from ALL available backends (CPU + GPU) to app root.
                 // This allows llama.cpp to use CPU memory as fallback when GPU is full.
-                CopyAllBackendsToRoot();
+                CopyAllBackendsToRoot(backend);
 
                 // Load the main llama library from the selected backend
                 var libName = GetLlamaLibraryName();
@@ -79,7 +79,7 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
         /// The selected backend's DLLs are copied LAST to ensure they take priority
         /// when filenames overlap (e.g., llama.dll exists in both cpu/ and vulkan/).
         /// </summary>
-        private void CopyAllBackendsToRoot()
+        private void CopyAllBackendsToRoot(NativeBackendInfo selectedBackend)
         {
             var destPath = AppContext.BaseDirectory;
             var allBackends = _backendRegistry.GetAvailableBackends();
@@ -87,17 +87,14 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
             if (_options.EnableDebugLogging)
                 _logger.LogDebug("Copying DLLs from {Count} available backends to {Dest}", allBackends.Count, destPath);
 
-            // Copy non-selected backends first (e.g., CPU)
-            foreach (var b in allBackends.Where(b => b.Name != _currentBackend?.Name))
+            // 1. Сначала копируем все невыбранные бэкенды (например, CPU)
+            foreach (var b in allBackends.Where(b => b.Name != selectedBackend.Name))
             {
                 CopyBackendLibraries(b, destPath);
             }
 
-            // Copy selected backend LAST — its DLLs overwrite others (priority)
-            if (_currentBackend != null)
-            {
-                CopyBackendLibraries(_currentBackend, destPath);
-            }
+            // 2. В самом конце копируем выбранный бэкенд (CUDA), чтобы он перезаписал файлы CPU!
+            CopyBackendLibraries(selectedBackend, destPath);
         }
 
         private void CopyBackendLibraries(NativeBackendInfo backend, string destPath)
