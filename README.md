@@ -1,9 +1,9 @@
 <p align="center">
   <img src="media/ig-logo.png" alt="InstantAIGate logo" height="180" />
   <br />
-  <strong>Standardized. Secure. Instant Deployment.</strong>
+  <strong>High-Performance. Self-Hosted. Zero Setup.</strong>
   <br />
-  Lightweight middleware providing a self-hosted, monitored foundation for local AI applications.
+  A lightweight .NET middleware providing a monitored, shared foundation for local AI applications.
 </p>
 
 <p align="center">
@@ -24,45 +24,36 @@
 
 ## What is InstantAIGate?
 
-**InstantAIGate** is a ready-to-use infrastructure building block (middleware) for securely integrating local Large Language 
-Models (LLMs) into modern digital products, applications, and internal organizational services. It provides an isolated server-side 
-solution, a built-in administration dashboard (UI), and a seamless bridge between your application logic and model weights. Furthermore, 
-the platform enables fine-grained configuration of model parameters, putting total control over inference.
+**InstantAIGate** is the natural next step for teams who love the flexibility of desktop AI tools (like Ollama or LM Studio) but need to bring those capabilities to a shared, highly-concurrent server environment. 
+
+It is a ready-to-use infrastructure building block (middleware) that securely hosts local Large Language Models (LLMs) and Embeddings. Built entirely in .NET, it provides an isolated server-side runtime, a built-in administration dashboard, and a seamless OpenAI-compatible API bridge—putting total architectural control over inference back into the hands of your infrastructure team.
 
 <p align="center">
   <img src="media/dashboard.gif" alt="InstantAIGate Dashboard Demo" width="100%" />
 </p>
 
-## Key Enterprise Features
+## Core Features (Foundation)
 
-* **🛡️ Data Sovereignty & Security Compliance**
-  Operates 100% within your private network perimeter (On-Premise / Private Cloud). Your data never leaves the organization's control,
-  eliminating the risk of trade secret leaks and ensuring strict compliance with enterprise security requirements.
+* **🔌 Drop-In OpenAI Compatibility**
+  Exposes a standardized API fully compatible with the OpenAI specification. Seamlessly route existing application workflows (or LangChain agents) to your local models by simply updating the `base_url`.
 
-* **🔌 Standardized OpenAI-Compatible API Interface**
-  The platform exposes a standardized API fully compatible with the OpenAI specification. This allows development teams to seamlessly route
-  existing application workflows to locally hosted models by simply updating the `base_url`. It eliminates vendor lock-in and provides an immediate
-  infrastructure alternative for environments requiring localized data processing.
+* **📈 Zero-Config Observability**
+  No complex metric stacks required for day-one operations. The built-in web interface provides immediate visibility into multi-GPU health, exact VRAM allocation, and real-time request queues via SignalR streams.
 
-* **🔄 Resource Pooling & Zero-Downtime Hot-Swap**
-  Dynamic orchestration of model weight pools and contexts allows you to switch active models on the fly via API or the admin UI without restarting the server.
-  Depending on available hardware resources, you can efficiently keep embedding models, background task processors, and conversational LLMs in memory simultaneously,
-  ensuring seamless routing and zero interruption for users.
+* **⚙️ High-Density Hardware Control**
+  Extract absolute maximum throughput from a single bare-metal server. Explicitly map LLM computational layers between GPU and CPU, and enforce physical memory locking (`mlock`) to guarantee zero system swap latency spikes.
 
-* **📊 Production-Grade Control & Resource Tuning**
-  A comprehensive, out-of-the-box web interface designed for both infrastructure management and testing. It provides real-time model status monitoring
-  and secure weight downloads visualized via Server-Sent Events (SSE). Crucially, the UI unlocks granular control over server resources and concurrent user sessions,
-  enabling you to run specific background LLM tasks strictly on the CPU. This hybrid resource allocation maximizes hardware efficiency and dramatically reduces overall
-  infrastructure costs.
+* **🔄 Dynamic Weight Pooling & Hot-Swap**
+  Manage highly concurrent workflows across your team. Host embedding models (like BGE-M3) and conversational layers (like Qwen) simultaneously. Hot-swap multi-gigabyte models on the fly via REST API or the Web UI without dropping active client connections.
 
-* **📦 Zero Python Dependency & Native .NET 10**
-  Built purely in C# and compiled as a standalone binary. No virtual environments, no conflicting pip packages, and no messy Python wrappers. Predictable deployment for both Windows and Linux Enterprise servers.
+* **📦 Zero Python Dependency (.NET Native)**
+  Built purely in modern C# and compiled as a standalone binary. Bypass complex virtual environments, dependency hell, and Python runtime overhead. Predictable deployment for both Windows and Linux servers.
 
 ## Technical Architecture & High-Level Design
 
-**InstantAIGate** is built on **Domain-Driven Design (DDD)** principles, cleanly separating core business logic from infrastructural details. The architecture ensures modularity, testability, and high performance. 
+**InstantAIGate** is built on **Domain-Driven Design (DDD)** principles, cleanly separating core business logic from infrastructural details. The architecture ensures modularity, testability, and high native performance. 
 
-The core interaction identifier is the **RepoId** (e.g., `"Qwen/Qwen3-VL-2B-Instruct-GGUF"`). The presentation layer and external APIs remain entirely agnostic of physical disk paths, file extensions, or storage formats.
+The core interaction identifier is the **RepoId** (e.g., `"Qwen/Qwen2.5-7B-Instruct-GGUF"`). The presentation layer and external APIs remain entirely agnostic of physical disk paths, file extensions, or underlying C++ bindings.
 
 ```mermaid
 graph TD
@@ -155,22 +146,20 @@ graph TD
     LlamaModelMgr --> Nvml
 ```
 
-| Layer | Business Value / Responsibility | Key Components (what to look for) |
-|-------|--------------------------------|-----------------------------------|
-| **Presentation / API** | Enables fast integration and migration with minimal app changes; enforces protocol compatibility, authentication, and SLA-facing metrics (latency, error rate). Low risk for app teams: swap base_url and use local models. | OpenAI-compatible REST endpoints, Admin management endpoints (Admin_API), Server-Sent Events (SSE) telemetry broadcasters. |
-| **Application** | Orchestrates model lifecycle to meet availability and cost targets; implements hot-swap, pooling and request routing so deployments scale without user disruption. Encapsulates operational policies (routing, concurrency caps, resource affinity). | ChatCompletionService (Orchestrator), ModelManager (State control & semaphores), PromptTemplateService (Token framing), ModelValidationService (Size & limits validation), core abstraction ports (IModelProvider, IModelStorageService, ITelemetryService). |
-| **Domain / Contracts** | Single source of truth for product behavior and governance; preserves business invariants, model identity, and auditable manifests so changes are predictable and testable. | ModelManifest (Aggregate Root), RepoId (Strict Domain Value Object), ModelFile, ModelChecksum, ModelType taxonomy. |
-| **Infrastructure** | Delivers secure, observable, and efficient execution of models (storage, downloads, native runtimes); implements enterprise controls for data locality, secure downloads, and hardware-aware scheduling to minimize costs. | LlamaModelProvider (Unmanaged core wrapper), HttpModelStorageService (.tmp network streams), NvmlProvider & TelemetryService (Raw OS/Hardware metrics), NativeLibraryLoader (Shadow copying & DLL bindings), InMemoryModelRegistry. |
-
-
+| Layer | Responsibility | Key Components |
+|-------|----------------|----------------|
+| **Presentation / API** | Enables fast integration with minimal app changes. Provides real-time SSE updates for dashboards. | OpenAI-compatible REST endpoints, Admin API, SignalR Hubs. |
+| **Application** | Orchestrates model lifecycle, hot-swapping, and resource pooling. Encapsulates routing policies. | ChatCompletionService, ModelManager, PromptTemplateService. |
+| **Domain / Contracts** | Preserves business invariants, model identity, and auditable manifests. | ModelManifest, RepoId, ModelFile. |
+| **Infrastructure** | Delivers highly observable native execution. Manages P/Invoke boundaries, physical storage, and raw OS telemetry. | LlamaModelProvider, NativeLibraryLoader, NvmlProvider, HttpModelStorageService. |
 
 ## 🛠️ Tech Stack & Third-Party Licenses
 
 InstantAIGate is built using modern, robust technologies on both the backend and frontend:
 
 * **LLM Engine:** [llama.cpp](https://github.com/ggerganov/llama.cpp) (Native integration and drivers for high-performance GGUF inference)
-* **Backend:** .NET 10, ASP.NET Core, OpenAI .NET Client, [SharpCompress](https://github.com/adamhathcock/sharpcompress) (for on-the-fly native library extraction)
-* **Frontend:** Bootstrap Icons, SignalR (for real-time communication)
+* **Backend:** Modern .NET, ASP.NET Core, OpenAI .NET Client, [SharpCompress](https://github.com/adamhathcock/sharpcompress) (for on-the-fly native library extraction)
+* **Frontend:** Vanilla JS, Bootstrap Icons, SignalR
 
 <details>
 <summary>⚖️ <b>View Third-Party License Information</b></summary>
@@ -188,7 +177,7 @@ This project is licensed under the **Apache License 2.0** - see the [LICENSE](LI
 
 ### Branding & Logo Trademark
 
-The **InstantAIGate** name, logos, and all branding assets located in any `media` directories (including root and web-project folders, e.g., inside `wwwroot`) are not covered by the Apache 2.0 license. 
+The **InstantAIGate** name, logos, and all branding assets located in any `media` directories are not covered by the Apache 2.0 license. 
 Instead, all branding materials and logos throughout the project are licensed under the [Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)](https://creativecommons.org/licenses/by-nc-nd/4.0/).
 
 You are welcome to use the logo to refer to this project, but you may not modify it or use it for commercial purposes or in a way that implies official endorsement without explicit permission.
