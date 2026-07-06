@@ -1,10 +1,9 @@
-
 <p align="center">
   <img src="media/ig-logo.png" alt="InstantAIGate logo" height="180" />
   <br />
-  <strong>Standardized. Secure. Instant Deployment.</strong>
+  <strong>High-Performance. Self-Hosted. Zero Setup.</strong>
   <br />
-  Lightweight middleware providing a self-hosted, monitored foundation for local AI applications.
+  A lightweight .NET middleware providing a monitored, shared foundation for local AI applications.
 </p>
 
 <p align="center">
@@ -20,6 +19,8 @@
   <img src="https://img.shields.io/badge/Architecture-DDD-purple?style=flat-square" alt="DDD">
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License">
 </p>
+
+---
 
 
 # 🐋 Easy Start: Running with Docker Compose
