@@ -11,6 +11,8 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
     /// Registry that discovers and manages available native backends.
     /// Automatically extracts compressed backend archives on first run before scanning.
     /// </summary>
+    
+    [Obsolete("Use LlamaDriverLoader and Driver-prefixed components. This class will be removed in a future release.", error: false)]
     public class NativeBackendRegistry : INativeBackendRegistry
     {
         private readonly ILogger<NativeBackendRegistry> _logger;

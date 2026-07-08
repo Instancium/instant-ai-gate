@@ -4,10 +4,11 @@ using System.Text;
 
 namespace InstantAIGate.Infrastructure.Inference.Drivers
 {
- 
+
     /// <summary>
     /// Configuration options for native library loading and backend selection.
     /// </summary>
+    [Obsolete("Configuration is now managed via environment variables and autodetection.", error: false)]
     public class NativeLibraryOptions
     {
         public const string SectionName = "NativeLibrary";

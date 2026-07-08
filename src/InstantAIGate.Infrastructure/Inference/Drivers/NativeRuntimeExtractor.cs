@@ -10,6 +10,7 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
     /// to fit within the NuGet.org 250 MB size limit after LZMA2 compression (~89 MB).
     /// Extraction is skipped when a sentinel file (.extracted) is already present.
     /// </summary>
+    [Obsolete("Use LlamaDriverLoader and Driver-prefixed components. This class will be removed in a future release.", error: false)]
     public class NativeRuntimeExtractor
     {
         private const string SentinelFileName = ".extracted";

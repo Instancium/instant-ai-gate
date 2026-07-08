@@ -10,6 +10,7 @@ namespace InstantAIGate.Infrastructure.Inference.Drivers
     /// Copies DLLs from ALL available backends to the application root,
     /// allowing llama.cpp to use CPU fallback when GPU memory is insufficient.
     /// </summary>
+    [Obsolete("Use LlamaDriverLoader and Driver-prefixed components. This class will be removed in a future release.", error: false)]
     public class NativeLibraryLoader : INativeLibraryLoader
     {
         private readonly ILogger<NativeLibraryLoader> _logger;
