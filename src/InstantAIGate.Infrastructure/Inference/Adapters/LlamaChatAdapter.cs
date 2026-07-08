@@ -290,12 +290,6 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 // ==========================================
                 // PHASE 1: PROMPT INGESTION (Chunking)
                 // ==========================================
-                IntPtr memoryPtr = _nativeApi.GetMemory(ctxHandle); 
-                if (memoryPtr != IntPtr.Zero)
-                {
-                    _nativeApi.ClearMemory(memoryPtr, true);
-                }
-
                 int lastEvalBatchSize = 0;
                 for (int i = 0; i < nTokens; i += nBatchLimit)
                 {
