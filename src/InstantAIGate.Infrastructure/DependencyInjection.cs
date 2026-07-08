@@ -5,16 +5,11 @@ using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Infrastructure.Catalog;
 using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Adapters;
-using InstantAIGate.Infrastructure.Inference.Drivers;
 using InstantAIGate.Infrastructure.Inference.Native;
 using InstantAIGate.Infrastructure.NvmlNative;
-using InstantAIGate.Infrastructure.Services;
 using InstantAIGate.Infrastructure.Storage;
 using InstantAIGate.Infrastructure.Telemetry;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-
 
 namespace InstantAIGate.Infrastructure
 {
@@ -32,13 +27,6 @@ namespace InstantAIGate.Infrastructure
 
             // --- Model Registry Tracking ---
             services.AddSingleton<IModelRegistry, InMemoryModelRegistry>();
-
-            // --- Native Library Loading Infrastructure ---
-            // Handles backend discovery, native DLL loading, and runtime initialization
-            services.Configure<NativeLibraryOptions>(_ => { });
-            services.AddSingleton<NativeRuntimeExtractor>();
-            services.AddSingleton<INativeBackendRegistry, NativeBackendRegistry>();
-            services.AddSingleton<INativeLibraryLoader, NativeLibraryLoader>();
 
             // --- Core LLamaSharp Native Infrastructure ---
             // Holds raw native model weight references and manages low-level context recycling pools
@@ -65,9 +53,6 @@ namespace InstantAIGate.Infrastructure
             // --- Telemetry ---
             services.AddSingleton<NvmlProvider>();
             services.AddSingleton<ITelemetryService, TelemetryService>();
-
-            // --- Hosted Services (must be registered last, after all dependencies) ---
-            services.AddHostedService<NativeInitializationService>();
 
             return services;
         }

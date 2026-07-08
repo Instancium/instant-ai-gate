@@ -136,6 +136,8 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             {
                 // Step 1: Try to remove historical messages first (excluding system prompt and the current message)
                 int oldestMessageIndex = -1;
+
+             
                 for (int i = 0; i < request.Messages.Count - 1; i++)
                 {
                     if (request.Messages[i].Role != "system")
@@ -147,8 +149,14 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
                 if (oldestMessageIndex != -1)
                 {
-                    _logger.LogDebug("Context overflow: {Tokens}/{Limit}. Trimming historical message at index {Index}.", nTokens, availableTokensForPrompt, oldestMessageIndex);
+                    _logger.LogDebug("Context overflow: {Tokens}/{Limit}. Trimming historical message pair starting at index {Index}.", nTokens, availableTokensForPrompt, oldestMessageIndex);
+
                     request.Messages.RemoveAt(oldestMessageIndex);
+
+                    if (oldestMessageIndex < request.Messages.Count && request.Messages[oldestMessageIndex].Role == "assistant")
+                    {
+                        request.Messages.RemoveAt(oldestMessageIndex);
+                    }
                 }
                 else
                 {

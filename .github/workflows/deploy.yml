@@ -1,9 +1,9 @@
 name: Build and Publish Containers to GHCR
 
 on:
-#  push:
-#    branches:
-#      - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       target:

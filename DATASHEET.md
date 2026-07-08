@@ -34,7 +34,7 @@ The native core is built with compute architectures spanning from **Ampere** to 
   * `89` — Ada Lovelace (RTX 40xx, L4, L40)
   * `90` — Hopper (H100, H200)
   * `100` — Blackwell (B100, B200)
-  * `120` — Rubin (Next-gen architecture)
+  * `120` — Blackwell Consumer (RTX 50xx)
 * **VRAM Overhead:** Base footprint is extremely light (< 200MB for the gateway instance). Total VRAM allocation depends entirely on the selected GGUF model size, context length (`MaxContexts`), and KV-Cache quantization settings.
 
 ### CPU Backend (Automatic Fallback)
@@ -44,14 +44,16 @@ The native core is built with compute architectures spanning from **Ampere** to 
 
 ## Software & Driver Requirements
 
+**⚠️ CRITICAL REQUIREMENT:** The host system's NVIDIA drivers MUST be updated to support a minimum of CUDA 13.3.0. Older drivers will cause initialization failures.
+
 ### 🐧 Linux Environment (Containerized / On-Prem)
 * **Base OS:** Ubuntu 22.04 LTS (or any glibc-compatible modern Linux distribution).
-* **NVIDIA Driver:** Requires CUDA **12.8** compatible drivers (Minimum Host Driver Version: **570.xx+** or newer matching CUDA 12.8.x toolkits).
+* **NVIDIA Driver:** Requires host driver updates to support **CUDA 13.3.0**.
 * **Container Runtime:** Docker with `nvidia-container-toolkit` installed and configured for GPU scheduling inside `docker-compose.yml`.
 
 ### Windows Environment (Native)
 * **Base OS:** Windows Server 2022 / Windows 10 & 11 (64-bit).
-* **NVIDIA Driver:** Official NVIDIA Display Driver with CUDA 12.8 support.
+* **NVIDIA Driver:** Official NVIDIA Display Driver updated to support **CUDA 13.3.0**.
 
 ## Build Specs & Core Engine Integrity
 
@@ -62,7 +64,6 @@ The gateway utilizes a highly optimized, stripped-down custom compilation of the
   * Custom Host Compiler: `g++-12` for strict alignment optimization.
 * **Compiled Artifacts Included:** `libllama.so`, `libggml-cuda.so`, `libggml-base.so`, `libggml-cpu.so`.
 * **Excluded Ecosystem Components:** All standard executable wrappers (`llama-cli`, `llama-server`, benchmarks, and test binaries) are stripped at compilation level to guarantee zero unmanaged process leaks.
-
 
 ## ❌ Current Limitations & Out-of-Scope (As of v1.0.1)
 

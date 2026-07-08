@@ -4,18 +4,8 @@
   <Project Path="src/InstantAIGate.Application/InstantAIGate.Application.csproj" Id="b8e58004-b9da-4032-ad28-84513e5655a7" />
   <Project Path="src/InstantAIGate.Domain/InstantAIGate.Domain.csproj" Id="73d8afef-55e1-4aff-92f5-2797da46bae4" />
   <Project Path="src/InstantAIGate.Infrastructure/InstantAIGate.Infrastructure.csproj" Id="5f77d78c-d18f-446b-b371-590a0b882228" />
-  <Project Path="src/Runtimes/InstantAIGate.Runtimes.linux-x64.Cpu/InstantAIGate.Runtimes.linux-x64.Cpu.csproj">
-    <Build Solution="Debug|*" Project="false" />
-  </Project>
-  <Project Path="src/Runtimes/InstantAIGate.Runtimes.linux-x64.Cuda/InstantAIGate.Runtimes.linux-x64.Cuda.csproj">
-    <Build Solution="Debug|*" Project="false" />
-  </Project>
-  <Project Path="src/Runtimes/InstantAIGate.Runtimes.win-x64.Cpu/InstantAIGate.Runtimes.win-x64.Cpu.csproj">
-    <Build Solution="Debug|*" Project="false" />
-  </Project>
-  <Project Path="src/Runtimes/InstantAIGate.Runtimes.win-x64.Cuda/InstantAIGate.Runtimes.win-x64.Cuda.csproj">
-    <Build Solution="Debug|*" Project="false" />
-  </Project>
+  <Project Path="src/Runtimes/InstantAIGate.Runtimes.Linux/InstantAIGate.Runtimes.Linux.csproj" />
+  <Project Path="src/Runtimes/InstantAIGate.Runtimes.Windows/InstantAIGate.Runtimes.Windows.csproj" />
   <Project Path="tests/InstantAIGate.API.Tests/InstantAIGate.API.Tests.csproj" />
   <Project Path="tests/InstantAIGate.Infrastructure.Tests/InstantAIGate.Infrastructure.Tests.csproj" />
 </Solution>
