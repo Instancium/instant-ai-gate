@@ -27,15 +27,16 @@ public static class LlamaDriverLoader
                 return;
             }
 
+            // Zone B: Environment Detection
             DriverEnvironmentDetector.EnsureCompatiblePlatform();
 
             var useCuda = DriverEnvironmentDetector.IsCudaAvailable();
             var osPrefix = DriverEnvironmentDetector.GetCurrentOsPrefix();
             var localPath = DriverEnvironmentDetector.GetLocalRuntimesPath();
 
-            // TODO: Zone C extraction and resolver registration
-            // var finalDriverPath = DriverExtractor.ExtractAndGetPath(osPrefix, useCuda, localPath);
-            // DriverNativeResolver.Register(finalDriverPath);
+            // Zone C: Deployment & Initialization
+            var finalDriverPath = DriverExtractor.ExtractAndGetPath(osPrefix, useCuda, localPath);
+            DriverNativeResolver.Register(finalDriverPath);
 
             isInitialized = true;
         }
