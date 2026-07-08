@@ -7,10 +7,8 @@ using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Adapters;
 using InstantAIGate.Infrastructure.Inference.Native;
 using InstantAIGate.Infrastructure.NvmlNative;
-using InstantAIGate.Infrastructure.Services;
 using InstantAIGate.Infrastructure.Storage;
 using InstantAIGate.Infrastructure.Telemetry;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace InstantAIGate.Infrastructure

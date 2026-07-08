@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -7,7 +6,6 @@ using System.Runtime.InteropServices;
 using InstantAIGate.Application.Dtos.Telemetry;
 using InstantAIGate.Application.Interfaces;
 using InstantAIGate.Application.Interfaces.Inference;
-using InstantAIGate.Infrastructure.Inference.Drivers;
 using InstantAIGate.Infrastructure.NvmlNative;
 using Microsoft.Extensions.Logging;
 
@@ -38,14 +36,11 @@ namespace InstantAIGate.Infrastructure.Telemetry
             _lastCpuTime = Process.GetCurrentProcess().TotalProcessorTime;
         }
 
-        /// <summary>
-        /// Retrieves compiled machine architecture telemetry state indicators.
-        /// </summary>
         public SystemTelemetry GetCurrentSystemTelemetry()
         {
             var telemetry = new SystemTelemetry
             {
-                IsExtractingDrivers = NativeRuntimeExtractor.IsExtracting,
+                IsExtractingDrivers = false,
                 Gpu = new GpuStatus
                 {
                     UsedMemoryGb = _nvmlProvider.GetUsedMemoryGb(),
@@ -55,12 +50,6 @@ namespace InstantAIGate.Infrastructure.Telemetry
                 },
                 System = GetSystemHardwareStatus()
             };
-
-            // GUARANTEE: Short-circuit here. Do not execute any code inside _modelManager while files are extracting.
-            if (telemetry.IsExtractingDrivers)
-            {
-                return telemetry;
-            }
 
             try
             {
@@ -94,7 +83,7 @@ namespace InstantAIGate.Infrastructure.Telemetry
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Deferred detailed core aggregation metrics while libraries finish mapping routines.");
+                _logger.LogWarning(ex, "Failed to aggregate model telemetry.");
             }
 
             return telemetry;
@@ -154,7 +143,7 @@ namespace InstantAIGate.Infrastructure.Telemetry
             }
         }
 
-        #region Memory Helpers (Native API / ProcFS)
+        #region Memory Helpers
 
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
@@ -210,7 +199,7 @@ namespace InstantAIGate.Infrastructure.Telemetry
             }
             catch
             {
-                // Fallback context mapping catcher
+                // Fallback handled
             }
         }
         #endregion
