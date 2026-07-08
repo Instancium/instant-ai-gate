@@ -88,6 +88,14 @@ internal static class DriverExtractor
             throw new FileNotFoundException($"Embedded runtime archive for {osPrefix} was not found in the assembly.");
         }
 
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+
+        // Explicitly validates the stream to prevent internal SharpCompress ArgumentNullException
+        if (stream == null)
+        {
+            throw new InvalidOperationException($"Failed to load the embedded resource stream for '{resourceName}'. The resource might be corrupted or inaccessible.");
+        }
+
         if (Directory.Exists(targetDirectory))
         {
             Directory.Delete(targetDirectory, true);
@@ -95,8 +103,7 @@ internal static class DriverExtractor
 
         Directory.CreateDirectory(targetDirectory);
 
-        using var stream = assembly.GetManifestResourceStream(resourceName);
-        using var archive = SevenZipArchive.Open(stream);
+        using var archive = SevenZipArchive.OpenArchive(stream);
 
         foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
         {
