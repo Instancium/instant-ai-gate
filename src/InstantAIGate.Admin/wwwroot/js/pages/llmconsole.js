@@ -231,6 +231,7 @@ async function executeInferenceStreaming() {
 
         currentStreamReader = response.body.getReader();
         const textDecoder = new TextDecoder("utf-8");
+        let streamBuffer = "";
 
         while (true) {
             const { value, done } = await currentStreamReader.read();
@@ -238,6 +239,7 @@ async function executeInferenceStreaming() {
 
             const chunk = textDecoder.decode(value, { stream: true });
             const streamLines = chunk.split('\n');
+            streamBuffer = streamLines.pop();
 
             for (let line of streamLines) {
                 line = line.trim();
