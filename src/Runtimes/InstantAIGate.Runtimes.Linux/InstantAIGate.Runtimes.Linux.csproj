@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PackageId>InstantAIGate.Runtimes.Linux</PackageId>
+		<Version>1.0.10</Version>
+		<Authors>Instancium</Authors>
+		<Description>Native Linux runtimes (CPU/CUDA) for llama.cpp, embedded as a compressed archive.</Description>
+		<IncludeBuildOutput>true</IncludeBuildOutput>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<EmbeddedResource Include="linux-x64.7z" />
+	</ItemGroup>
+
+</Project>

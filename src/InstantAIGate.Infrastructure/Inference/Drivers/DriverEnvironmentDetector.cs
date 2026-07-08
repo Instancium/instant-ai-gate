@@ -31,13 +31,32 @@ public static class DriverEnvironmentDetector
     }
 
     /// <summary>
-    /// Retrieves the local runtimes path if configured for debug mode.
+    /// Retrieves the local runtimes path via environment variable or automatic upwards directory traversal (Zero-Config Debug).
     /// </summary>
     /// <returns>The physical path to the local runtimes, or null if running in production mode.</returns>
     public static string? GetLocalRuntimesPath()
     {
-        var path = Environment.GetEnvironmentVariable(RuntimesPathEnvironmentVariable);
-        return !string.IsNullOrWhiteSpace(path) && Directory.Exists(path) ? path : null;
+        // 1. Explicit configuration (CI/CD or specific local override)
+        var envPath = Environment.GetEnvironmentVariable(RuntimesPathEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(envPath) && Directory.Exists(envPath))
+        {
+            return envPath;
+        }
+
+        // 2. Zero-Config Local Debug: Traverse upwards to find the ".runtimes" source folder
+        var currentDir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (currentDir != null)
+        {
+            var potentialRuntimesDir = Path.Combine(currentDir.FullName, ".runtimes");
+            if (Directory.Exists(potentialRuntimesDir))
+            {
+                return potentialRuntimesDir;
+            }
+            currentDir = currentDir.Parent;
+        }
+
+        // 3. Production mode (NuGet extraction)
+        return null;
     }
 
     /// <summary>
