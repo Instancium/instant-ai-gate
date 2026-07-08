@@ -6,15 +6,17 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<PackageId>InstantAIGate.Runtimes.Linux</PackageId>
-		<Version>1.0.10</Version>
+		<Version>1.0.12</Version>
 		<Authors>Instancium</Authors>
 		<Description>Native Linux runtimes (CPU/CUDA) for llama.cpp, embedded as a compressed archive.</Description>
 		<IncludeBuildOutput>true</IncludeBuildOutput>
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<EmbeddedResource Include="linux-x64.7z" />
+		<None Include="README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 
 </Project>

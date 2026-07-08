@@ -2,9 +2,6 @@
 
 ## Overview
 **Package ID:** `InstantAIGate.Runtimes.Linux`
-**Version:** 1.0.10
-**Author:** Instancium
-**Target Framework:** `netstandard2.0`
 
 This package provides native Linux runtimes (CPU/CUDA) for **llama.cpp**, embedded as a compressed `linux-x64.7z` archive. It acts as the core inference engine for Linux environments, enabling hardware-accelerated execution of LLMs.
 
@@ -23,17 +20,14 @@ The Linux runtime provides universal GPU support built against the latest CUDA t
 
 ### Supported NVIDIA GPU Architectures
 The binary natively targets and includes execution cores for the following architectures:
+
 | SM Version | Code Name / Generation (Approx.) | Note |
-| :--- | :--- | :--- |
+|---|---|---|
 | **86** | Ampere | RTX 30-series, A-series |
 | **89** | Ada Lovelace | RTX 40-series |
 | **90** | Hopper | H100 / H200 |
 | **100** | Blackwell | Server/Datacenter (B100) |
 | **120** | Blackwell | Consumer (RTX 50-series) |
-
-## Software & Driver Requirements
-
-**⚠️ CRITICAL REQUIREMENT:** The host system's NVIDIA drivers MUST be updated to support a minimum of CUDA 13.3.0. Older drivers will cause initialization failures.
 
 ## Embedded Artifacts
 The embedded `linux-x64.7z` archive contains the following compiled shared objects (`*.so` files):

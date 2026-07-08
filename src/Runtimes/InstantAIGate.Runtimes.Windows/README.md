@@ -2,8 +2,6 @@
 
 ## Overview
 **Package ID:** `InstantAIGate.Runtimes.Windows`
-**Version:** 1.0.10
-**Author:** Instancium
 **Target Framework:** `netstandard2.0`
 
 This package provides native Windows runtimes (CPU/CUDA) for **llama.cpp**, embedded as a compressed `windows-x64.7z` archive. It is designed to act as a drop-in execution backend for AI applications requiring hardware-accelerated inference on Windows systems.
@@ -22,8 +20,9 @@ This runtime is compiled as a "Fat Binary" with universal GPU support via CUDA.
 
 ### Supported NVIDIA GPU Architectures
 The binary includes compiled kernels for the following CUDA architectures (SM versions):
+
 | SM Version | Code Name / Generation (Approx.) | Note |
-| :--- | :--- | :--- |
+|---|---|---|
 | **86** | Ampere | RTX 30-series, A-series |
 | **89** | Ada Lovelace | RTX 40-series |
 | **90** | Hopper | H100 / H200 |
@@ -38,9 +37,6 @@ The embedded `windows-x64.7z` archive contains the following compiled dynamic li
 * `ggml-cpu.dll`
 * `ggml-cuda.dll`
 
-## Software & Driver Requirements
-
-**⚠️ CRITICAL REQUIREMENT:** The host system's NVIDIA drivers MUST be updated to support a minimum of CUDA 13.3.0. Older drivers will cause initialization failures.
 
 ## ⚖️ License
 
