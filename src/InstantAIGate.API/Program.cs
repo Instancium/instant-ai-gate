@@ -12,9 +12,7 @@ using System.Text.Json;
 Console.OutputEncoding = Encoding.UTF8;
 Console.InputEncoding = Encoding.UTF8;
 
-// Synchronously extracts and configures native llama.cpp drivers (Zone B & C).
-// Must be executed before any DI container builds or P/Invoke attempts occur.
-LlamaDriverLoader.EnsureInitialized();
+
 
 var argsOptions = WindowsServiceConfigurator.GetOptions(args);
 var builder = WebApplication.CreateBuilder(argsOptions);

@@ -5,6 +5,7 @@ using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Infrastructure.Catalog;
 using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Adapters;
+using InstantAIGate.Infrastructure.Inference.Drivers;
 using InstantAIGate.Infrastructure.Inference.Native;
 using InstantAIGate.Infrastructure.NvmlNative;
 using InstantAIGate.Infrastructure.Storage;
@@ -52,7 +53,11 @@ namespace InstantAIGate.Infrastructure
 
             // --- Telemetry ---
             services.AddSingleton<NvmlProvider>();
+
+            services.AddSingleton<IDriverStateProvider, DriverStateProvider>();
+            services.AddHostedService<DriverInitializationHostedService>();
             services.AddSingleton<ITelemetryService, TelemetryService>();
+
 
             return services;
         }

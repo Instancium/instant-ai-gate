@@ -2,41 +2,29 @@
 
 namespace InstantAIGate.Infrastructure.Inference.Drivers;
 
-/// <summary>
-/// Orchestrates the initialization, extraction, and loading of native llama.cpp drivers.
-/// </summary>
 public static class LlamaDriverLoader
 {
     private static readonly object SynchronizationLock = new();
     private static bool isInitialized;
 
-    /// <summary>
-    /// Ensures that all required native drivers are extracted and ready for use.
-    /// </summary>
     public static void EnsureInitialized()
     {
-        if (isInitialized)
-        {
-            return;
-        }
+        if (isInitialized) return;
 
         lock (SynchronizationLock)
         {
-            if (isInitialized)
-            {
-                return;
-            }
+            if (isInitialized) return;
 
-            // Zone B: Environment Detection
             DriverEnvironmentDetector.EnsureCompatiblePlatform();
 
             var useCuda = DriverEnvironmentDetector.IsCudaAvailable();
             var osPrefix = DriverEnvironmentDetector.GetCurrentOsPrefix();
             var localPath = DriverEnvironmentDetector.GetLocalRuntimesPath();
 
-            // Zone C: Deployment & Initialization
             var finalDriverPath = DriverExtractor.ExtractAndGetPath(osPrefix, useCuda, localPath);
-            DriverNativeResolver.Register(finalDriverPath);
+
+       
+            DriverNativeResolver.RegisterPath(finalDriverPath);
 
             isInitialized = true;
         }

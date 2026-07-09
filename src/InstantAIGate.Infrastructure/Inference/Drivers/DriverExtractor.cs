@@ -2,6 +2,7 @@
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using SharpCompress.Archives.SevenZip;
 
@@ -93,9 +94,6 @@ internal static class DriverExtractor
 
         try
         {
-            // Forces the CLR to load the platform-specific runtime package into the AppDomain.
-            // This is required because the assembly contains only resources (no types), 
-            // so the JIT compiler won't load it automatically.
             targetAssembly = Assembly.Load(runtimeAssemblyName);
         }
         catch (Exception ex)
@@ -120,11 +118,7 @@ internal static class DriverExtractor
             throw new InvalidOperationException($"Failed to load the embedded resource stream for '{resourceName}'.");
         }
 
-        if (Directory.Exists(targetDirectory))
-        {
-            Directory.Delete(targetDirectory, true);
-        }
-
+ 
         Directory.CreateDirectory(targetDirectory);
 
         using var archive = SevenZipArchive.OpenArchive(stream);
@@ -142,6 +136,23 @@ internal static class DriverExtractor
             using var entryStream = entry.OpenEntryStream();
             using var destStream = File.Create(destPath);
             entryStream.CopyTo(destStream);
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            var libsToLink = new[] { "libggml", "libggml-base", "libggml-cuda", "libggml-cpu", "libggml-vulkan", "libllama" };
+
+            foreach (var lib in libsToLink)
+            {
+                var sourceFile = Path.Combine(targetDirectory, $"{lib}.so");
+                var linkFile = Path.Combine(targetDirectory, $"{lib}.so.0");
+
+                if (File.Exists(sourceFile))
+                {
+                  
+                    File.Copy(sourceFile, linkFile, true);
+                }
+            }
         }
     }
 }

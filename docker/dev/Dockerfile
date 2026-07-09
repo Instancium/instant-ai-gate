@@ -35,7 +35,7 @@ RUN dotnet publish "src/InstantAIGate.Admin/InstantAIGate.Admin.csproj" \
 # ==========================================
 # 3. API Runtime (CUDA + GPU)
 # ==========================================
-FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04 AS api-runtime
+FROM nvidia/cuda:13.3.0-runtime-ubuntu24.04 AS api-runtime
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -48,24 +48,8 @@ RUN rm -f /app/*.so /app/*.so.0 2>/dev/null || true
 COPY --from=dotnet-build /app/publish/api .
 EXPOSE 80
 
-# ИСПРАВЛЕНИЕ: Добавлен mkdir -p для предотвращения падения сборки (can't cd) 
-# и защита симлинков (если C# код не удалит папку)
-RUN mkdir -p /app/runtimes/linux-x64/cuda && cd /app/runtimes/linux-x64/cuda && \
-    ln -sf libggml.so libggml.so.0 && \
-    ln -sf libggml-base.so libggml-base.so.0 && \
-    ln -sf libggml-cuda.so libggml-cuda.so.0 && \
-    ln -sf libggml-cpu.so libggml-cpu.so.0 && \
-    ln -sf libllama.so libllama.so.0
-
-RUN mkdir -p /app/runtimes/linux-x64/cpu && cd /app/runtimes/linux-x64/cpu && \
-    ln -sf libggml-base.so libggml-base.so.0 2>/dev/null || true && \
-    ln -sf libggml-cpu.so libggml-cpu.so.0 2>/dev/null || true
-
-RUN mkdir -p /app/runtimes/linux-x64/vulkan && cd /app/runtimes/linux-x64/vulkan && \
-    ln -sf libggml-base.so libggml-base.so.0 2>/dev/null || true && \
-    ln -sf libggml-vulkan.so libggml-vulkan.so.0 2>/dev/null || true
-
-ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64/cuda:/app/runtimes/linux-x64/cpu:/app/runtimes/linux-x64/vulkan:/app:$LD_LIBRARY_PATH
+RUN mkdir -p /app/runtimes/linux/cuda /app/runtimes/linux/cpu /app/runtimes/linux/vulkan
+ENV LD_LIBRARY_PATH=/app/runtimes/linux/cuda:/app/runtimes/linux/cpu:/app/runtimes/linux/vulkan:/app:$LD_LIBRARY_PATH
 ENV INSTANTAIGATE_CONFIG_PATH=/app/gateway/config
 
 RUN chmod +x ./InstantAIGate.API

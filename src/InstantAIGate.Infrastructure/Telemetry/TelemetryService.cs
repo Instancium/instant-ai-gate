@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using InstantAIGate.Application.Dtos.Telemetry;
 using InstantAIGate.Application.Interfaces;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Infrastructure.NvmlNative;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace InstantAIGate.Infrastructure.Telemetry
@@ -14,10 +14,11 @@ namespace InstantAIGate.Infrastructure.Telemetry
     /// <summary>
     /// Compiles host operational metrics and maps underlying runtime execution layers.
     /// </summary>
-    public class TelemetryService : ITelemetryService
+    public sealed class TelemetryService : ITelemetryService
     {
-        private readonly IModelManager _modelManager;
+        private readonly IServiceScopeFactory _scopeFactory;
         private readonly NvmlProvider _nvmlProvider;
+        private readonly IDriverStateProvider _driverStateProvider;
         private readonly ILogger<TelemetryService> _logger;
 
         private DateTime _lastCpuCheck = DateTime.UtcNow;
@@ -26,12 +27,14 @@ namespace InstantAIGate.Infrastructure.Telemetry
         private readonly object _cpuLock = new();
 
         public TelemetryService(
-            IModelManager modelManager,
+            IServiceScopeFactory scopeFactory,
             NvmlProvider nvmlProvider,
+            IDriverStateProvider driverStateProvider,
             ILogger<TelemetryService> logger)
         {
-            _modelManager = modelManager ?? throw new ArgumentNullException(nameof(modelManager));
+            _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _nvmlProvider = nvmlProvider ?? throw new ArgumentNullException(nameof(nvmlProvider));
+            _driverStateProvider = driverStateProvider ?? throw new ArgumentNullException(nameof(driverStateProvider));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _lastCpuTime = Process.GetCurrentProcess().TotalProcessorTime;
         }
@@ -40,7 +43,7 @@ namespace InstantAIGate.Infrastructure.Telemetry
         {
             var telemetry = new SystemTelemetry
             {
-                IsExtractingDrivers = false,
+                IsExtractingDrivers = _driverStateProvider.IsExtracting,
                 Gpu = new GpuStatus
                 {
                     UsedMemoryGb = _nvmlProvider.GetUsedMemoryGb(),
@@ -51,11 +54,19 @@ namespace InstantAIGate.Infrastructure.Telemetry
                 System = GetSystemHardwareStatus()
             };
 
+            if (telemetry.IsExtractingDrivers)
+            {
+                return telemetry;
+            }
+
             try
             {
-                var nativeDetails = _modelManager.GetNativeDetails();
-                var activeModels = _modelManager.ActiveModels;
-                var semaphores = _modelManager.UserSemaphores;
+                using var scope = _scopeFactory.CreateScope();
+                var modelManager = scope.ServiceProvider.GetRequiredService<IModelManager>();
+
+                var nativeDetails = modelManager.GetNativeDetails();
+                var activeModels = modelManager.ActiveModels;
+                var semaphores = modelManager.UserSemaphores;
 
                 foreach (var detail in nativeDetails)
                 {
@@ -63,8 +74,8 @@ namespace InstantAIGate.Infrastructure.Telemetry
                     activeModels.TryGetValue(repoId, out var config);
                     semaphores.TryGetValue(repoId, out var sem);
 
-                    int maxUsers = config?.MaxContexts ?? 0;
-                    int activeUsers = (sem != null && maxUsers > 0) ? (maxUsers - sem.CurrentCount) : 0;
+                    var maxUsers = config?.MaxContexts ?? 0;
+                    var activeUsers = sem != null && maxUsers > 0 ? maxUsers - sem.CurrentCount : 0;
 
                     telemetry.Models.Add(new ModelTelemetry
                     {
@@ -77,13 +88,13 @@ namespace InstantAIGate.Infrastructure.Telemetry
                         IdleContextsCount = detail.IdleContextsCount,
                         MaxParallelUsers = maxUsers,
                         ActiveUsersCount = activeUsers,
-                        IsQueueWaiting = (sem != null && sem.CurrentCount == 0)
+                        IsQueueWaiting = sem != null && sem.CurrentCount == 0
                     });
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to aggregate model telemetry.");
+                _logger.LogWarning(ex, "Failed to aggregate native model telemetry.");
             }
 
             return telemetry;
@@ -95,13 +106,13 @@ namespace InstantAIGate.Infrastructure.Telemetry
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                GetWindowsMemory(out double totalGb, out double usedGb);
+                GetWindowsMemory(out var totalGb, out var usedGb);
                 status.TotalRamGb = totalGb;
                 status.UsedRamGb = usedGb;
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                GetLinuxMemory(out double totalGb, out double usedGb);
+                GetLinuxMemory(out var totalGb, out var usedGb);
                 status.TotalRamGb = totalGb;
                 status.UsedRamGb = usedGb;
             }
@@ -134,9 +145,12 @@ namespace InstantAIGate.Infrastructure.Telemetry
                 _lastCpuCheck = currentTime;
                 _lastCpuTime = currentCpuTime;
 
-                if (systemTimeDelta <= 0) return _lastCalculatedCpuUsage;
+                if (systemTimeDelta <= 0)
+                {
+                    return _lastCalculatedCpuUsage;
+                }
 
-                double usage = (cpuTimeDelta / systemTimeDelta) * 100;
+                var usage = (cpuTimeDelta / systemTimeDelta) * 100;
                 _lastCalculatedCpuUsage = Math.Clamp((int)Math.Round(usage), 0, 100);
 
                 return _lastCalculatedCpuUsage;
@@ -182,26 +196,31 @@ namespace InstantAIGate.Infrastructure.Telemetry
             totalGb = 0; usedGb = 0;
             try
             {
-                string[] lines = File.ReadAllLines("/proc/meminfo");
+                var lines = File.ReadAllLines("/proc/meminfo");
                 double memTotalKib = 0;
                 double memAvailableKib = 0;
 
                 foreach (var line in lines)
                 {
                     if (line.StartsWith("MemTotal:"))
+                    {
                         memTotalKib = double.Parse(System.Text.RegularExpressions.Regex.Match(line, @"\d+").Value);
+                    }
                     if (line.StartsWith("MemAvailable:"))
+                    {
                         memAvailableKib = double.Parse(System.Text.RegularExpressions.Regex.Match(line, @"\d+").Value);
+                    }
                 }
 
                 totalGb = memTotalKib / 1024.0 / 1024.0;
                 usedGb = (memTotalKib - memAvailableKib) / 1024.0 / 1024.0;
             }
-            catch
+            catch (Exception ex)
             {
-                // Fallback handled
+                _logger.LogWarning(ex, "Failed to parse Linux memory limits.");
             }
         }
+
         #endregion
     }
 }
