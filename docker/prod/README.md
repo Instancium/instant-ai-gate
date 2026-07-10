@@ -4,7 +4,6 @@ This directory contains the production-ready Docker configuration for InstantAIG
 
 ## Files
 
-- `Dockerfile` - Production Docker image definition (uses pre-built binaries from NuGet packages)
 - `docker-compose.yml` - Production compose file using pre-built images from GitHub Container Registry
 - `.dockerignore` - Docker build context exclusion rules
 
