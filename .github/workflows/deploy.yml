@@ -1,9 +1,6 @@
 name: Build and Publish Containers to GHCR
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       target:
@@ -42,20 +39,14 @@ jobs:
       - name: Determine build type and images
         id: build-type
         run: |
-          if [ "${{ github.event_name }}" == "push" ]; then
+          if [ "${{ github.event.inputs.target }}" == "beta" ]; then
+            echo "type=beta" >> $GITHUB_OUTPUT
+            echo "api_image=ghcr.io/instancium/instant-ai-gate-api-beta" >> $GITHUB_OUTPUT
+            echo "admin_image=ghcr.io/instancium/instant-ai-gate-admin-beta" >> $GITHUB_OUTPUT
+          else
             echo "type=production" >> $GITHUB_OUTPUT
             echo "api_image=ghcr.io/instancium/instant-ai-gate-api" >> $GITHUB_OUTPUT
             echo "admin_image=ghcr.io/instancium/instant-ai-gate-admin" >> $GITHUB_OUTPUT
-          else
-            if [ "${{ github.event.inputs.target }}" == "beta" ]; then
-              echo "type=beta" >> $GITHUB_OUTPUT
-              echo "api_image=ghcr.io/instancium/instant-ai-gate-api-beta" >> $GITHUB_OUTPUT
-              echo "admin_image=ghcr.io/instancium/instant-ai-gate-admin-beta" >> $GITHUB_OUTPUT
-            else
-              echo "type=production" >> $GITHUB_OUTPUT
-              echo "api_image=ghcr.io/instancium/instant-ai-gate-api" >> $GITHUB_OUTPUT
-              echo "admin_image=ghcr.io/instancium/instant-ai-gate-admin" >> $GITHUB_OUTPUT
-            fi
           fi
 
       - name: Extract Docker Metadata for API
