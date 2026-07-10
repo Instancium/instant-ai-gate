@@ -24,9 +24,9 @@
 
 ## What is InstantAIGate?
 
-**InstantAIGate** is the natural next step for teams who love the flexibility of desktop AI tools (like Ollama or LM Studio) but need to bring those capabilities to a shared, highly-concurrent server environment. 
+**InstantAIGate** is an enterprise-grade infrastructure building block (middleware) designed for teams who need to move beyond fragile desktop AI tools (like Ollama or LM Studio) and deploy a highly-concurrent, production-ready server environment.
 
-It is a ready-to-use infrastructure building block (middleware) that securely hosts local Large Language Models (LLMs) and Embeddings. Built entirely in .NET, it provides an isolated server-side runtime, a built-in administration dashboard, and a seamless OpenAI-compatible API bridge—putting total architectural control over inference back into the hands of your infrastructure team.
+Built entirely in .NET, it provides an isolated server-side runtime, a built-in administration dashboard, and a seamless OpenAI-compatible API bridge. InstantAIGate firmly returns total architectural control over LLM and Embedding inference back into the hands of your infrastructure and security teams, ensuring predictable performance and strict resource management.
 
 <p align="center">
   <img src="media/dashboard.gif" alt="InstantAIGate Dashboard Demo" width="100%" />
@@ -34,26 +34,29 @@ It is a ready-to-use infrastructure building block (middleware) that securely ho
 
 ## Core Features (Foundation)
 
+* **🛡️ Validated Stability (LTS-First Approach)**
+  We reject the chaos of the AI hype cycle. InstantAIGate guarantees production reliability by supporting a strictly curated, regression-tested matrix of `llama.cpp` versions and model weights. Plan your enterprise infrastructure updates with predictability, free from sudden breaking changes or dependency conflicts.
+
 * **🔌 Drop-In OpenAI Compatibility**
-  Exposes a standardized API fully compatible with the OpenAI specification. Seamlessly route existing application workflows (or LangChain agents) to your local models by simply updating the `base_url`.
+  Exposes a standardized API fully compatible with the OpenAI specification. Seamlessly route existing application workflows (including LangChain or Dify agents) to your local models by simply updating the `base_url`.
 
 * **📈 Zero-Config Observability**
   No complex metric stacks required for day-one operations. The built-in web interface provides immediate visibility into multi-GPU health, exact VRAM allocation, and real-time request queues via SignalR streams.
 
 * **⚙️ High-Density Hardware Control**
-  Extract absolute maximum throughput from a single bare-metal server. Explicitly map LLM computational layers between GPU and CPU, and enforce physical memory locking (`mlock`) to guarantee zero system swap latency spikes.
+  Extract absolute maximum throughput from a single bare-metal server. Explicitly map LLM computational layers between GPU and CPU, and enforce physical memory locking (`mlock`) to guarantee zero system swap latency spikes and prevent Out-Of-Memory (OOM) crashes under heavy load.
 
 * **🔄 Dynamic Weight Pooling & Hot-Swap**
   Manage highly concurrent workflows across your team. Host embedding models (like BGE-M3) and conversational layers (like Qwen) simultaneously. Hot-swap multi-gigabyte models on the fly via REST API or the Web UI without dropping active client connections.
 
 * **📦 Zero Python Dependency (.NET Native)**
-  Built purely in modern C# and compiled as a standalone binary. Bypass complex virtual environments, dependency hell, and Python runtime overhead. Predictable deployment for both Windows and Linux servers.
+  Built purely in modern C# and compiled as a standalone binary. Bypass complex virtual environments, dependency hell, and Python runtime overhead. Enjoy predictable, bulletproof deployment across both Windows and Linux servers.
 
 ## Technical Architecture & High-Level Design
 
-**InstantAIGate** is built on **Domain-Driven Design (DDD)** principles, cleanly separating core business logic from infrastructural details. The architecture ensures modularity, testability, and high native performance. 
+**InstantAIGate** is built on **Domain-Driven Design (DDD)** principles, cleanly separating core business logic from infrastructural details. This architecture ensures modularity, testability, and high native performance.
 
-The core interaction identifier is the **RepoId** (e.g., `"Qwen/Qwen2.5-7B-Instruct-GGUF"`). The presentation layer and external APIs remain entirely agnostic of physical disk paths, file extensions, or underlying C++ bindings.
+The core interaction identifier is the **RepoId** (e.g., `"Qwen/Qwen2.5-7B-Instruct-GGUF"`). The presentation layer and external APIs remain entirely agnostic of physical disk paths, file extensions, or underlying C++ bindings, ensuring a clean, abstraction-first approach to model management.
 
 ```mermaid
 graph TD
