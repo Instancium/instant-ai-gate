@@ -78,7 +78,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./InstantAIGate/docker/dev/Dockerfile
+          file: ./docker/dev/Dockerfile
           target: api-runtime
           push: true
           tags: ${{ steps.meta-api.outputs.tags }}
@@ -92,7 +92,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./InstantAIGate/docker/dev/Dockerfile
+          file: ./docker/dev/Dockerfile
           target: admin-runtime
           push: true
           tags: ${{ steps.meta-admin.outputs.tags }}
