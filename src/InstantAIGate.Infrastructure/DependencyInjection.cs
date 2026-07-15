@@ -29,10 +29,14 @@ namespace InstantAIGate.Infrastructure
             // --- Model Registry Tracking ---
             services.AddSingleton<IModelRegistry, InMemoryModelRegistry>();
 
-            // --- Core LLamaSharp Native Infrastructure ---
             // Holds raw native model weight references and manages low-level context recycling pools
             services.AddSingleton<INativeLlamaApi, NativeLlamaApi>();
             services.AddSingleton<IModelProvider, LlamaModelProvider>();
+
+            // --- MTMD (CLIP) Native Infrastructure ---
+            // Vision processing bindings and separate memory manager for projector models
+            services.AddSingleton<INativeMtmdApi, MtmdApi>();
+            services.AddSingleton<IMtmdClipModelManager, MtmdClipModelManager>();
 
             // --- Multi-Model Lifecycle Orchestrator ---
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling
@@ -40,9 +44,12 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<IModelManager>(sp => sp.GetRequiredService<LlamaModelManager>());
             services.AddSingleton<ILlamaModelManager>(sp => sp.GetRequiredService<LlamaModelManager>());
 
-            // --- Text Inference Adapters ---
+            // --- Inference Adapters (Router Pattern) ---
             // Stateless high-level execution layer responsible for token-streaming and complete string generation blocks
-            services.AddTransient<IChatAdapter, LlamaChatAdapter>();
+            services.AddTransient<LlamaChatAdapter>();
+            services.AddTransient<MultimodalChatAdapter>();
+            services.AddTransient<IChatAdapter, ChatAdapterRouter>(); // Main endpoint for the controller
+
             services.AddTransient<IEmbeddingAdapter, LlamaEmbeddingAdapter>();
 
             // --- Remote Storage and File Management Services ---
@@ -57,7 +64,6 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<IDriverStateProvider, DriverStateProvider>();
             services.AddHostedService<DriverInitializationHostedService>();
             services.AddSingleton<ITelemetryService, TelemetryService>();
-
 
             return services;
         }
