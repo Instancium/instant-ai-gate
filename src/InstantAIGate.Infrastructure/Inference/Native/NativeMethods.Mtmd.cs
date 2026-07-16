@@ -107,5 +107,17 @@ namespace InstantAIGate.Infrastructure.Inference.Native
 
         [DllImport("llama", CallingConvention = CallingConvention.Cdecl, EntryPoint = "mtmd_get_output_embd")]
         public static extern IntPtr mtmd_get_output_embd(IntPtr ctx); // Returns float*
+
+        [DllImport("llama", CallingConvention = CallingConvention.Cdecl, EntryPoint = "mtmd_input_chunks_get_size")]
+        public static extern nuint mtmd_input_chunks_get_size(IntPtr chunks);
+
+        [DllImport("llama", CallingConvention = CallingConvention.Cdecl, EntryPoint = "mtmd_input_chunks_get_chunk")]
+        public static extern IntPtr mtmd_input_chunks_get_chunk(IntPtr chunks, nuint index);
+
+        [DllImport("llama", CallingConvention = CallingConvention.Cdecl, EntryPoint = "mtmd_input_chunk_get_type")]
+        public static extern mtmd_input_chunk_type mtmd_input_chunk_get_type(IntPtr chunk);
+
+        [DllImport("llama", CallingConvention = CallingConvention.Cdecl, EntryPoint = "mtmd_input_chunk_get_tokens")]
+        public static extern IntPtr mtmd_input_chunk_get_tokens(IntPtr chunk);
     }
 }

@@ -258,4 +258,19 @@ public interface INativeLlamaApi
 
         return NativeMethods.llama_init_from_model(model, p);
     }
+
+    int GetModelEmbeddingSize(IntPtr model);
+
+    /// <summary>
+    /// Decodes a batch of embeddings (for multimodal vision) through the model.
+    /// </summary>
+    /// <param name="context">The inference context handle.</param>
+    /// <param name="batchSize">Number of tokens/embeddings in the batch.</param>
+    /// <param name="embdPtr">Pointer to the array of float embeddings.</param>
+    /// <param name="posPtr">Pointer to the array of position IDs.</param>
+    /// <param name="nSeqIdPtr">Pointer to the array of sequence ID counts.</param>
+    /// <param name="seqIdPtr">Pointer to the array of sequence ID pointers.</param>
+    /// <param name="logitsPtr">Pointer to the array indicating which tokens should output logits.</param>
+    /// <returns>0 on success, non-zero on failure.</returns>
+    int DecodeEmbeddings(IntPtr context, int batchSize, IntPtr embdPtr, IntPtr posPtr, IntPtr nSeqIdPtr, IntPtr seqIdPtr, IntPtr logitsPtr);
 }

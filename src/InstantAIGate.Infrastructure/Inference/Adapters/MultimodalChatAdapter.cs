@@ -55,22 +55,17 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
         public async IAsyncEnumerable<string> StreamAsync(LlamaChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
         {
-            // 1. Extract the first image URL from messages (currently supporting one image)
             string? imageUrl = ExtractFirstImageUrl(request.Messages);
             if (string.IsNullOrEmpty(imageUrl))
                 throw new InvalidOperationException("No image found in the multimodal request.");
 
-            // 2. Download and decode the image into a flat RGB array
             var imageResult = await _imageResolver.ResolveAsync(imageUrl, ct);
 
-            // 3. Retrieve text model configuration
             string textModelPath = await _pathProvider.GetFullModelPathAsync(request.Model);
             var profile = ModelProfileResolver.Resolve(textModelPath);
 
-            // TODO: Projector path should ideally be read from the model configuration registry
             string projectorPath = textModelPath.Replace(".gguf", "-mmproj.gguf");
 
-            // 4. Acquire contexts sequentially to satisfy native pointer dependencies
             using var llamaModel = await _llamaManager.AcquireModelAsync(request.Model, ct);
             using var llamaContext = await _llamaManager.AcquireContextAsync(request.Model, ct);
 
@@ -80,66 +75,230 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 useGpu: true,
                 ct);
 
-            // ==========================================
-            // NATIVE MEMORY ALLOCATION PHASE
-            // ==========================================
+            if (!_llamaManager.ActiveModels.TryGetValue(request.Model, out var modelSettings))
+            {
+                throw new InvalidOperationException($"Configuration for model '{request.Model}' not found in active registry.");
+            }
 
-            // Pin the RGB array to prevent Garbage Collector from moving it during unmanaged execution
+            int nBatchLimit = (int)modelSettings.BatchSize;
+            if (nBatchLimit <= 0) nBatchLimit = 512;
+            int maxTokens = request.MaxTokens > 0 ? request.MaxTokens : 512;
+
+            IntPtr vocab = _llamaApi.ModelGetVocab(llamaModel.Handle);
+            int nEmbdDim = _llamaApi.GetModelEmbeddingSize(llamaModel.Handle);
+
             GCHandle pinnedRgb = GCHandle.Alloc(imageResult.RgbData, GCHandleType.Pinned);
 
             IntPtr nativeBitmap = IntPtr.Zero;
             IntPtr nativeChunks = IntPtr.Zero;
             IntPtr[] bitmapArray = new IntPtr[1];
 
+            // Setup Sampler (Identical to LlamaChatAdapter)
+            var chainParams = _llamaApi.SamplerChainDefaultParams();
+            IntPtr sampler = _llamaApi.SamplerChainInit(chainParams);
+            _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitTopK(request.TopK));
+            _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitTopP(request.TopP, (nuint)1));
+            _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitTemp(request.Temperature > 0 ? request.Temperature : 0.7f));
+            _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitDist(request.Seed.HasValue ? (uint)request.Seed.Value : (uint)Random.Shared.Next()));
+
+            IntPtr repetitionSampler = _llamaApi.SamplerInitRepetition(1.1f, request.FrequencyPenalty, request.PresencePenalty);
+            if (repetitionSampler != IntPtr.Zero) _llamaApi.SamplerChainAdd(sampler, repetitionSampler);
+
+            // Memory Allocation for flat decode arrays
+            int[] batchPos = new int[nBatchLimit];
+            int[] batchNSeq = new int[nBatchLimit];
+            sbyte[] batchLogits = new sbyte[nBatchLimit];
+
+            int seqIdValue = 0;
+            GCHandle hSeqIdValue = GCHandle.Alloc(seqIdValue, GCHandleType.Pinned);
+            IntPtr[] seqIdPointers = new IntPtr[nBatchLimit];
+            for (int i = 0; i < nBatchLimit; i++) seqIdPointers[i] = hSeqIdValue.AddrOfPinnedObject();
+
+            GCHandle hPos = GCHandle.Alloc(batchPos, GCHandleType.Pinned);
+            GCHandle hNSeq = GCHandle.Alloc(batchNSeq, GCHandleType.Pinned);
+            GCHandle hLogits = GCHandle.Alloc(batchLogits, GCHandleType.Pinned);
+            GCHandle hSeqIdPtrs = GCHandle.Alloc(seqIdPointers, GCHandleType.Pinned);
+
+            var utf8Decoder = Encoding.UTF8.GetDecoder();
+            byte[] byteBuffer = new byte[256];
+            char[] charBuffer = new char[512];
+            var accumulatedText = new StringBuilder();
+
             try
             {
-                // Initialize native bitmap from raw bytes
                 nativeBitmap = _mtmdApi.CreateBitmap(imageResult.Width, imageResult.Height, pinnedRgb.AddrOfPinnedObject());
                 bitmapArray[0] = nativeBitmap;
 
-                // Allocate chunk container
                 nativeChunks = _mtmdApi.CreateInputChunks();
-
-                // Build standard text prompt from message history
                 string prompt = profile.Template.BuildPrompt(request.Messages);
 
-                // Tokenize text and merge with the image bitmap into input chunks
-                int tokensCount = _mtmdApi.Tokenize(mtmdContext.Handle, nativeChunks, prompt, bitmapArray);
+                int totalPromptTokens = _mtmdApi.Tokenize(mtmdContext.Handle, nativeChunks, prompt, bitmapArray);
+                if (totalPromptTokens <= 0) throw new InvalidOperationException("Failed to tokenize multimodal prompt.");
 
-                if (tokensCount <= 0)
-                    throw new InvalidOperationException("Failed to tokenize multimodal prompt.");
-
-                _logger.LogInformation("Multimodal prompt tokenized into {Count} tokens/chunks.", tokensCount);
+                int chunkCount = _mtmdApi.GetChunksCount(nativeChunks);
+                int currentPos = 0;
 
                 // ==========================================
-                // INFERENCE PHASE (TODO)
+                // PHASE 1: INGESTION
                 // ==========================================
+                for (int c = 0; c < chunkCount; c++)
+                {
+                    ct.ThrowIfCancellationRequested();
 
-                yield return "[VISION PIPELINE EXPERIMENTAL RESPONSE]";
+                    IntPtr chunk = _mtmdApi.GetChunk(nativeChunks, c);
+                    var chunkType = _mtmdApi.GetChunkType(chunk);
+                    int nTokens = _mtmdApi.GetChunkTokenCount(chunk);
+                    bool isLastChunk = (c == chunkCount - 1);
+
+                    if (chunkType == NativeMethods.mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_TEXT)
+                    {
+                        int[] chunkTokens = _mtmdApi.GetChunkTokens(chunk, nTokens);
+                        GCHandle hTokens = GCHandle.Alloc(chunkTokens, GCHandleType.Pinned);
+
+                        try
+                        {
+                            for (int i = 0; i < nTokens; i++)
+                            {
+                                batchPos[i] = currentPos + i;
+                                batchNSeq[i] = 1;
+                                batchLogits[i] = (sbyte)((isLastChunk && i == nTokens - 1) ? 1 : 0);
+                            }
+
+                            int result = _llamaApi.Decode(
+                                llamaContext.Handle,
+                                nTokens,
+                                hTokens.AddrOfPinnedObject(),
+                                hPos.AddrOfPinnedObject(),
+                                hNSeq.AddrOfPinnedObject(),
+                                hSeqIdPtrs.AddrOfPinnedObject(),
+                                hLogits.AddrOfPinnedObject());
+
+                            if (result != 0) throw new InvalidOperationException($"Decode failed for text chunk: {result}");
+                        }
+                        finally
+                        {
+                            hTokens.Free();
+                        }
+                    }
+                    else if (chunkType == NativeMethods.mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_IMAGE)
+                    {
+                        if (_mtmdApi.EncodeChunk(mtmdContext.Handle, chunk) != 0)
+                            throw new InvalidOperationException("Failed to encode image chunk.");
+
+                        float[] embeddings = _mtmdApi.GetOutputEmbeddings(mtmdContext.Handle, nTokens, nEmbdDim);
+                        GCHandle hEmbd = GCHandle.Alloc(embeddings, GCHandleType.Pinned);
+
+                        try
+                        {
+                            for (int i = 0; i < nTokens; i++)
+                            {
+                                batchPos[i] = currentPos + i;
+                                batchNSeq[i] = 1;
+                                batchLogits[i] = (sbyte)((isLastChunk && i == nTokens - 1) ? 1 : 0);
+                            }
+
+                            int result = _llamaApi.DecodeEmbeddings(
+                                llamaContext.Handle,
+                                nTokens,
+                                hEmbd.AddrOfPinnedObject(),
+                                hPos.AddrOfPinnedObject(),
+                                hNSeq.AddrOfPinnedObject(),
+                                hSeqIdPtrs.AddrOfPinnedObject(),
+                                hLogits.AddrOfPinnedObject());
+
+                            if (result != 0) throw new InvalidOperationException($"Decode failed for image chunk: {result}");
+                        }
+                        finally
+                        {
+                            hEmbd.Free();
+                        }
+                    }
+
+                    currentPos += nTokens;
+                }
+
+                // ==========================================
+                // PHASE 2: GENERATION
+                // ==========================================
+                int eos = _llamaApi.VocabEos(vocab);
+                int generated = 0;
+                int[] singleTokenBuffer = new int[1];
+                GCHandle hSingleToken = GCHandle.Alloc(singleTokenBuffer, GCHandleType.Pinned);
+
+                try
+                {
+                    while (generated < maxTokens)
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        int token = _llamaApi.SamplerSample(sampler, llamaContext.Handle, 0);
+                        if (token == eos || token < 0) break;
+
+                        generated++;
+                        singleTokenBuffer[0] = token;
+                        batchPos[0] = currentPos++;
+                        batchNSeq[0] = 1;
+                        batchLogits[0] = 1;
+
+                        int pieceSize = _llamaApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, false);
+                        if (pieceSize > byteBuffer.Length)
+                        {
+                            byteBuffer = new byte[pieceSize];
+                            pieceSize = _llamaApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, false);
+                        }
+
+                        if (pieceSize > 0)
+                        {
+                            int charsDecoded = utf8Decoder.GetChars(byteBuffer, 0, pieceSize, charBuffer, 0, flush: false);
+                            if (charsDecoded > 0)
+                            {
+                                string piece = new string(charBuffer, 0, charsDecoded);
+                                accumulatedText.Append(piece);
+                                yield return piece;
+                            }
+                        }
+
+                        int result = _llamaApi.Decode(
+                            llamaContext.Handle,
+                            1,
+                            hSingleToken.AddrOfPinnedObject(),
+                            hPos.AddrOfPinnedObject(),
+                            hNSeq.AddrOfPinnedObject(),
+                            hSeqIdPtrs.AddrOfPinnedObject(),
+                            hLogits.AddrOfPinnedObject());
+
+                        if (result != 0) throw new InvalidOperationException("Decode failed during generation.");
+                    }
+                }
+                finally
+                {
+                    hSingleToken.Free();
+                }
             }
             finally
             {
-                // Ensure strict cleanup of all native allocations and unpin managed arrays
                 if (nativeChunks != IntPtr.Zero) _mtmdApi.FreeInputChunks(nativeChunks);
                 if (nativeBitmap != IntPtr.Zero) _mtmdApi.FreeBitmap(nativeBitmap);
-
                 if (pinnedRgb.IsAllocated) pinnedRgb.Free();
+
+                _llamaApi.SamplerFree(sampler);
+                hPos.Free();
+                hNSeq.Free();
+                hLogits.Free();
+                hSeqIdPtrs.Free();
+                hSeqIdValue.Free();
             }
         }
 
         private string? ExtractFirstImageUrl(List<ChatMessage>? messages)
         {
             if (messages == null) return null;
-
             foreach (var message in messages)
             {
                 if (message.ContentParts != null)
                 {
                     var imagePart = message.ContentParts.FirstOrDefault(p => p.Type == "image_url" && p.ImageUrl != null);
-                    if (imagePart != null)
-                    {
-                        return imagePart.ImageUrl!.Url;
-                    }
+                    if (imagePart != null) return imagePart.ImageUrl!.Url;
                 }
             }
             return null;

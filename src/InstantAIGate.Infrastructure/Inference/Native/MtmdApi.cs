@@ -94,5 +94,40 @@ namespace InstantAIGate.Infrastructure.Inference.Native
 
             return result;
         }
+
+        public int GetChunksCount(IntPtr chunks)
+        {
+            return (int)NativeMethods.mtmd_input_chunks_get_size(chunks);
+        }
+
+        public IntPtr GetChunk(IntPtr chunks, int index)
+        {
+            return NativeMethods.mtmd_input_chunks_get_chunk(chunks, (nuint)index);
+        }
+
+        public NativeMethods.mtmd_input_chunk_type GetChunkType(IntPtr chunk)
+        {
+            return NativeMethods.mtmd_input_chunk_get_type(chunk);
+        }
+
+        public int GetChunkTokenCount(IntPtr chunk)
+        {
+            return (int)NativeMethods.mtmd_input_chunk_get_n_tokens(chunk);
+        }
+
+        public int[] GetChunkTokens(IntPtr chunk, int tokenCount)
+        {
+            if (tokenCount <= 0) return Array.Empty<int>();
+
+            IntPtr ptr = NativeMethods.mtmd_input_chunk_get_tokens(chunk);
+            if (ptr == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("Failed to retrieve text tokens from chunk.");
+            }
+
+            int[] tokens = new int[tokenCount];
+            Marshal.Copy(ptr, tokens, 0, tokenCount);
+            return tokens;
+        }
     }
 }

@@ -68,5 +68,30 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         /// <param name="numEmbeddings">Out parameter returning the total number of floats.</param>
         /// <returns>A managed array containing the embeddings.</returns>
         float[] GetOutputEmbeddings(IntPtr mtmdContext, int nTokens, int nEmbdDim);
+
+        /// <summary>
+        /// Gets the total number of chunks in the container.
+        /// </summary>
+        int GetChunksCount(IntPtr chunks);
+
+        /// <summary>
+        /// Retrieves a pointer to a specific chunk by its index.
+        /// </summary>
+        IntPtr GetChunk(IntPtr chunks, int index);
+
+        /// <summary>
+        /// Determines if the chunk contains text, image, or audio.
+        /// </summary>
+        NativeMethods.mtmd_input_chunk_type GetChunkType(IntPtr chunk);
+
+        /// <summary>
+        /// Gets the number of tokens required by the chunk.
+        /// </summary>
+        int GetChunkTokenCount(IntPtr chunk);
+
+        /// <summary>
+        /// Retrieves the array of integer tokens for a text chunk.
+        /// </summary>
+        int[] GetChunkTokens(IntPtr chunk, int tokenCount);
     }
 }

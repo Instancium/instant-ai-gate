@@ -17,6 +17,27 @@ public sealed class NativeLlamaApi : INativeLlamaApi
         try { NativeMethods.ggml_backend_load_all_llama(); } catch { }
     }
 
+    public int GetModelEmbeddingSize(IntPtr model)
+    {
+        return NativeMethods.llama_model_n_embd(model);
+    }
+
+    public int DecodeEmbeddings(IntPtr context, int batchSize, IntPtr embdPtr, IntPtr posPtr, IntPtr nSeqIdPtr, IntPtr seqIdPtr, IntPtr logitsPtr)
+    {
+        var batch = new NativeMethods.LlamaBatch
+        {
+            n_tokens = batchSize,
+            token = IntPtr.Zero, // Token array is ignored when using embeddings
+            embd = embdPtr,      // Pass the float array pointer here
+            pos = posPtr,
+            n_seq_id = nSeqIdPtr,
+            seq_id = seqIdPtr,
+            logits = logitsPtr
+        };
+
+        return NativeMethods.llama_decode(context, batch);
+    }
+
     public void BackendInit() => NativeMethods.llama_backend_init();
     public void BackendFree() => NativeMethods.llama_backend_free();
     public bool SupportsGpuOffload() => NativeMethods.llama_supports_gpu_offload();
