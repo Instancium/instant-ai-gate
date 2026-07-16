@@ -7,6 +7,7 @@ using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Adapters;
 using InstantAIGate.Infrastructure.Inference.Drivers;
 using InstantAIGate.Infrastructure.Inference.Native;
+using InstantAIGate.Infrastructure.Inference.Services;
 using InstantAIGate.Infrastructure.NvmlNative;
 using InstantAIGate.Infrastructure.Storage;
 using InstantAIGate.Infrastructure.Telemetry;
@@ -64,6 +65,11 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<IDriverStateProvider, DriverStateProvider>();
             services.AddHostedService<DriverInitializationHostedService>();
             services.AddSingleton<ITelemetryService, TelemetryService>();
+
+            services.AddHttpClient<IImageContentResolver, ImageContentResolver>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(15);
+            });
 
             return services;
         }
