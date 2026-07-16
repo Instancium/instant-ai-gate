@@ -6,34 +6,32 @@ using System.Collections.Concurrent;
 namespace InstantAIGate.Infrastructure.Inference
 {
     /// <summary>
-    /// Manages the lifecycle and concurrent access to MTMD (CLIP) vision models.
+    /// Manages the lifecycle and concurrent access to MTMD vision models.
     /// </summary>
     public sealed class MtmdClipModelManager : IMtmdClipModelManager, IDisposable
     {
-        private readonly INativeMtmdApi _clipApi;
+        private readonly INativeMtmdApi _mtmdApi;
         private readonly ILogger<MtmdClipModelManager> _logger;
 
-        // Cache of loaded CLIP model context pointers (Key: File Path)
         private readonly ConcurrentDictionary<string, IntPtr> _activeContexts = new();
-
-        // Semaphores for inference synchronization (1 thread per 1 CLIP model)
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _accessLocks = new();
-
-        // Global lock for thread-safe model loading
         private readonly SemaphoreSlim _globalLock = new(1, 1);
 
-        public MtmdClipModelManager(INativeMtmdApi clipApi, ILogger<MtmdClipModelManager> logger)
+        public MtmdClipModelManager(INativeMtmdApi mtmdApi, ILogger<MtmdClipModelManager> logger)
         {
-            _clipApi = clipApi;
+            _mtmdApi = mtmdApi;
             _logger = logger;
         }
 
-        public async Task<MtmdClipContext> AcquireContextAsync(string projectorPath, bool useGpu = true, CancellationToken ct = default)
+        public async Task<MtmdClipContext> AcquireContextAsync(string projectorPath, IntPtr textModelPtr, bool useGpu = true, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(projectorPath))
                 throw new ArgumentException("Projector model path cannot be null or empty.", nameof(projectorPath));
-      
-            // Step 1: Thread-safe model loading if not already loaded
+
+            if (textModelPtr == IntPtr.Zero)
+                throw new ArgumentException("Text model pointer cannot be null.", nameof(textModelPtr));
+
+            // 1. Thread-safe initialization
             if (!_activeContexts.ContainsKey(projectorPath))
             {
                 await _globalLock.WaitAsync(ct);
@@ -42,22 +40,20 @@ namespace InstantAIGate.Infrastructure.Inference
                     if (!_activeContexts.ContainsKey(projectorPath))
                     {
                         if (!File.Exists(projectorPath))
-                            throw new FileNotFoundException("CLIP Projector model file not found.", projectorPath);
+                            throw new FileNotFoundException("MTMD Projector model file not found.", projectorPath);
 
-                        _logger.LogInformation("Loading MTMD CLIP model from '{Path}' (GPU Offload: {UseGpu})", projectorPath, useGpu);
+                        _logger.LogInformation("Loading MTMD vision model from '{Path}' (GPU: {UseGpu})", projectorPath, useGpu);
 
-                        // Initialize context via native API
-                        var initResult = _clipApi.Initialize(projectorPath, useGpu);
-
-                        IntPtr ctxPtr = GetPointerFromResult(initResult);
+                        // Pass both the projector path and the text model pointer to the native API
+                        IntPtr ctxPtr = _mtmdApi.InitializeContext(projectorPath, textModelPtr, useGpu);
 
                         if (ctxPtr == IntPtr.Zero)
-                            throw new InvalidOperationException($"Failed to initialize CLIP context for '{projectorPath}'.");
+                            throw new InvalidOperationException($"Failed to initialize MTMD context for '{projectorPath}'.");
 
                         _activeContexts.TryAdd(projectorPath, ctxPtr);
-                        _accessLocks.TryAdd(projectorPath, new SemaphoreSlim(1, 1)); // Strict single-thread access
+                        _accessLocks.TryAdd(projectorPath, new SemaphoreSlim(1, 1));
 
-                        _logger.LogInformation("✅ MTMD CLIP model loaded successfully.");
+                        _logger.LogInformation("✅ MTMD vision model loaded successfully.");
                     }
                 }
                 finally
@@ -66,15 +62,13 @@ namespace InstantAIGate.Infrastructure.Inference
                 }
             }
 
-            // Step 2: Acquire lock for exclusive inference execution on this model
+            // 2. Lock for exclusive inference execution
             var semaphore = _accessLocks[projectorPath];
             await semaphore.WaitAsync(ct);
 
             try
             {
                 IntPtr handle = _activeContexts[projectorPath];
-
-                // Return disposable wrapper to release semaphore automatically
                 return new MtmdClipContext(handle, () => semaphore.Release());
             }
             catch
@@ -91,8 +85,8 @@ namespace InstantAIGate.Infrastructure.Inference
             {
                 if (_activeContexts.TryRemove(projectorPath, out var ctxPtr))
                 {
-                    _logger.LogInformation("Unloading MTMD CLIP model '{Path}' and freeing memory.", projectorPath);
-                    _clipApi.FreeContext(ctxPtr);
+                    _logger.LogInformation("Unloading MTMD vision model '{Path}'.", projectorPath);
+                    _mtmdApi.FreeContext(ctxPtr);
 
                     if (_accessLocks.TryRemove(projectorPath, out var sem))
                     {
@@ -112,32 +106,14 @@ namespace InstantAIGate.Infrastructure.Inference
 
             foreach (var ctx in _activeContexts.Values)
             {
-                try
-                {
-                    _clipApi.FreeContext(ctx);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error while freeing MTMD CLIP context during application shutdown.");
-                }
+                try { _mtmdApi.FreeContext(ctx); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Error freeing MTMD context during shutdown."); }
             }
 
-            foreach (var sem in _accessLocks.Values)
-            {
-                sem.Dispose();
-            }
+            foreach (var sem in _accessLocks.Values) sem.Dispose();
 
             _activeContexts.Clear();
             _accessLocks.Clear();
-        }
-
-        /// <summary>
-        /// Extracts the vision context pointer (ctx_v) from the native initialization result.
-        /// </summary>
-        private IntPtr GetPointerFromResult(NativeMethods.clip_init_result result)
-        {
-            // We are implementing the Vision pipeline, so we need the vision context.
-            return result.ctx_v;
         }
     }
 }
