@@ -5,14 +5,9 @@ using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Infrastructure.Inference.Native;
 using InstantAIGate.Infrastructure.Templates;
 using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using InstantAIGate.Domain.Extensions;
 
 namespace InstantAIGate.Infrastructure.Inference.Adapters
@@ -62,17 +57,17 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
         {
             string? imageUrl = ExtractFirstImageUrl(request.Messages);
             if (string.IsNullOrEmpty(imageUrl))
+            {
                 throw new InvalidOperationException("No image found in the multimodal request.");
+            }
 
             var imageResult = await _imageResolver.ResolveAsync(imageUrl, ct);
 
-            //string textModelPath = await _pathProvider.GetFullModelPathAsync(request.Model);
-            //var profile = ModelProfileResolver.Resolve(textModelPath);
-
-            //string projectorPath = textModelPath.Replace(".gguf", "-mmproj.gguf");
-
             var manifest = await _modelRegistry.GetModelAsync(request.Model);
-            if (manifest == null) throw new InvalidOperationException("Manifest not found.");
+            if (manifest == null)
+            {
+                throw new InvalidOperationException("Manifest not found.");
+            }
 
             var mainFile = manifest.GetMainTextFile();
             var projectorFile = manifest.GetVisionProjectorFile();
@@ -84,7 +79,6 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
             string textModelPath = _pathProvider.GetModelFilePath(manifest.RepoId, mainFile.FileName);
             string projectorPath = _pathProvider.GetModelFilePath(manifest.RepoId, projectorFile.FileName);
-
 
             var profile = ModelProfileResolver.Resolve(textModelPath);
 
@@ -115,7 +109,6 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             IntPtr nativeChunks = IntPtr.Zero;
             IntPtr[] bitmapArray = new IntPtr[1];
 
-            // Setup Sampler (Identical to LlamaChatAdapter)
             var chainParams = _llamaApi.SamplerChainDefaultParams();
             IntPtr sampler = _llamaApi.SamplerChainInit(chainParams);
             _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitTopK(request.TopK));
@@ -124,9 +117,11 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitDist(request.Seed.HasValue ? (uint)request.Seed.Value : (uint)Random.Shared.Next()));
 
             IntPtr repetitionSampler = _llamaApi.SamplerInitRepetition(1.1f, request.FrequencyPenalty, request.PresencePenalty);
-            if (repetitionSampler != IntPtr.Zero) _llamaApi.SamplerChainAdd(sampler, repetitionSampler);
+            if (repetitionSampler != IntPtr.Zero)
+            {
+                _llamaApi.SamplerChainAdd(sampler, repetitionSampler);
+            }
 
-            // Memory Allocation for flat decode arrays
             int[] batchPos = new int[nBatchLimit];
             int[] batchNSeq = new int[nBatchLimit];
             sbyte[] batchLogits = new sbyte[nBatchLimit];
@@ -134,7 +129,10 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             int seqIdValue = 0;
             GCHandle hSeqIdValue = GCHandle.Alloc(seqIdValue, GCHandleType.Pinned);
             IntPtr[] seqIdPointers = new IntPtr[nBatchLimit];
-            for (int i = 0; i < nBatchLimit; i++) seqIdPointers[i] = hSeqIdValue.AddrOfPinnedObject();
+            for (int i = 0; i < nBatchLimit; i++)
+            {
+                seqIdPointers[i] = hSeqIdValue.AddrOfPinnedObject();
+            }
 
             GCHandle hPos = GCHandle.Alloc(batchPos, GCHandleType.Pinned);
             GCHandle hNSeq = GCHandle.Alloc(batchNSeq, GCHandleType.Pinned);
@@ -155,14 +153,14 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 string prompt = profile.Template.BuildPrompt(request.Messages);
 
                 int totalPromptTokens = _mtmdApi.Tokenize(mtmdContext.Handle, nativeChunks, prompt, bitmapArray);
-                if (totalPromptTokens <= 0) throw new InvalidOperationException("Failed to tokenize multimodal prompt.");
+                if (totalPromptTokens <= 0)
+                {
+                    throw new InvalidOperationException("Failed to tokenize multimodal prompt.");
+                }
 
                 int chunkCount = _mtmdApi.GetChunksCount(nativeChunks);
                 int currentPos = 0;
 
-                // ==========================================
-                // PHASE 1: INGESTION
-                // ==========================================
                 for (int c = 0; c < chunkCount; c++)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -172,9 +170,9 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                     int nTokens = _mtmdApi.GetChunkTokenCount(chunk);
                     bool isLastChunk = (c == chunkCount - 1);
 
-                    if (chunkType == NativeMethods.mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_TEXT)
+                    if (chunkType == InputChunkType.Text)
                     {
-                        int[] chunkTokens = _mtmdApi.GetChunkTokens(chunk, nTokens);
+                        int[] chunkTokens = _mtmdApi.GetChunkTokens(chunk);
                         GCHandle hTokens = GCHandle.Alloc(chunkTokens, GCHandleType.Pinned);
 
                         try
@@ -195,17 +193,22 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                                 hSeqIdPtrs.AddrOfPinnedObject(),
                                 hLogits.AddrOfPinnedObject());
 
-                            if (result != 0) throw new InvalidOperationException($"Decode failed for text chunk: {result}");
+                            if (result != 0)
+                            {
+                                throw new InvalidOperationException($"Decode failed for text chunk: {result}");
+                            }
                         }
                         finally
                         {
                             hTokens.Free();
                         }
                     }
-                    else if (chunkType == NativeMethods.mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_IMAGE)
+                    else if (chunkType == InputChunkType.Image)
                     {
                         if (_mtmdApi.EncodeChunk(mtmdContext.Handle, chunk) != 0)
+                        {
                             throw new InvalidOperationException("Failed to encode image chunk.");
+                        }
 
                         float[] embeddings = _mtmdApi.GetOutputEmbeddings(mtmdContext.Handle, nTokens, nEmbdDim);
                         GCHandle hEmbd = GCHandle.Alloc(embeddings, GCHandleType.Pinned);
@@ -228,7 +231,10 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                                 hSeqIdPtrs.AddrOfPinnedObject(),
                                 hLogits.AddrOfPinnedObject());
 
-                            if (result != 0) throw new InvalidOperationException($"Decode failed for image chunk: {result}");
+                            if (result != 0)
+                            {
+                                throw new InvalidOperationException($"Decode failed for image chunk: {result}");
+                            }
                         }
                         finally
                         {
@@ -239,9 +245,6 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                     currentPos += nTokens;
                 }
 
-                // ==========================================
-                // PHASE 2: GENERATION
-                // ==========================================
                 int eos = _llamaApi.VocabEos(vocab);
                 int generated = 0;
                 int[] singleTokenBuffer = new int[1];
@@ -289,7 +292,10 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                             hSeqIdPtrs.AddrOfPinnedObject(),
                             hLogits.AddrOfPinnedObject());
 
-                        if (result != 0) throw new InvalidOperationException("Decode failed during generation.");
+                        if (result != 0)
+                        {
+                            throw new InvalidOperationException("Decode failed during generation.");
+                        }
                     }
                 }
                 finally
@@ -304,25 +310,30 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 if (pinnedRgb.IsAllocated) pinnedRgb.Free();
 
                 _llamaApi.SamplerFree(sampler);
-                hPos.Free();
-                hNSeq.Free();
-                hLogits.Free();
-                hSeqIdPtrs.Free();
-                hSeqIdValue.Free();
+                if (hPos.IsAllocated) hPos.Free();
+                if (hNSeq.IsAllocated) hNSeq.Free();
+                if (hLogits.IsAllocated) hLogits.Free();
+                if (hSeqIdPtrs.IsAllocated) hSeqIdPtrs.Free();
+                if (hSeqIdValue.IsAllocated) hSeqIdValue.Free();
             }
         }
 
         private string? ExtractFirstImageUrl(List<ChatMessage>? messages)
         {
             if (messages == null) return null;
+
             foreach (var message in messages)
             {
                 if (message.ContentParts != null)
                 {
                     var imagePart = message.ContentParts.FirstOrDefault(p => p.Type == "image_url" && p.ImageUrl != null);
-                    if (imagePart != null) return imagePart.ImageUrl!.Url;
+                    if (imagePart != null)
+                    {
+                        return imagePart.ImageUrl!.Url;
+                    }
                 }
             }
+
             return null;
         }
     }
