@@ -256,7 +256,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                     {
                         ct.ThrowIfCancellationRequested();
 
-                        int token = _llamaApi.SamplerSample(sampler, llamaContext.Handle, 0);
+                        int token = _llamaApi.SamplerSample(sampler, llamaContext.Handle, -1);
                         if (token == eos || token < 0) break;
 
                         generated++;
