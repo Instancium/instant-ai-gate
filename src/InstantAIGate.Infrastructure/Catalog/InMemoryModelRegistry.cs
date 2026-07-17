@@ -14,12 +14,23 @@ namespace InstantAIGate.Infrastructure.Catalog
             new(
                 "Qwen/Qwen3-VL-2B-Instruct-GGUF",
                 "Qwen 3 VL 2B Instruct (Q4_K_M)",
-                files: new List<ModelFile> { new("Qwen3VL-2B-Instruct-Q4_K_M.gguf", "https://modelscope.ai/models/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/master/Qwen3VL-2B-Instruct-Q4_K_M.gguf", 1_110_000_000L) }
+                files: new List<ModelFile> {
+                    new("Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+                        "https://modelscope.ai/models/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/master/Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+                        1_110_000_000L),
+                    new("nmmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+                        "https://modelscope.ai/models/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/master/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+                        445_000_000)
+                }
             ),
             new(
                 "Qwen/Qwen3-VL-4B-Instruct-GGUF",
                 "Qwen 3 VL 4B Instruct (Q4_K_M)",
-                files: new List<ModelFile> { new("Qwen3VL-4B-Instruct-Q4_K_M.gguf", "https://modelscope.ai/models/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/master/Qwen3VL-4B-Instruct-Q4_K_M.gguf", 2_500_000_000L) }
+                files: new List<ModelFile> { 
+                    new("Qwen3VL-4B-Instruct-Q4_K_M.gguf", 
+                        "https://modelscope.ai/models/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/master/Qwen3VL-4B-Instruct-Q4_K_M.gguf", 
+                        2_500_000_000L) 
+                }
             ),
             new(
                 "Qwen/Qwen3-VL-8B-Instruct-GGUF",

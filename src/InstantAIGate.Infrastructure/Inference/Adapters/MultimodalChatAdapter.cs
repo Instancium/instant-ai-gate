@@ -1,4 +1,5 @@
 ﻿using InstantAIGate.Application.Dtos.Requests;
+using InstantAIGate.Application.Interfaces.Catalog;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Infrastructure.Inference.Native;
@@ -12,6 +13,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using InstantAIGate.Domain.Extensions;
 
 namespace InstantAIGate.Infrastructure.Inference.Adapters
 {
@@ -24,6 +26,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
         private readonly INativeLlamaApi _llamaApi;
         private readonly IModelPathProvider _pathProvider;
         private readonly ILogger<MultimodalChatAdapter> _logger;
+        private readonly IModelRegistry _modelRegistry;
 
         public MultimodalChatAdapter(
             ILlamaModelManager llamaManager,
@@ -32,7 +35,8 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             INativeMtmdApi mtmdApi,
             INativeLlamaApi llamaApi,
             IModelPathProvider pathProvider,
-            ILogger<MultimodalChatAdapter> logger)
+            ILogger<MultimodalChatAdapter> logger,
+            IModelRegistry modelRegistry)
         {
             _llamaManager = llamaManager;
             _mtmdManager = mtmdManager;
@@ -41,6 +45,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             _llamaApi = llamaApi;
             _pathProvider = pathProvider;
             _logger = logger;
+            _modelRegistry = modelRegistry;
         }
 
         public async Task<string> GenerateAsync(LlamaChatRequest request, CancellationToken ct = default)
@@ -61,10 +66,27 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
             var imageResult = await _imageResolver.ResolveAsync(imageUrl, ct);
 
-            string textModelPath = await _pathProvider.GetFullModelPathAsync(request.Model);
-            var profile = ModelProfileResolver.Resolve(textModelPath);
+            //string textModelPath = await _pathProvider.GetFullModelPathAsync(request.Model);
+            //var profile = ModelProfileResolver.Resolve(textModelPath);
 
-            string projectorPath = textModelPath.Replace(".gguf", "-mmproj.gguf");
+            //string projectorPath = textModelPath.Replace(".gguf", "-mmproj.gguf");
+
+            var manifest = await _modelRegistry.GetModelAsync(request.Model);
+            if (manifest == null) throw new InvalidOperationException("Manifest not found.");
+
+            var mainFile = manifest.GetMainTextFile();
+            var projectorFile = manifest.GetVisionProjectorFile();
+
+            if (mainFile == null || projectorFile == null)
+            {
+                throw new InvalidOperationException("Multimodal package is missing either the text model or the vision projector file.");
+            }
+
+            string textModelPath = _pathProvider.GetModelFilePath(manifest.RepoId, mainFile.FileName);
+            string projectorPath = _pathProvider.GetModelFilePath(manifest.RepoId, projectorFile.FileName);
+
+
+            var profile = ModelProfileResolver.Resolve(textModelPath);
 
             using var llamaModel = await _llamaManager.AcquireModelAsync(request.Model, ct);
             using var llamaContext = await _llamaManager.AcquireContextAsync(request.Model, ct);

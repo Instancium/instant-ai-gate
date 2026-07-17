@@ -10,7 +10,7 @@ namespace InstantAIGate.API.Controllers
 {
     [ApiController]
     [Route("api/admin/fetch")]
-    [Authorize(Policy = "AdminApiKeyPolicy")] // Secure entire controller by default
+    [Authorize(Policy = "AdminApiKeyPolicy")] 
     public class AdminFetchController : ControllerBase
     {
         private readonly IModelRegistry _modelRegistry;
@@ -49,27 +49,51 @@ namespace InstantAIGate.API.Controllers
 
             _ = Task.Run(async () =>
             {
+                bool hasError = false;
                 try
                 {
+                    long totalModelBytes = model.Files.Sum(f => f.SizeBytes > 0 ? f.SizeBytes : 1);
+                    long completedBytes = 0;
+
                     foreach (var file in model.Files)
                     {
                         if (cts.Token.IsCancellationRequested) break;
                         _currentRunningFiles[repoId] = file.FileName;
 
+                        _liveProgressRegistry[repoId] = (double)completedBytes / totalModelBytes * 100.0;
+
                         await foreach (var progress in _storageService.DownloadModelFileAsync(
                             file.Url, model.RepoId, file.FileName, file.SizeBytes, cts.Token))
                         {
-                            double percentage = (double)progress.BytesDownloaded / progress.TotalBytes * 100.0;
+                            long overallDownloaded = completedBytes + progress.BytesDownloaded;
+                            double percentage = (double)overallDownloaded / totalModelBytes * 100.0;
+
+                            if (percentage >= 100.0 && file != model.Files.Last())
+                            {
+                                percentage = 99.9;
+                            }
+
                             _liveProgressRegistry[repoId] = percentage;
                         }
+
+                        completedBytes += file.SizeBytes;
                     }
+
+                    _liveProgressRegistry[repoId] = 100.0;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Catch underlying file network disruptions safely here
+                    _logger.LogError(ex, "Background download pipeline failed for model {RepoId}", repoId);
+                    hasError = true;
                 }
                 finally
                 {
+                    if (hasError)
+                    {
+                        _liveProgressRegistry[repoId] = -1.0;
+                        await Task.Delay(3000);
+                    }
+
                     _fetchCancellations.TryRemove(repoId, out _);
                     _liveProgressRegistry.TryRemove(repoId, out _);
                     _currentRunningFiles.TryRemove(repoId, out _);
@@ -113,7 +137,7 @@ namespace InstantAIGate.API.Controllers
         /// Allowed anonymously, but strictly validated via the short-lived ticket.
         /// </summary>
         [HttpGet("progress-stream")]
-        [AllowAnonymous] // Bypass main auth header checks to allow browser EventSource connection
+        [AllowAnonymous] 
         public async Task StreamProgress([FromQuery] string? ticket, [FromServices] IMemoryCache cache, CancellationToken clientCt)
         {
             // Strictly validate and consume the 15-second ticket
@@ -139,7 +163,8 @@ namespace InstantAIGate.API.Controllers
                     {
                         repoId = kvp.Key,
                         progress = kvp.Value,
-                        currentFile = _currentRunningFiles.TryGetValue(kvp.Key, out var f) ? f : string.Empty
+                        currentFile = _currentRunningFiles.TryGetValue(kvp.Key, out var f) ? f : string.Empty,
+                        status = kvp.Value < 0 ? "error" : (kvp.Value >= 100 ? "completed" : "downloading")
                     }).ToList();
 
                     var payload = JsonSerializer.Serialize(snapshot);
