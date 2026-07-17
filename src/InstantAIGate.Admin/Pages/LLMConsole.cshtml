@@ -131,21 +131,35 @@
             </div>
         </div>
 
+
         <div class="chat-input-area">
+            <div id="image-preview-container" class="display-none" style="position: relative; width: max-content; margin-bottom: 12px; margin-left: 42px;">
+                <img id="image-preview" src="" style="max-height: 100px; border-radius: 8px; border: 1px solid var(--console-border); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);" />
+                <button type="button" onclick="clearImagePreview()" style="position: absolute; top: -10px; right: -10px; background: #e11d48; color: white; border-radius: 50%; border: none; cursor: pointer; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                    <i class="las la-times"></i>
+                </button>
+            </div>
+
             <div class="input-wrapper">
+                <input type="file" id="image-upload-input" accept="image/png, image/jpeg, image/webp" class="display-none" onchange="handleImageSelection(event)" />
+
+                <button type="button" onclick="document.getElementById('image-upload-input').click()" class="icon-btn" title="Attach Image" style="flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px;">
+                    <i class="las la-paperclip" style="font-size: 24px;"></i>
+                </button>
+
                 <textarea id="user-prompt-input" rows="1" class="user-textarea" placeholder="Ask anything..." onkeydown="handlePromptKeydown(event)"></textarea>
 
                 <div class="action-buttons">
                     <button id="stop-generation-btn" onclick="abortInferenceStreaming()" class="btn-stop display-none" title="Stop generating">
                         <i class="las la-stop-circle"></i>
                     </button>
-
                     <button id="send-prompt-btn" onclick="executeInferenceStreaming()" class="btn-send">
                         <i id="send-icon" class="las la-paper-plane"></i>
                     </button>
                 </div>
             </div>
         </div>
+
     </main>
 </div>
 

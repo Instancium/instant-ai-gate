@@ -2,7 +2,6 @@
  * AI Orchestration Console Page Module Logic
  */
 
-// Local state configuration read from DOM root wrapper element
 const rootNode = document.getElementById('console-page-root');
 const coreApiUrl = rootNode ? rootNode.getAttribute('data-api-url') : '';
 const initialWarningMessage = rootNode ? rootNode.getAttribute('data-warning-message') : '';
@@ -10,6 +9,7 @@ const initialWarningMessage = rootNode ? rootNode.getAttribute('data-warning-mes
 let currentStreamReader = null;
 let abortController = null;
 let chatHistory = [];
+let currentImageBase64 = null;
 
 async function saveSamplingParams() {
     const params = {
@@ -31,7 +31,7 @@ async function saveSamplingParams() {
         });
 
         if (response.ok) {
-            showConsoleAlert("Parameters saved successfully!");
+            showConsoleAlert("Parameters saved successfully.");
         } else {
             showConsoleAlert("Failed to save parameters.");
         }
@@ -59,7 +59,6 @@ function updateStatusPulse(state) {
     const pulse = document.getElementById('status-pulse');
     if (!pulse) return;
 
-    // Clear all potential states
     pulse.className = 'status-pulse';
 
     if (state === 'active') {
@@ -71,7 +70,6 @@ function updateStatusPulse(state) {
     }
 }
 
-// Emulate original DOMContentLoaded hook cleanly from internal script load
 (function initConsoleOnLoad() {
     const select = document.getElementById('console-repo-select');
     if (select && select.value) updateStatusPulse('active');
@@ -107,19 +105,37 @@ async function abortInferenceStreaming() {
     resetUiAfterGeneration();
 }
 
+function handleImageSelection(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-/**
- * Global state requirements. Ensure these are declared at the module level.
- */
-// let currentStreamReader = null;
-// let abortController = null;
-// let chatHistory = []; 
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        currentImageBase64 = e.target.result;
 
-/**
- * Executes the streaming inference request against the active AI model.
- * Manages chat history state for sliding window context, handles UI transitions, 
- * and processes the Server-Sent Events (SSE) stream.
- */
+        const previewContainer = document.getElementById('image-preview-container');
+        const previewImage = document.getElementById('image-preview');
+        previewImage.src = currentImageBase64;
+        previewContainer.classList.remove('display-none');
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearImagePreview() {
+    currentImageBase64 = null;
+    const uploadInput = document.getElementById('image-upload-input');
+    if (uploadInput) {
+        uploadInput.value = '';
+    }
+
+    const previewContainer = document.getElementById('image-preview-container');
+    const previewImage = document.getElementById('image-preview');
+    if (previewContainer && previewImage) {
+        previewContainer.classList.add('display-none');
+        previewImage.src = '';
+    }
+}
+
 async function executeInferenceStreaming() {
     const repoSelect = document.getElementById('console-repo-select');
     const promptInput = document.getElementById('user-prompt-input');
@@ -145,8 +161,19 @@ async function executeInferenceStreaming() {
         welcomeMsg.remove();
     }
 
-    // Retains conversation context for sliding window evaluation
-    chatHistory.push({ role: "user", content: userPrompt });
+    let messageContent = userPrompt;
+    let uiDisplayHtml = userPrompt;
+
+    if (currentImageBase64) {
+        messageContent = [
+            { type: "text", text: userPrompt },
+            { type: "image_url", image_url: { url: currentImageBase64 } }
+        ];
+
+        uiDisplayHtml = `<img src="${currentImageBase64}" style="max-height: 200px; border-radius: 8px; margin-bottom: 8px; display: block;" />${userPrompt}`;
+    }
+
+    chatHistory.push({ role: "user", content: messageContent });
 
     promptInput.value = '';
     promptInput.disabled = true;
@@ -156,7 +183,9 @@ async function executeInferenceStreaming() {
     if (sendIcon) sendIcon.className = 'las la-spinner spin-animation';
 
     updateStatusPulse('streaming');
-    appendMessageToDom('user', userPrompt);
+    appendMessageToDom('user', uiDisplayHtml);
+
+    clearImagePreview();
 
     const skeletonHtml = `
         <div class="ai-skeleton">
@@ -195,7 +224,6 @@ async function executeInferenceStreaming() {
         const systemInstruction = document.getElementById('param-system')?.value || "";
         const messagesPayload = [];
 
-        // Assembles payload prioritizing system instruction, followed by retained chat history
         if (systemInstruction.trim() !== "") {
             messagesPayload.push({ role: "system", content: systemInstruction });
         }
@@ -274,7 +302,6 @@ async function executeInferenceStreaming() {
 
                             generatedTokenCount++;
 
-                            // Calculates throughput metrics dynamically
                             if (firstTokenTime) {
                                 const elapsedTimeSeconds = (performance.now() - firstTokenTime) / 1000;
                                 if (elapsedTimeSeconds > 0.01) {
@@ -286,13 +313,12 @@ async function executeInferenceStreaming() {
                             if (scroller) scroller.scrollTop = scroller.scrollHeight;
                         }
                     } catch (parseError) {
-                        // Silently ignores incomplete JSON chunks inherent to SSE streaming
+                        // Suppress parse errors for incomplete chunks
                     }
                 }
             }
         }
 
-        // Persists the completed assistant response for future context trimming
         if (accumulatedResponse.trim() !== "") {
             chatHistory.push({ role: "assistant", content: accumulatedResponse });
         }
@@ -362,7 +388,6 @@ function appendSystemLogToDom(text) {
     scroller.scrollTop = scroller.scrollHeight;
 }
 
-// Bind native event listeners safely instead of inline HTML tracking
 const repoSelectEl = document.getElementById('console-repo-select');
 if (repoSelectEl) {
     repoSelectEl.addEventListener('change', function () {
