@@ -131,6 +131,33 @@ namespace InstantAIGate.Infrastructure.Inference
             if (config == null || string.IsNullOrWhiteSpace(config.RepoId))
                 throw new ArgumentException("Config and RepoId required.", nameof(config));
 
+            // Auto-correct the path if the upstream controller passed the mmproj file by alphabetical directory order
+            var currentFileName = Path.GetFileName(config.ModelPath);
+            if (currentFileName != null &&
+               (currentFileName.Contains("mmproj", StringComparison.OrdinalIgnoreCase) ||
+                currentFileName.Contains("clip", StringComparison.OrdinalIgnoreCase)))
+            {
+                var directory = Path.GetDirectoryName(config.ModelPath);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    var textModel = Directory.GetFiles(directory, "*.gguf")
+                        .FirstOrDefault(f => !f.Contains("mmproj", StringComparison.OrdinalIgnoreCase) &&
+                                             !f.Contains("clip", StringComparison.OrdinalIgnoreCase));
+
+                    if (!string.IsNullOrEmpty(textModel))
+                    {
+                        _logger.LogWarning("Auto-corrected config.ModelPath. Switched from projector '{Proj}' to text model '{Text}'",
+                            currentFileName, Path.GetFileName(textModel));
+
+                        config.ModelPath = textModel;
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Failed to find a valid text model in {directory}. Only projector found.");
+                    }
+                }
+            }
+
             var repoId = config.RepoId;
             var initLock = _initLocks.GetOrAdd(repoId, _ => new SemaphoreSlim(1, 1));
             await initLock.WaitAsync(ct);
@@ -138,6 +165,7 @@ namespace InstantAIGate.Infrastructure.Inference
             try
             {
                 if (_modelCache.ContainsKey(repoId)) return;
+
                 if (!File.Exists(config.ModelPath))
                     throw new FileNotFoundException("Model file not found.", config.ModelPath);
 
@@ -160,7 +188,7 @@ namespace InstantAIGate.Infrastructure.Inference
                         try
                         {
                             bool gpuSupport = _nativeApi.SupportsGpuOffload();
-                            _logger.LogInformation("GPU offload support: {Support}", gpuSupport ? "✅ YES" : "❌ NO");
+                            _logger.LogInformation("GPU offload support: {Support}", gpuSupport ? "YES" : "NO");
                         }
                         catch { }
                     }
@@ -171,13 +199,13 @@ namespace InstantAIGate.Infrastructure.Inference
                     : NativeLlamaSplitMode.None;
 
                 _logger.LogInformation(
-                    "Loading model '{RepoId}' | GPU Layers: {Layers} | Main GPU: {Gpu} | Size: {Size} MB",
-                    repoId, config.GpuLayerCount, config.MainGPU, sizeMb);
+                    "Loading model '{RepoId}' | GPU Layers: {Layers} | Main GPU: {Gpu} | Size: {Size} MB | Resolved Path: {Path}",
+                    repoId, config.GpuLayerCount, config.MainGPU, sizeMb, config.ModelPath);
 
                 IntPtr modelHandle = _nativeApi.LoadModel(
                     path: config.ModelPath,
                     gpuLayers: config.GpuLayerCount,
-                    mainGpu: config.MainGPU, 
+                    mainGpu: config.MainGPU,
                     useMlock: config.UseMemoryLock,
                     useMmap: !config.UseMemoryLock,
                     splitMode: splitMode);
@@ -188,7 +216,7 @@ namespace InstantAIGate.Infrastructure.Inference
                 if (_modelCache.TryAdd(repoId, modelHandle))
                 {
                     _configCache.TryAdd(repoId, config);
-                    _logger.LogInformation("✅ Model '{RepoId}' loaded with {Layers} GPU layers",
+                    _logger.LogInformation("Model '{RepoId}' loaded successfully with {Layers} GPU layers",
                         repoId, config.GpuLayerCount);
                 }
                 else
