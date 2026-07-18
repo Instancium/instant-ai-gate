@@ -1,4 +1,5 @@
 ﻿using InstantAIGate.Infrastructure.Inference.Native;
+using InstantAIGate.Infrastructure.Inference.Vision;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
@@ -8,16 +9,16 @@ namespace InstantAIGate.Infrastructure.Inference
     /// <summary>
     /// Manages the lifecycle and concurrent access to MTMD vision models.
     /// </summary>
-    public sealed class MtmdClipModelManager : IMtmdClipModelManager, IDisposable
+    public sealed class ImageModelManager : IMtmdClipModelManager, IDisposable
     {
         private readonly INativeMtmdApi _mtmdApi;
-        private readonly ILogger<MtmdClipModelManager> _logger;
+        private readonly ILogger<ImageModelManager> _logger;
 
         private readonly ConcurrentDictionary<string, IntPtr> _activeContexts = new();
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _accessLocks = new();
         private readonly SemaphoreSlim _globalLock = new(1, 1);
 
-        public MtmdClipModelManager(INativeMtmdApi mtmdApi, ILogger<MtmdClipModelManager> logger)
+        public ImageModelManager(INativeMtmdApi mtmdApi, ILogger<ImageModelManager> logger)
         {
             _mtmdApi = mtmdApi;
             _logger = logger;

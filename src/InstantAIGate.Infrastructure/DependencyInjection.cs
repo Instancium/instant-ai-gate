@@ -7,7 +7,7 @@ using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Adapters;
 using InstantAIGate.Infrastructure.Inference.Drivers;
 using InstantAIGate.Infrastructure.Inference.Native;
-using InstantAIGate.Infrastructure.Inference.Services;
+using InstantAIGate.Infrastructure.Inference.Vision;
 using InstantAIGate.Infrastructure.NvmlNative;
 using InstantAIGate.Infrastructure.Storage;
 using InstantAIGate.Infrastructure.Telemetry;
@@ -37,7 +37,7 @@ namespace InstantAIGate.Infrastructure
             // --- MTMD (CLIP) Native Infrastructure ---
             // Vision processing bindings and separate memory manager for projector models
             services.AddSingleton<INativeMtmdApi, NativeMtmdApi>();
-            services.AddSingleton<IMtmdClipModelManager, MtmdClipModelManager>();
+            services.AddSingleton<IMtmdClipModelManager, ImageModelManager>();
 
             // --- Multi-Model Lifecycle Orchestrator ---
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling

@@ -1,4 +1,4 @@
-﻿namespace InstantAIGate.Infrastructure.Inference
+﻿namespace InstantAIGate.Infrastructure.Inference.Vision
 {
     public interface IMtmdClipModelManager
     {

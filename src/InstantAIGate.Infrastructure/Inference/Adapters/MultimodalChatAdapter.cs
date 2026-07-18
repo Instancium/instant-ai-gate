@@ -4,6 +4,7 @@ using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Domain.Extensions;
 using InstantAIGate.Infrastructure.Inference.Native;
+using InstantAIGate.Infrastructure.Inference.Vision;
 using InstantAIGate.Infrastructure.Templates;
 using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;

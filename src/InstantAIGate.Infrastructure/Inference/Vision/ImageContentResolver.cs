@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using StbImageSharp;
 
-namespace InstantAIGate.Infrastructure.Inference.Services
+namespace InstantAIGate.Infrastructure.Inference.Vision
 {
     public class ImageContentResolver : IImageContentResolver
     {

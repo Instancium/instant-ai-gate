@@ -1,4 +1,4 @@
-﻿namespace InstantAIGate.Infrastructure.Inference
+﻿namespace InstantAIGate.Infrastructure.Inference.Vision
 {
     /// <summary>
     /// Represents a decoded image ready for native memory allocation.
