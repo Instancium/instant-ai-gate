@@ -24,6 +24,43 @@ namespace InstantAIGate.Infrastructure.Inference.Native
     /// </summary>
     public class NativeMtmdApi : INativeMtmdApi
     {
+
+        /// <summary>
+        /// Retrieves the raw pointer to the output embeddings directly from the batch for a specific chunk.
+        /// </summary>
+        /// <param name="batch">Pointer to the batch.</param>
+        /// <param name="chunk">Pointer to the chunk.</param>
+        /// <returns>Raw native pointer to the embeddings array.</returns>
+        public IntPtr GetBatchEmbeddingsPtr(IntPtr batch, IntPtr chunk)
+        {
+            if (batch == IntPtr.Zero) throw new ArgumentException("Batch cannot be null.", nameof(batch));
+            if (chunk == IntPtr.Zero) throw new ArgumentException("Chunk cannot be null.", nameof(chunk));
+
+            IntPtr ptr = NativeMtmdMethods.BatchGetOutputEmbd(batch, chunk);
+            if (ptr == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("Failed to retrieve embeddings from batch. Pointer is null.");
+            }
+
+            return ptr;
+        }
+
+
+        /// <summary>
+        /// Gets the number of positions occupied by the specified chunk in the context timeline.
+        /// </summary>
+        /// <param name="chunk">Pointer to the chunk.</param>
+        /// <returns>The number of positions.</returns>
+        public int GetChunkNPos(IntPtr chunk)
+        {
+            if (chunk == IntPtr.Zero)
+            {
+                throw new ArgumentException("Chunk cannot be null.", nameof(chunk)); 
+            }
+
+            return NativeMtmdMethods.InputChunkGetNPos(chunk); 
+        }
+
         /// <summary>
         /// Retrieves the capabilities of the specified multimodal projector.
         /// </summary>
@@ -382,5 +419,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
 
             return NativeMtmdMethods.BatchEncode(batch);
         }
+
+
     }
 }

@@ -60,6 +60,9 @@ namespace InstantAIGate.Domain.Dtos.Config
 
         public string KvCacheQuantization { get; set; } = "F16";  //"F16", "Q8_K", "Q5_K", "Q4_K"
 
+        public bool SupportsVision => !string.IsNullOrWhiteSpace(MmprojPath);
+        public string? MmprojPath { get; init; }
+
         /// <summary>
         /// Traditional parameter-free constructor for standard serialization engines.
         /// </summary>

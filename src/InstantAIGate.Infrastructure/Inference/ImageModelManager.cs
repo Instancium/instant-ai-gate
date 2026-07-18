@@ -9,7 +9,7 @@ namespace InstantAIGate.Infrastructure.Inference
     /// <summary>
     /// Manages the lifecycle and concurrent access to MTMD vision models.
     /// </summary>
-    public sealed class ImageModelManager : IMtmdClipModelManager, IDisposable
+    public sealed class ImageModelManager : IMtmdModelManager, IDisposable
     {
         private readonly INativeMtmdApi _mtmdApi;
         private readonly ILogger<ImageModelManager> _logger;
@@ -24,7 +24,7 @@ namespace InstantAIGate.Infrastructure.Inference
             _logger = logger;
         }
 
-        public async Task<MtmdClipContext> AcquireContextAsync(string projectorPath, IntPtr textModelPtr, bool useGpu = true, CancellationToken ct = default)
+        public async Task<VisionContext> AcquireContextAsync(string projectorPath, IntPtr textModelPtr, bool useGpu = true, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(projectorPath))
                 throw new ArgumentException("Projector model path cannot be null or empty.", nameof(projectorPath));
@@ -70,7 +70,7 @@ namespace InstantAIGate.Infrastructure.Inference
             try
             {
                 IntPtr handle = _activeContexts[projectorPath];
-                return new MtmdClipContext(handle, () => semaphore.Release());
+                return new MtmdContext(handle, () => semaphore.Release());
             }
             catch
             {

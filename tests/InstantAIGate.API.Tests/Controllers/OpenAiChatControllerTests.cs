@@ -17,11 +17,14 @@ public class OpenAiChatControllerTests
 {
     private readonly Mock<IChatAdapter> _chatAdapterMock;
     private readonly OpenAiChatController _sut;
+    private readonly Mock<ILogger<OpenAiChatController>> _loggerMock;
 
     public OpenAiChatControllerTests()
     {
+        _loggerMock = new Mock<ILogger<OpenAiChatController>>();
         _chatAdapterMock = new Mock<IChatAdapter>();
-        _sut = new OpenAiChatController(_chatAdapterMock.Object);
+        _sut = new OpenAiChatController(_chatAdapterMock.Object, _loggerMock.Object);
+
 
         // Setup HttpContext for controller (required for streaming tests)
         _sut.ControllerContext = new ControllerContext

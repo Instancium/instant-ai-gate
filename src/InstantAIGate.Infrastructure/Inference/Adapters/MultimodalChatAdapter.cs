@@ -20,7 +20,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
     public class MultimodalChatAdapter : IChatAdapter
     {
         private readonly ILlamaModelManager _llamaManager;
-        private readonly IMtmdClipModelManager _mtmdManager;
+        private readonly IMtmdModelManager _mtmdManager;
         private readonly IImageContentResolver _imageResolver;
         private readonly INativeMtmdApi _mtmdApi;
         private readonly INativeLlamaApi _llamaApi;
@@ -30,7 +30,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
         public MultimodalChatAdapter(
             ILlamaModelManager llamaManager,
-            IMtmdClipModelManager mtmdManager,
+            IMtmdModelManager mtmdManager,
             IImageContentResolver imageResolver,
             INativeMtmdApi mtmdApi,
             INativeLlamaApi llamaApi,

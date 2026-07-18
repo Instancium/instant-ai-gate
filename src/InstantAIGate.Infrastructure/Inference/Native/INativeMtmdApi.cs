@@ -6,6 +6,20 @@
     /// </summary>
     public interface INativeMtmdApi
     {
+        /// <summary>
+        /// Retrieves the raw pointer to the output embeddings directly from the batch for a specific chunk.
+        /// </summary>
+        /// <param name="batch">Pointer to the batch.</param>
+        /// <param name="chunk">Pointer to the chunk.</param>
+        /// <returns>Raw native pointer to the embeddings array.</returns>
+        IntPtr GetBatchEmbeddingsPtr(IntPtr batch, IntPtr chunk);
+
+        /// <summary>
+        /// Gets the number of positions occupied by the specified chunk in the context timeline.
+        /// </summary>
+        /// <param name="chunk">Pointer to the chunk.</param>
+        /// <returns>The number of positions.</returns>
+        int GetChunkNPos(IntPtr chunk);
 
         /// <summary>
         /// Retrieves the expected image marker string from the specified multimodal context.

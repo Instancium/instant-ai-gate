@@ -37,7 +37,7 @@ namespace InstantAIGate.Infrastructure
             // --- MTMD (CLIP) Native Infrastructure ---
             // Vision processing bindings and separate memory manager for projector models
             services.AddSingleton<INativeMtmdApi, NativeMtmdApi>();
-            services.AddSingleton<IMtmdClipModelManager, ImageModelManager>();
+            services.AddSingleton<IMtmdModelManager, ImageModelManager>();
 
             // --- Multi-Model Lifecycle Orchestrator ---
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling
