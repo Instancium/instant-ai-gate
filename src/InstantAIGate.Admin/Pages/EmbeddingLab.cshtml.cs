@@ -1,5 +1,4 @@
 using InstantAIGate.Admin.Config;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 

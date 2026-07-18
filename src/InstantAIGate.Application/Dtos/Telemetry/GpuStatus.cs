@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.Application.Dtos.Telemetry
+﻿namespace InstantAIGate.Application.Dtos.Telemetry
 {
     /// <summary>
     /// Hardware status metrics retrieved directly from NVML.

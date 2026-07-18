@@ -1,7 +1,4 @@
-﻿using InstantAIGate.Infrastructure.NvmlNative;
-using System;
-
-namespace InstantAIGate.Infrastructure.NvmlNative
+﻿namespace InstantAIGate.Infrastructure.NvmlNative
 {
     public class NvmlProvider : IDisposable
     {

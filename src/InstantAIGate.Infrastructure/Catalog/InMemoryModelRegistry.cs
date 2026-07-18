@@ -26,10 +26,10 @@ namespace InstantAIGate.Infrastructure.Catalog
             new(
                 "Qwen/Qwen3-VL-4B-Instruct-GGUF",
                 "Qwen 3 VL 4B Instruct (Q4_K_M)",
-                files: new List<ModelFile> { 
-                    new("Qwen3VL-4B-Instruct-Q4_K_M.gguf", 
-                        "https://modelscope.ai/models/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/master/Qwen3VL-4B-Instruct-Q4_K_M.gguf", 
-                        2_500_000_000L) 
+                files: new List<ModelFile> {
+                    new("Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+                        "https://modelscope.ai/models/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/master/Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+                        2_500_000_000L)
                 }
             ),
             new(

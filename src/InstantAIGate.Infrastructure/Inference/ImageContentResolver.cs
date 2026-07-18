@@ -1,11 +1,5 @@
-﻿using InstantAIGate.Application.Interfaces.Inference;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using StbImageSharp;
-using System;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Infrastructure.Inference.Services
 {
@@ -33,7 +27,7 @@ namespace InstantAIGate.Infrastructure.Inference.Services
 
         private async Task<byte[]> FetchImageBytesAsync(string imageUrl, CancellationToken ct)
         {
-      
+
             if (imageUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
             {
                 var commaIndex = imageUrl.IndexOf(',');
@@ -44,7 +38,7 @@ namespace InstantAIGate.Infrastructure.Inference.Services
                 return Convert.FromBase64String(base64Data);
             }
 
-       
+
             if (imageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 imageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             {

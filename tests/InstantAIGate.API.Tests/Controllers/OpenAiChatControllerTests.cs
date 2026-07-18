@@ -3,7 +3,6 @@ using InstantAIGate.API.Controllers;
 using InstantAIGate.API.Dtos;
 using InstantAIGate.Application.Dtos.Requests;
 using InstantAIGate.Application.Interfaces.Inference;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 
@@ -401,7 +400,7 @@ public class OpenAiChatControllerTests
         responseJson.Should().Contain("\"id\"");
         responseJson.Should().Contain("\"object\":\"chat.completion\"");
         responseJson.Should().Contain("\"created\"");
-        responseJson.Should().Contain("\"model\":\""+request.Model);
+        responseJson.Should().Contain("\"model\":\"" + request.Model);
         responseJson.Should().Contain("\"choices\"");
         responseJson.Should().Contain("\"usage\"");
     }

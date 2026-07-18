@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.Application.Interfaces.Inference
+﻿namespace InstantAIGate.Application.Interfaces.Inference
 {
     /// <summary>
     /// A pure Application-layer abstraction representing an active model session.

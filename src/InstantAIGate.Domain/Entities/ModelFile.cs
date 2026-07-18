@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-
-namespace InstantAIGate.Domain.Entities
+﻿namespace InstantAIGate.Domain.Entities
 {
     /// <summary>
     /// Represents an individual binary segment (shard) of an AI model layout.

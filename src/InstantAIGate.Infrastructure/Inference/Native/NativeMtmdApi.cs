@@ -1,5 +1,4 @@
-﻿using System;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace InstantAIGate.Infrastructure.Inference.Native
 {
@@ -55,9 +54,9 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         {
             if (mtmdContext == IntPtr.Zero) return "<image>";
 
-            IntPtr markerPtr = NativeMtmdMethods.GetMarker(mtmdContext); 
+            IntPtr markerPtr = NativeMtmdMethods.GetMarker(mtmdContext);
 
-            if (markerPtr == IntPtr.Zero) return "<image>"; 
+            if (markerPtr == IntPtr.Zero) return "<image>";
 
             return Marshal.PtrToStringAnsi(markerPtr) ?? "<image>";
         }

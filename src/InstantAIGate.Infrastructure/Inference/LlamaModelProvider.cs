@@ -263,13 +263,13 @@ namespace InstantAIGate.Infrastructure.Inference
                     uint nCtx = config.ContextSize > 0 ? (uint)config.ContextSize : 2048;
                     uint nBatch = config.BatchSize > 0 ? (uint)config.BatchSize : 512;
                     int nThreads = config.Threads > 0 ? config.Threads : Environment.ProcessorCount;
-                    
+
                     _logger.LogDebug(
                         "Creating context for '{RepoId}': n_ctx={Ctx}, batch={Batch}, " +
                         "flash={Flash}, embeddings={Emb}, kv_quant={KvQuant}, offload_kqv={Kqv}",
                         repoId, nCtx, nBatch,
                         flashAttn, config.Embeddings, config.KvCacheQuantization, offloadKqv);
-                    
+
                     bool isGpuBackend = config.GpuLayerCount > 0;
 
                     IntPtr newCtxPtr = _nativeApi.CreateContext(

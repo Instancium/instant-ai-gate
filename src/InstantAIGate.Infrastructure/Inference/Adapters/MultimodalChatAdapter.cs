@@ -2,13 +2,13 @@ using InstantAIGate.Application.Dtos.Requests;
 using InstantAIGate.Application.Interfaces.Catalog;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
+using InstantAIGate.Domain.Extensions;
 using InstantAIGate.Infrastructure.Inference.Native;
 using InstantAIGate.Infrastructure.Templates;
 using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using InstantAIGate.Domain.Extensions;
 
 namespace InstantAIGate.Infrastructure.Inference.Adapters
 {
@@ -80,7 +80,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             }
 
             var imageResult = await _imageResolver.ResolveAsync(imageUrl, ct);
-            
+
             if (string.IsNullOrEmpty(request.Model))
             {
                 throw new ArgumentException("Model identifier cannot be null or empty.", nameof(request.Model));

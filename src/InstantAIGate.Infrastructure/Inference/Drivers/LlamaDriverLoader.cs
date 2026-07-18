@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace InstantAIGate.Infrastructure.Inference.Drivers;
+﻿namespace InstantAIGate.Infrastructure.Inference.Drivers;
 
 public static class LlamaDriverLoader
 {
@@ -23,7 +21,7 @@ public static class LlamaDriverLoader
 
             var finalDriverPath = DriverExtractor.ExtractAndGetPath(osPrefix, useCuda, localPath);
 
-       
+
             DriverNativeResolver.RegisterPath(finalDriverPath);
 
             isInitialized = true;

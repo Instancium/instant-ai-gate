@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-
-
-namespace InstantAIGate.Application.Dtos.Requests
+﻿namespace InstantAIGate.Application.Dtos.Requests
 {
     /// <summary>
     /// Represents a chat completion request for LLM inference.

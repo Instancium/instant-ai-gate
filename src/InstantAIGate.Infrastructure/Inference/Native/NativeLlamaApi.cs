@@ -1,5 +1,4 @@
-﻿using System;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace InstantAIGate.Infrastructure.Inference.Native;
 
@@ -51,7 +50,7 @@ public sealed class NativeLlamaApi : INativeLlamaApi
             if (string.IsNullOrEmpty(message)) return;
 
             var cleanLevel = (NativeGgmlLogLevel)level;
-            callback(cleanLevel, message!); 
+            callback(cleanLevel, message!);
         };
 
         try { NativeLlamaMethods.ggml_log_set(_nativeCallback, IntPtr.Zero); } catch { }

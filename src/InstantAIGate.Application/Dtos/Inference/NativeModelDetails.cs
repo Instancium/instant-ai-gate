@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.Application.Dtos.Inference
+﻿namespace InstantAIGate.Application.Dtos.Inference
 {
     public sealed class NativeModelDetails
     {

@@ -1,5 +1,4 @@
-﻿using System.Linq;
-using InstantAIGate.Domain.Entities;
+﻿using InstantAIGate.Domain.Entities;
 
 namespace InstantAIGate.Domain.Extensions
 {

@@ -1,6 +1,4 @@
 ﻿using InstantAIGate.Application.Interfaces.Inference;
-using InstantAIGate.Infrastructure.Inference.Native;
-using System;
 
 namespace InstantAIGate.Infrastructure.Inference.Native
 {

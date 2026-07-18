@@ -1,8 +1,5 @@
-﻿using System;
-using System.IO;
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace InstantAIGate.Infrastructure.Inference.Drivers;
 
@@ -32,7 +29,7 @@ internal static class DriverNativeResolver
         {
             _driverDirectory = driverDirectory;
             _isPathRegistered = true;
-            _extractionWaitHandle.Set(); 
+            _extractionWaitHandle.Set();
         }
     }
 

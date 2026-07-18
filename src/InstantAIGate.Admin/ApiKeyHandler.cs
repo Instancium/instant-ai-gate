@@ -1,6 +1,4 @@
-﻿using InstantAIGate.Admin.Config;
-using InstantAIGate.Application.Config;
-using Microsoft.Extensions.Options;
+﻿using InstantAIGate.Application.Config;
 
 namespace InstantAIGate.Admin
 {

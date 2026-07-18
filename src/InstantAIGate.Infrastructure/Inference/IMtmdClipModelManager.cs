@@ -1,9 +1,4 @@
-﻿using InstantAIGate.Infrastructure.Inference.Native;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-
-namespace InstantAIGate.Infrastructure.Inference
+﻿namespace InstantAIGate.Infrastructure.Inference
 {
     public interface IMtmdClipModelManager
     {

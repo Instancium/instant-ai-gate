@@ -1,7 +1,5 @@
-﻿using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Hosting.WindowsServices;
+﻿using Microsoft.Extensions.Hosting.WindowsServices;
 using System.Diagnostics;
-using System.ServiceProcess; 
 
 namespace InstantAIGate.Admin.Extensions
 {

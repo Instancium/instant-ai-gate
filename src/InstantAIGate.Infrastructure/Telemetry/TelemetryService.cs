@@ -1,13 +1,11 @@
-﻿using System;
-using System.Diagnostics;
-using System.IO;
-using System.Runtime.InteropServices;
-using InstantAIGate.Application.Dtos.Telemetry;
+﻿using InstantAIGate.Application.Dtos.Telemetry;
 using InstantAIGate.Application.Interfaces;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Infrastructure.NvmlNative;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace InstantAIGate.Infrastructure.Telemetry
 {

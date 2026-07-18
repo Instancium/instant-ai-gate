@@ -10,7 +10,7 @@ namespace InstantAIGate.API.Controllers
 {
     [ApiController]
     [Route("api/admin/fetch")]
-    [Authorize(Policy = "AdminApiKeyPolicy")] 
+    [Authorize(Policy = "AdminApiKeyPolicy")]
     public class AdminFetchController : ControllerBase
     {
         private readonly IModelRegistry _modelRegistry;
@@ -137,7 +137,7 @@ namespace InstantAIGate.API.Controllers
         /// Allowed anonymously, but strictly validated via the short-lived ticket.
         /// </summary>
         [HttpGet("progress-stream")]
-        [AllowAnonymous] 
+        [AllowAnonymous]
         public async Task StreamProgress([FromQuery] string? ticket, [FromServices] IMemoryCache cache, CancellationToken clientCt)
         {
             // Strictly validate and consume the 15-second ticket

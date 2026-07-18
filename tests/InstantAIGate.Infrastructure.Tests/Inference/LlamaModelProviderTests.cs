@@ -1,5 +1,4 @@
 using FluentAssertions;
-using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Domain.Dtos.Config;
 using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Native;
@@ -258,7 +257,7 @@ public class LlamaModelProviderTests : IDisposable
     [InlineData(35, NativeLlamaSplitMode.Layer)]
     [InlineData(99, NativeLlamaSplitMode.Layer)]
     public async Task InitializeAsync_DifferentGpuLayerCounts_UseCorrectSplitMode(
-        int gpuLayers, 
+        int gpuLayers,
         NativeLlamaSplitMode expectedSplitMode)
     {
         // Arrange

@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.Application.Config
+﻿namespace InstantAIGate.Application.Config
 {
     public class GatewayConfig
     {

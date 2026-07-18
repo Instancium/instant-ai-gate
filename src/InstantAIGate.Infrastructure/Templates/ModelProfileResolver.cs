@@ -1,6 +1,4 @@
 ﻿using InstantAIGate.Application.Interfaces.Templates;
-using System;
-using System.IO;
 
 namespace InstantAIGate.Infrastructure.Templates;
 

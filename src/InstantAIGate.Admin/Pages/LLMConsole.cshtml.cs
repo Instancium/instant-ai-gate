@@ -56,7 +56,7 @@ namespace InstantAIGate.Admin.Pages
 
                     foreach (var element in elements)
                     {
-                        if (element.TryGetProperty("type", out var typeProp) 
+                        if (element.TryGetProperty("type", out var typeProp)
                             && typeProp.TryGetInt32(out int typeValue))
                         {
                             if ((ModelType)typeValue == ModelType.Llm)

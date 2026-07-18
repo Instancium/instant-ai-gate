@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace InstantAIGate.Infrastructure.Inference.Native;
+﻿namespace InstantAIGate.Infrastructure.Inference.Native;
 
 /// <summary>
 /// Abstraction layer over native llama.cpp P/Invoke calls.

@@ -1,9 +1,7 @@
 using FluentAssertions;
 using InstantAIGate.Application.Config;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
 using System.Net;
-using System.Net.Http.Json;
 
 namespace InstantAIGate.API.Tests.Integration;
 

@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace InstantAIGate.Application.Dtos.Requests
+﻿namespace InstantAIGate.Application.Dtos.Requests
 {
     /// <summary>
     /// Represents a single message in a chat conversation.

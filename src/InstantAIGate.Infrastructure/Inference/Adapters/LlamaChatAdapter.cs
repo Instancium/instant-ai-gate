@@ -1,8 +1,8 @@
 ﻿using InstantAIGate.Application.Dtos.Requests;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
-using InstantAIGate.Infrastructure.Templates;
 using InstantAIGate.Infrastructure.Inference.Native;
+using InstantAIGate.Infrastructure.Templates;
 using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -137,7 +137,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 // Step 1: Try to remove historical messages first (excluding system prompt and the current message)
                 int oldestMessageIndex = -1;
 
-             
+
                 for (int i = 0; i < request.Messages.Count - 1; i++)
                 {
                     if (request.Messages[i].Role != "system")

@@ -1,7 +1,7 @@
-﻿using Microsoft.Extensions.Logging;
-using InstantAIGate.Application.Interfaces.Storage;
+﻿using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Domain.Entities;
 using InstantAIGate.Domain.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace InstantAIGate.Infrastructure.Storage
 {

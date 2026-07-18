@@ -1,5 +1,4 @@
 ﻿using InstantAIGate.Application.Dtos.Streaming;
-using InstantAIGate.Domain.Entities;
 
 namespace InstantAIGate.Application.Interfaces.Storage
 {
