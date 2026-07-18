@@ -14,7 +14,7 @@ namespace InstantAIGate.API.Controllers
     /// </summary>
     [ApiController]
     [Route("v1/chat")]
-    public class OpenAiChatController(IChatAdapter chatAdapter) : ControllerBase
+    public class OpenAiChatController(IChatAdapter chatAdapter, ILogger<OpenAiChatController> logger) : ControllerBase
     {
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -102,10 +102,12 @@ namespace InstantAIGate.API.Controllers
             }
             catch (InvalidOperationException ex)
             {
+                logger.LogError(ex, "Invalid operation during stream generation for chat {ChatId}.", chatId);
                 await WriteSseAsync(BuildChunk(string.Empty, targetModel, chatId, createdTimestamp, finishReason: ex.Message));
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                logger.LogError(ex, "Internal server error during stream generation for chat {ChatId}.", chatId);
                 await WriteSseAsync(BuildChunk(string.Empty, targetModel, chatId, createdTimestamp, finishReason: "internal_server_error"));
             }
 
