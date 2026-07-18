@@ -31,10 +31,13 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             return adapter.GenerateAsync(request, ct);
         }
 
-        public IAsyncEnumerable<string> StreamAsync(LlamaChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
+        public async IAsyncEnumerable<string> StreamAsync(LlamaChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
         {
-            var adapter = SelectAdapter(request);
-            return adapter.StreamAsync(request, ct);
+            IChatAdapter adapter = SelectAdapter(request);
+            await foreach (var token in adapter.StreamAsync(request, ct))
+            {
+                yield return token;
+            }
         }
 
         /// <summary>
