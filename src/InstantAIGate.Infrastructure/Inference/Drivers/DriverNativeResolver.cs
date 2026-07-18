@@ -36,7 +36,8 @@ internal static class DriverNativeResolver
     private static IntPtr DllImportResolver(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (libraryName.Contains("llama", StringComparison.OrdinalIgnoreCase) ||
-            libraryName.Contains("ggml", StringComparison.OrdinalIgnoreCase))
+            libraryName.Contains("ggml", StringComparison.OrdinalIgnoreCase) || 
+            libraryName.Contains("mtmd"))
         {
 
             if (!_isPathRegistered)
