@@ -8,6 +8,15 @@ namespace InstantAIGate.Infrastructure.Inference.Native
     /// </summary>
     public interface INativeMtmdApi
     {
+
+        /// <summary>
+        /// Retrieves the expected image marker string from the specified multimodal context.
+        /// Returns a fallback "<image>" marker if the provided context pointer is zero, the native marker pointer is unallocated, or if string marshaling fails.
+        /// </summary>
+        /// <param name="mtmdContext">A pointer to the initialized native multimodal context.</param>
+        /// <returns>The string representation of the expected image marker.</returns>
+        string GetExpectedImageMarker(IntPtr mtmdContext);
+
         /// <summary>
         /// Retrieves the capabilities of a multimodal projector model.
         /// </summary>
@@ -119,5 +128,32 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         /// <param name="chunk">Pointer to the chunk.</param>
         /// <returns>Array of text tokens.</returns>
         int[] GetChunkTokens(IntPtr chunk);
+
+        /// <summary>
+        /// Initializes a multimodal batch for encoding.
+        /// </summary>
+        /// <param name="mtmdContext">Pointer to the multimodal context.</param>
+        /// <returns>Pointer to the initialized batch.</returns>
+        IntPtr BatchInit(IntPtr mtmdContext);
+
+        /// <summary>
+        /// Frees the allocated multimodal batch.
+        /// </summary>
+        /// <param name="batch">Pointer to the batch.</param>
+        void BatchFree(IntPtr batch);
+
+        /// <summary>
+        /// Adds a chunk to the multimodal batch.
+        /// </summary>
+        /// <param name="batch">Pointer to the batch.</param>
+        /// <param name="chunk">Pointer to the chunk.</param>
+        void BatchAddChunk(IntPtr batch, IntPtr chunk);
+
+        /// <summary>
+        /// Encodes the multimodal batch.
+        /// </summary>
+        /// <param name="batch">Pointer to the batch.</param>
+        /// <returns>Status code of the encoding process.</returns>
+        int BatchEncode(IntPtr batch);
     }
 }

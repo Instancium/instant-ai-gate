@@ -4,9 +4,10 @@ using System.Runtime.InteropServices;
 namespace InstantAIGate.Infrastructure.Inference.Native
 {
     /// <summary>
-    /// Native bindings for libmtmd (multimodal support in llama.cpp)[cite: 1].
+    /// Native bindings for libmtmd (multimodal support in llama.cpp).
+    /// Based on llama.h and ggml.h (build b9631).
     /// </summary>
-    public static partial class NativeMethods
+    internal static partial class NativeMtmdMethods
     {
         private const string LibName = "mtmd";
 

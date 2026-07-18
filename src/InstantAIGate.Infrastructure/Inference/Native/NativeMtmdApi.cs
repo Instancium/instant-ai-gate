@@ -18,11 +18,12 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         Audio = 2
     }
 
+
     /// <summary>
     /// Provides a managed abstraction layer over the native multimodal (MTMD) API.
     /// Encapsulates all native structures and enums to prevent abstraction leaks.
     /// </summary>
-    public class MtmdApi : INativeMtmdApi
+    public class NativeMtmdApi : INativeMtmdApi
     {
         /// <summary>
         /// Retrieves the capabilities of the specified multimodal projector.
@@ -36,11 +37,29 @@ namespace InstantAIGate.Infrastructure.Inference.Native
                 throw new ArgumentException("Projector path cannot be null or empty.", nameof(projectorPath));
             }
 
-            var nativeCaps = NativeMethods.GetCapFromFile(projectorPath);
+            var nativeCaps = NativeMtmdMethods.GetCapFromFile(projectorPath);
 
             return new MultimodalCapabilities(
                 SupportsVision: nativeCaps.InpVision,
                 SupportsAudio: nativeCaps.InpAudio);
+        }
+
+        /// <summary>
+        /// Retrieves the expected image marker string from the specified multimodal context.
+        /// Returns a fallback "<image>" marker if the provided context pointer is zero, the native marker pointer is unallocated, or if string marshaling fails.
+        /// </summary>
+        /// <param name="mtmdContext">A pointer to the initialized native multimodal context.</param>
+        /// <returns>The string representation of the expected image marker.</returns>
+
+        public string GetExpectedImageMarker(IntPtr mtmdContext)
+        {
+            if (mtmdContext == IntPtr.Zero) return "<image>";
+
+            IntPtr markerPtr = NativeMtmdMethods.GetMarker(mtmdContext); 
+
+            if (markerPtr == IntPtr.Zero) return "<image>"; 
+
+            return Marshal.PtrToStringAnsi(markerPtr) ?? "<image>";
         }
 
         /// <summary>
@@ -62,11 +81,11 @@ namespace InstantAIGate.Infrastructure.Inference.Native
                 throw new ArgumentException("Text model pointer cannot be null.", nameof(textModelPtr));
             }
 
-            var p = NativeMethods.GetDefaultContextParams();
+            var p = NativeMtmdMethods.GetDefaultContextParams();
             p.UseGpu = useGpu;
             p.NThreads = Environment.ProcessorCount;
 
-            IntPtr ctx = NativeMethods.InitFromFile(projectorPath, textModelPtr, p);
+            IntPtr ctx = NativeMtmdMethods.InitFromFile(projectorPath, textModelPtr, p);
             if (ctx == IntPtr.Zero)
             {
                 throw new InvalidOperationException($"Failed to initialize MTMD context from file: {projectorPath}");
@@ -83,7 +102,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         {
             if (mtmdContext != IntPtr.Zero)
             {
-                NativeMethods.Free(mtmdContext);
+                NativeMtmdMethods.Free(mtmdContext);
             }
         }
 
@@ -101,7 +120,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
                 throw new ArgumentException("RGB data pointer cannot be null.", nameof(rgbData));
             }
 
-            IntPtr bitmap = NativeMethods.BitmapInit(width, height, rgbData);
+            IntPtr bitmap = NativeMtmdMethods.BitmapInit(width, height, rgbData);
             if (bitmap == IntPtr.Zero)
             {
                 throw new InvalidOperationException("Failed to initialize MTMD bitmap.");
@@ -118,7 +137,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         {
             if (bitmap != IntPtr.Zero)
             {
-                NativeMethods.BitmapFree(bitmap);
+                NativeMtmdMethods.BitmapFree(bitmap);
             }
         }
 
@@ -128,7 +147,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         /// <returns>Pointer to the chunk collection.</returns>
         public IntPtr CreateInputChunks()
         {
-            IntPtr chunks = NativeMethods.InputChunksInit();
+            IntPtr chunks = NativeMtmdMethods.InputChunksInit();
             if (chunks == IntPtr.Zero)
             {
                 throw new InvalidOperationException("Failed to initialize input chunks.");
@@ -145,7 +164,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         {
             if (chunks != IntPtr.Zero)
             {
-                NativeMethods.InputChunksFree(chunks);
+                NativeMtmdMethods.InputChunksFree(chunks);
             }
         }
 
@@ -166,14 +185,14 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             IntPtr pText = Marshal.StringToHGlobalAnsi(text);
             try
             {
-                var input = new NativeMethods.MtmdInputText
+                var input = new NativeMtmdMethods.MtmdInputText
                 {
                     Text = pText,
                     AddSpecial = true,
                     ParseSpecial = true
                 };
 
-                return NativeMethods.Tokenize(mtmdContext, outputChunks, ref input, bitmaps, (nuint)(bitmaps?.Length ?? 0));
+                return NativeMtmdMethods.Tokenize(mtmdContext, outputChunks, ref input, bitmaps, (nuint)(bitmaps?.Length ?? 0));
             }
             finally
             {
@@ -192,7 +211,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             if (mtmdContext == IntPtr.Zero) throw new ArgumentException("Context cannot be null.", nameof(mtmdContext));
             if (chunk == IntPtr.Zero) throw new ArgumentException("Chunk cannot be null.", nameof(chunk));
 
-            return NativeMethods.EncodeChunk(mtmdContext, chunk);
+            return NativeMtmdMethods.EncodeChunk(mtmdContext, chunk);
         }
 
         /// <summary>
@@ -206,7 +225,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         {
             if (mtmdContext == IntPtr.Zero) throw new ArgumentException("Context cannot be null.", nameof(mtmdContext));
 
-            IntPtr ptr = NativeMethods.GetOutputEmbd(mtmdContext);
+            IntPtr ptr = NativeMtmdMethods.GetOutputEmbd(mtmdContext);
             if (ptr == IntPtr.Zero)
             {
                 throw new InvalidOperationException("Failed to retrieve multimodal embeddings. Pointer is null.");
@@ -229,7 +248,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         {
             if (chunks == IntPtr.Zero) throw new ArgumentException("Chunks pointer cannot be null.", nameof(chunks));
 
-            return (int)NativeMethods.InputChunksSize(chunks);
+            return (int)NativeMtmdMethods.InputChunksSize(chunks);
         }
 
         /// <summary>
@@ -243,7 +262,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             if (chunks == IntPtr.Zero) throw new ArgumentException("Chunks pointer cannot be null.", nameof(chunks));
             if (index < 0) throw new ArgumentOutOfRangeException(nameof(index), "Index cannot be negative.");
 
-            IntPtr chunk = NativeMethods.InputChunksGet(chunks, (nuint)index);
+            IntPtr chunk = NativeMtmdMethods.InputChunksGet(chunks, (nuint)index);
             if (chunk == IntPtr.Zero)
             {
                 throw new InvalidOperationException($"Failed to retrieve chunk at index {index}.");
@@ -261,12 +280,12 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         {
             if (chunk == IntPtr.Zero) throw new ArgumentException("Chunk cannot be null.", nameof(chunk));
 
-            var nativeType = NativeMethods.InputChunkGetType(chunk);
+            var nativeType = NativeMtmdMethods.InputChunkGetType(chunk);
             return nativeType switch
             {
-                NativeMethods.MtmdInputChunkType.Text => InputChunkType.Text,
-                NativeMethods.MtmdInputChunkType.Image => InputChunkType.Image,
-                NativeMethods.MtmdInputChunkType.Audio => InputChunkType.Audio,
+                NativeMtmdMethods.MtmdInputChunkType.Text => InputChunkType.Text,
+                NativeMtmdMethods.MtmdInputChunkType.Image => InputChunkType.Image,
+                NativeMtmdMethods.MtmdInputChunkType.Audio => InputChunkType.Audio,
                 _ => throw new NotSupportedException($"Chunk type {nativeType} is not supported.")
             };
         }
@@ -280,7 +299,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         {
             if (chunk == IntPtr.Zero) throw new ArgumentException("Chunk cannot be null.", nameof(chunk));
 
-            return (int)NativeMethods.InputChunkGetNTokens(chunk);
+            return (int)NativeMtmdMethods.InputChunkGetNTokens(chunk);
         }
 
         /// <summary>
@@ -297,7 +316,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
                 throw new InvalidOperationException("Cannot retrieve text tokens from a non-text chunk.");
             }
 
-            IntPtr ptr = NativeMethods.InputChunkGetTokensText(chunk, out nuint tokenCount);
+            IntPtr ptr = NativeMtmdMethods.InputChunkGetTokensText(chunk, out nuint tokenCount);
             if (ptr == IntPtr.Zero)
             {
                 throw new InvalidOperationException("Failed to retrieve text tokens from chunk.");
@@ -311,6 +330,58 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             int[] tokens = new int[(int)tokenCount];
             Marshal.Copy(ptr, tokens, 0, (int)tokenCount);
             return tokens;
+        }
+
+        /// <summary>
+        /// Initializes a multimodal batch for encoding.
+        /// </summary>
+        /// <param name="mtmdContext">Pointer to the multimodal context.</param>
+        /// <returns>Pointer to the initialized batch.</returns>
+        public IntPtr BatchInit(IntPtr mtmdContext)
+        {
+            if (mtmdContext == IntPtr.Zero) throw new ArgumentException("Context cannot be null.", nameof(mtmdContext));
+
+            IntPtr batch = NativeMtmdMethods.BatchInit(mtmdContext);
+            if (batch == IntPtr.Zero) throw new InvalidOperationException("Failed to initialize MTMD batch.");
+
+            return batch;
+        }
+
+        /// <summary>
+        /// Frees the allocated multimodal batch.
+        /// </summary>
+        /// <param name="batch">Pointer to the batch.</param>
+        public void BatchFree(IntPtr batch)
+        {
+            if (batch != IntPtr.Zero)
+            {
+                NativeMtmdMethods.BatchFree(batch);
+            }
+        }
+
+        /// <summary>
+        /// Adds a chunk to the multimodal batch.
+        /// </summary>
+        /// <param name="batch">Pointer to the batch.</param>
+        /// <param name="chunk">Pointer to the chunk.</param>
+        public void BatchAddChunk(IntPtr batch, IntPtr chunk)
+        {
+            if (batch == IntPtr.Zero) throw new ArgumentException("Batch cannot be null.", nameof(batch));
+            if (chunk == IntPtr.Zero) throw new ArgumentException("Chunk cannot be null.", nameof(chunk));
+
+            NativeMtmdMethods.BatchAddChunk(batch, chunk);
+        }
+
+        /// <summary>
+        /// Encodes the multimodal batch.
+        /// </summary>
+        /// <param name="batch">Pointer to the batch.</param>
+        /// <returns>Status code of the encoding process.</returns>
+        public int BatchEncode(IntPtr batch)
+        {
+            if (batch == IntPtr.Zero) throw new ArgumentException("Batch cannot be null.", nameof(batch));
+
+            return NativeMtmdMethods.BatchEncode(batch);
         }
     }
 }

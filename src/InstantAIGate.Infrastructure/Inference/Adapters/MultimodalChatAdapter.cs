@@ -1,4 +1,4 @@
-﻿using InstantAIGate.Application.Dtos.Requests;
+using InstantAIGate.Application.Dtos.Requests;
 using InstantAIGate.Application.Interfaces.Catalog;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
@@ -55,7 +55,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
         public async IAsyncEnumerable<string> StreamAsync(LlamaChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
         {
-            string? imageUrl = ExtractFirstImageUrl(request.Messages);
+            var (imageUrl, modifiedMessages) = PrepareMessagesWithImageMarker(request.Messages);
             if (string.IsNullOrEmpty(imageUrl))
             {
                 throw new InvalidOperationException("No image found in the multimodal request.");
@@ -64,10 +64,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             var imageResult = await _imageResolver.ResolveAsync(imageUrl, ct);
 
             var manifest = await _modelRegistry.GetModelAsync(request.Model);
-            if (manifest == null)
-            {
-                throw new InvalidOperationException("Manifest not found.");
-            }
+            if (manifest == null) throw new InvalidOperationException("Manifest not found.");
 
             var mainFile = manifest.GetMainTextFile();
             var projectorFile = manifest.GetVisionProjectorFile();
@@ -101,10 +98,8 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             int maxTokens = request.MaxTokens > 0 ? request.MaxTokens : 512;
 
             IntPtr vocab = _llamaApi.ModelGetVocab(llamaModel.Handle);
-            int nEmbdDim = _llamaApi.GetModelEmbeddingSize(llamaModel.Handle);
 
             GCHandle pinnedRgb = GCHandle.Alloc(imageResult.RgbData, GCHandleType.Pinned);
-
             IntPtr nativeBitmap = IntPtr.Zero;
             IntPtr nativeChunks = IntPtr.Zero;
             IntPtr[] bitmapArray = new IntPtr[1];
@@ -122,44 +117,48 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 _llamaApi.SamplerChainAdd(sampler, repetitionSampler);
             }
 
-            int[] batchPos = new int[nBatchLimit];
-            int[] batchNSeq = new int[nBatchLimit];
-            sbyte[] batchLogits = new sbyte[nBatchLimit];
-
-            int seqIdValue = 0;
-            GCHandle hSeqIdValue = GCHandle.Alloc(seqIdValue, GCHandleType.Pinned);
-            IntPtr[] seqIdPointers = new IntPtr[nBatchLimit];
-            for (int i = 0; i < nBatchLimit; i++)
-            {
-                seqIdPointers[i] = hSeqIdValue.AddrOfPinnedObject();
-            }
-
-            GCHandle hPos = GCHandle.Alloc(batchPos, GCHandleType.Pinned);
-            GCHandle hNSeq = GCHandle.Alloc(batchNSeq, GCHandleType.Pinned);
-            GCHandle hLogits = GCHandle.Alloc(batchLogits, GCHandleType.Pinned);
-            GCHandle hSeqIdPtrs = GCHandle.Alloc(seqIdPointers, GCHandleType.Pinned);
-
             var utf8Decoder = Encoding.UTF8.GetDecoder();
             byte[] byteBuffer = new byte[256];
             char[] charBuffer = new char[512];
-            var accumulatedText = new StringBuilder();
 
             try
             {
                 nativeBitmap = _mtmdApi.CreateBitmap(imageResult.Width, imageResult.Height, pinnedRgb.AddrOfPinnedObject());
+                if (nativeBitmap == IntPtr.Zero) throw new InvalidOperationException("Failed to create native bitmap.");
+
                 bitmapArray[0] = nativeBitmap;
-
                 nativeChunks = _mtmdApi.CreateInputChunks();
-                string prompt = profile.Template.BuildPrompt(request.Messages);
 
-                int totalPromptTokens = _mtmdApi.Tokenize(mtmdContext.Handle, nativeChunks, prompt, bitmapArray);
-                if (totalPromptTokens <= 0)
+                string expectedMarker = _mtmdApi.GetExpectedImageMarker(mtmdContext.Handle);
+                string prompt = profile.Template.BuildPrompt(modifiedMessages);
+
+                prompt = prompt.Replace("{IMAGE_MARKER}", expectedMarker);
+                prompt = prompt.Replace("<image>", expectedMarker);
+
+                int firstIdx = prompt.IndexOf(expectedMarker);
+                if (firstIdx == -1)
                 {
-                    throw new InvalidOperationException("Failed to tokenize multimodal prompt.");
+                    prompt = expectedMarker + "\n" + prompt;
+                }
+                else
+                {
+                    int nextIdx = prompt.IndexOf(expectedMarker, firstIdx + expectedMarker.Length);
+                    while (nextIdx != -1)
+                    {
+                        prompt = prompt.Remove(nextIdx, expectedMarker.Length);
+                        nextIdx = prompt.IndexOf(expectedMarker, firstIdx + expectedMarker.Length);
+                    }
+                }
+
+                int tokenizeResult = _mtmdApi.Tokenize(mtmdContext.Handle, nativeChunks, prompt, bitmapArray);
+                if (tokenizeResult < 0)
+                {
+                    throw new InvalidOperationException($"Failed to tokenize multimodal prompt. Native API returned {tokenizeResult}. Marker '{expectedMarker}' might be rejected.");
                 }
 
                 int chunkCount = _mtmdApi.GetChunksCount(nativeChunks);
                 int currentPos = 0;
+                int lastEvalBatchSize = 0;
 
                 for (int c = 0; c < chunkCount; c++)
                 {
@@ -168,87 +167,91 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                     IntPtr chunk = _mtmdApi.GetChunk(nativeChunks, c);
                     var chunkType = _mtmdApi.GetChunkType(chunk);
                     int nTokens = _mtmdApi.GetChunkTokenCount(chunk);
+
                     bool isLastChunk = (c == chunkCount - 1);
 
-                    if (chunkType == InputChunkType.Text)
+                    if (chunkType == InputChunkType.Image)
+                    {
+                        IntPtr mtmdBatch = _mtmdApi.BatchInit(mtmdContext.Handle);
+
+                        try
+                        {
+                            _mtmdApi.BatchAddChunk(mtmdBatch, chunk);
+                            int encodeResult = _mtmdApi.BatchEncode(mtmdBatch);
+                            if (encodeResult != 0) throw new InvalidOperationException($"Batch encode failed with code {encodeResult}");
+                        }
+                        finally
+                        {
+                            _mtmdApi.BatchFree(mtmdBatch);
+                        }
+
+                        currentPos += nTokens;
+                        if (isLastChunk) lastEvalBatchSize = nTokens;
+                    }
+                    else if (chunkType == InputChunkType.Text)
                     {
                         int[] chunkTokens = _mtmdApi.GetChunkTokens(chunk);
-                        GCHandle hTokens = GCHandle.Alloc(chunkTokens, GCHandleType.Pinned);
 
-                        try
+                        for (int i = 0; i < nTokens; i += nBatchLimit)
                         {
-                            for (int i = 0; i < nTokens; i++)
+                            int evalBatchSize = Math.Min(nTokens - i, nBatchLimit);
+                            bool isLastEvalInChunk = (i + evalBatchSize == nTokens);
+
+                            if (isLastChunk && isLastEvalInChunk) lastEvalBatchSize = evalBatchSize;
+
+                            int[] batchTokens = new int[evalBatchSize];
+                            int[] batchPos = new int[evalBatchSize];
+                            int[] batchNSeq = new int[evalBatchSize];
+                            sbyte[] batchLogits = new sbyte[evalBatchSize];
+
+                            int seqIdValue = 0;
+                            GCHandle hSeqIdValue = GCHandle.Alloc(seqIdValue, GCHandleType.Pinned);
+                            IntPtr[] seqIdPointers = new IntPtr[evalBatchSize];
+
+                            for (int j = 0; j < evalBatchSize; j++)
                             {
-                                batchPos[i] = currentPos + i;
-                                batchNSeq[i] = 1;
-                                batchLogits[i] = (sbyte)((isLastChunk && i == nTokens - 1) ? 1 : 0);
+                                batchTokens[j] = chunkTokens[i + j];
+                                batchPos[j] = currentPos + j;
+                                batchNSeq[j] = 1;
+                                batchLogits[j] = (sbyte)((isLastChunk && isLastEvalInChunk && j == evalBatchSize - 1) ? 1 : 0);
+                                seqIdPointers[j] = hSeqIdValue.AddrOfPinnedObject();
                             }
 
-                            int result = _llamaApi.Decode(
-                                llamaContext.Handle,
-                                nTokens,
-                                hTokens.AddrOfPinnedObject(),
-                                hPos.AddrOfPinnedObject(),
-                                hNSeq.AddrOfPinnedObject(),
-                                hSeqIdPtrs.AddrOfPinnedObject(),
-                                hLogits.AddrOfPinnedObject());
+                            GCHandle hTokens = GCHandle.Alloc(batchTokens, GCHandleType.Pinned);
+                            GCHandle hPos = GCHandle.Alloc(batchPos, GCHandleType.Pinned);
+                            GCHandle hNSeq = GCHandle.Alloc(batchNSeq, GCHandleType.Pinned);
+                            GCHandle hLogits = GCHandle.Alloc(batchLogits, GCHandleType.Pinned);
+                            GCHandle hSeqIdPtrs = GCHandle.Alloc(seqIdPointers, GCHandleType.Pinned);
 
-                            if (result != 0)
+                            try
                             {
-                                throw new InvalidOperationException($"Decode failed for text chunk: {result}");
+                                int result = _llamaApi.Decode(
+                                    llamaContext.Handle,
+                                    evalBatchSize,
+                                    hTokens.AddrOfPinnedObject(),
+                                    hPos.AddrOfPinnedObject(),
+                                    hNSeq.AddrOfPinnedObject(),
+                                    hSeqIdPtrs.AddrOfPinnedObject(),
+                                    hLogits.AddrOfPinnedObject());
+
+                                if (result != 0) throw new InvalidOperationException($"Decode failed for text chunk: {result}");
                             }
-                        }
-                        finally
-                        {
-                            hTokens.Free();
+                            finally
+                            {
+                                hTokens.Free(); hPos.Free(); hNSeq.Free(); hLogits.Free(); hSeqIdPtrs.Free(); hSeqIdValue.Free();
+                            }
+                            currentPos += evalBatchSize;
                         }
                     }
-                    else if (chunkType == InputChunkType.Image)
-                    {
-                        if (_mtmdApi.EncodeChunk(mtmdContext.Handle, chunk) != 0)
-                        {
-                            throw new InvalidOperationException("Failed to encode image chunk.");
-                        }
-
-                        float[] embeddings = _mtmdApi.GetOutputEmbeddings(mtmdContext.Handle, nTokens, nEmbdDim);
-                        GCHandle hEmbd = GCHandle.Alloc(embeddings, GCHandleType.Pinned);
-
-                        try
-                        {
-                            for (int i = 0; i < nTokens; i++)
-                            {
-                                batchPos[i] = currentPos + i;
-                                batchNSeq[i] = 1;
-                                batchLogits[i] = (sbyte)((isLastChunk && i == nTokens - 1) ? 1 : 0);
-                            }
-
-                            int result = _llamaApi.DecodeEmbeddings(
-                                llamaContext.Handle,
-                                nTokens,
-                                hEmbd.AddrOfPinnedObject(),
-                                hPos.AddrOfPinnedObject(),
-                                hNSeq.AddrOfPinnedObject(),
-                                hSeqIdPtrs.AddrOfPinnedObject(),
-                                hLogits.AddrOfPinnedObject());
-
-                            if (result != 0)
-                            {
-                                throw new InvalidOperationException($"Decode failed for image chunk: {result}");
-                            }
-                        }
-                        finally
-                        {
-                            hEmbd.Free();
-                        }
-                    }
-
-                    currentPos += nTokens;
                 }
 
                 int eos = _llamaApi.VocabEos(vocab);
                 int generated = 0;
+
                 int[] singleTokenBuffer = new int[1];
                 GCHandle hSingleToken = GCHandle.Alloc(singleTokenBuffer, GCHandleType.Pinned);
+                int genSeqId = 0;
+                GCHandle hGenSeqId = GCHandle.Alloc(genSeqId, GCHandleType.Pinned);
 
                 try
                 {
@@ -256,51 +259,69 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                     {
                         ct.ThrowIfCancellationRequested();
 
-                        int token = _llamaApi.SamplerSample(sampler, llamaContext.Handle, -1);
+                        int logitIndex = (generated == 0) ? (lastEvalBatchSize - 1) : 0;
+                        int token = _llamaApi.SamplerSample(sampler, llamaContext.Handle, logitIndex);
+
                         if (token == eos || token < 0) break;
 
                         generated++;
                         singleTokenBuffer[0] = token;
-                        batchPos[0] = currentPos++;
-                        batchNSeq[0] = 1;
-                        batchLogits[0] = 1;
 
-                        int pieceSize = _llamaApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, false);
-                        if (pieceSize > byteBuffer.Length)
-                        {
-                            byteBuffer = new byte[pieceSize];
-                            pieceSize = _llamaApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, false);
-                        }
+                        int[] genBatchPos = new int[1] { currentPos++ };
+                        int[] genBatchNSeq = new int[1] { 1 };
+                        sbyte[] genBatchLogits = new sbyte[1] { 1 };
 
-                        if (pieceSize > 0)
+
+                        IntPtr[] genSeqIdPtrs = new IntPtr[1] { hGenSeqId.AddrOfPinnedObject() };
+
+                        GCHandle hGenPos = GCHandle.Alloc(genBatchPos, GCHandleType.Pinned);
+                        GCHandle hGenNSeq = GCHandle.Alloc(genBatchNSeq, GCHandleType.Pinned);
+                        GCHandle hGenLogits = GCHandle.Alloc(genBatchLogits, GCHandleType.Pinned);
+                        GCHandle hGenSeqIdPtrs = GCHandle.Alloc(genSeqIdPtrs, GCHandleType.Pinned);
+
+                        try
                         {
-                            int charsDecoded = utf8Decoder.GetChars(byteBuffer, 0, pieceSize, charBuffer, 0, flush: false);
-                            if (charsDecoded > 0)
+                            int pieceSize = _llamaApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, false);
+                            if (pieceSize > byteBuffer.Length)
                             {
-                                string piece = new string(charBuffer, 0, charsDecoded);
-                                accumulatedText.Append(piece);
-                                yield return piece;
+                                byteBuffer = new byte[pieceSize];
+                                pieceSize = _llamaApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, false);
                             }
+
+                            if (pieceSize > 0)
+                            {
+                                int charsDecoded = utf8Decoder.GetChars(byteBuffer, 0, pieceSize, charBuffer, 0, flush: false);
+                                if (charsDecoded > 0)
+                                {
+                                    yield return new string(charBuffer, 0, charsDecoded);
+                                }
+                            }
+
+                            int result = _llamaApi.Decode(
+                                llamaContext.Handle,
+                                1,
+                                hSingleToken.AddrOfPinnedObject(),
+                                hGenPos.AddrOfPinnedObject(),
+                                hGenNSeq.AddrOfPinnedObject(),
+                                hGenSeqIdPtrs.AddrOfPinnedObject(),
+                                hGenLogits.AddrOfPinnedObject());
+
+                            if (result != 0) throw new InvalidOperationException("Decode failed during generation.");
                         }
-
-                        int result = _llamaApi.Decode(
-                            llamaContext.Handle,
-                            1,
-                            hSingleToken.AddrOfPinnedObject(),
-                            hPos.AddrOfPinnedObject(),
-                            hNSeq.AddrOfPinnedObject(),
-                            hSeqIdPtrs.AddrOfPinnedObject(),
-                            hLogits.AddrOfPinnedObject());
-
-                        if (result != 0)
+                        finally
                         {
-                            throw new InvalidOperationException("Decode failed during generation.");
+                            hGenPos.Free();
+                            hGenNSeq.Free();
+                            hGenLogits.Free();
+                            hGenSeqIdPtrs.Free();
                         }
                     }
                 }
                 finally
                 {
+                    hGenSeqId.Free();
                     hSingleToken.Free();
+                    utf8Decoder.GetChars(Array.Empty<byte>(), 0, 0, charBuffer, 0, flush: true);
                 }
             }
             finally
@@ -310,31 +331,56 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 if (pinnedRgb.IsAllocated) pinnedRgb.Free();
 
                 _llamaApi.SamplerFree(sampler);
-                if (hPos.IsAllocated) hPos.Free();
-                if (hNSeq.IsAllocated) hNSeq.Free();
-                if (hLogits.IsAllocated) hLogits.Free();
-                if (hSeqIdPtrs.IsAllocated) hSeqIdPtrs.Free();
-                if (hSeqIdValue.IsAllocated) hSeqIdValue.Free();
             }
         }
 
-        private string? ExtractFirstImageUrl(List<ChatMessage>? messages)
+        private (string? Url, List<ChatMessage> ModifiedMessages) PrepareMessagesWithImageMarker(List<ChatMessage>? messages)
         {
-            if (messages == null) return null;
+            if (messages == null) return (null, new List<ChatMessage>());
+
+            string? foundUrl = null;
+            var modifiedMessages = new List<ChatMessage>();
+
+            var systemMsg = messages.FirstOrDefault(m => m.Role == "system");
+            if (systemMsg != null) modifiedMessages.Add(systemMsg);
+
 
             foreach (var message in messages)
             {
-                if (message.ContentParts != null)
+                if (message.Role == "system") continue;
+
+                if (message.ContentParts != null && message.ContentParts.Any(p => p.Type == "image_url"))
                 {
-                    var imagePart = message.ContentParts.FirstOrDefault(p => p.Type == "image_url" && p.ImageUrl != null);
-                    if (imagePart != null)
+                    var newParts = new List<ContentPart>();
+                    foreach (var part in message.ContentParts)
                     {
-                        return imagePart.ImageUrl!.Url;
+                        if (part.Type == "image_url" && part.ImageUrl != null)
+                        {
+                            foundUrl ??= part.ImageUrl.Url;
+                            newParts.Add(new ContentPart { Type = "text", Text = "{IMAGE_MARKER}" });
+                        }
+                        else
+                        {
+                            newParts.Add(part);
+                        }
                     }
+
+                    modifiedMessages.Add(new ChatMessage
+                    {
+                        Role = message.Role,
+                        Name = message.Name,
+                        Content = "{IMAGE_MARKER}\n" + (message.Content ?? ""),
+                        ContentParts = newParts
+                    });
+                }
+                else
+                {
+                    modifiedMessages.Add(message);
                 }
             }
 
-            return null;
+            return (foundUrl, modifiedMessages);
         }
+
     }
 }

@@ -4,7 +4,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native;
 
 /// <summary>
 /// Abstraction layer over native llama.cpp P/Invoke calls.
-/// Isolates all direct NativeMethods invocations to simplify future library updates.
+/// Isolates all direct NativeLlamaMethods invocations to simplify future library updates.
 /// </summary>
 public interface INativeLlamaApi
 {
@@ -234,29 +234,29 @@ public interface INativeLlamaApi
     /// <summary>
     /// Retrieves the embedding dimension size from the model.
     /// </summary>
-    public int ModelNEmbd(IntPtr model) => NativeMethods.llama_model_n_embd(model);
+    public int ModelNEmbd(IntPtr model) => NativeLlamaMethods.llama_model_n_embd(model);
 
     /// <summary>
     /// Retrieves the embedding vector for the specified token position.
     /// </summary>
-    public IntPtr GetEmbeddingsIth(IntPtr context, int i) => NativeMethods.llama_get_embeddings_ith(context, i);
+    public IntPtr GetEmbeddingsIth(IntPtr context, int i) => NativeLlamaMethods.llama_get_embeddings_ith(context, i);
 
     /// <summary>
     /// Creates a specialized context for embedding extraction with the given parameters.
     /// </summary>
     public IntPtr CreateEmbeddingContext(IntPtr model, uint nCtx, uint nBatch, int nThreads, NativeLlamaFlashAttnType flashAttn)
     {
-        var p = NativeMethods.llama_context_default_params();
+        var p = NativeLlamaMethods.llama_context_default_params();
         p.n_ctx = nCtx;
         p.n_batch = nBatch;
         p.n_ubatch = nBatch;
         p.n_threads = nThreads;
         p.n_threads_batch = nThreads;
         p.embeddings = true;
-        p.pooling_type = NativeMethods.llama_pooling_type.LLAMA_POOLING_TYPE_NONE;
-        p.flash_attn_type = (NativeMethods.llama_flash_attn_type)flashAttn;
+        p.pooling_type = NativeLlamaMethods.llama_pooling_type.LLAMA_POOLING_TYPE_NONE;
+        p.flash_attn_type = (NativeLlamaMethods.llama_flash_attn_type)flashAttn;
 
-        return NativeMethods.llama_init_from_model(model, p);
+        return NativeLlamaMethods.llama_init_from_model(model, p);
     }
 
     int GetModelEmbeddingSize(IntPtr model);
