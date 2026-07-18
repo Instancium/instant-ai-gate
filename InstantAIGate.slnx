@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+  </Folder>
   <Project Path="src/InstantAIGate.Admin/InstantAIGate.Admin.csproj" Id="95007af3-724e-4468-b831-d44452fab33e" />
   <Project Path="src/InstantAiGate.API/InstantAIGate.API.csproj" />
   <Project Path="src/InstantAIGate.Application/InstantAIGate.Application.csproj" Id="b8e58004-b9da-4032-ad28-84513e5655a7" />

@@ -12,6 +12,10 @@ using InstantAIGate.Domain.Extensions;
 
 namespace InstantAIGate.Infrastructure.Inference.Adapters
 {
+    /// <summary>
+    /// Adapter for processing multimodal chat requests using LLaMA and MTMD models.
+    /// Handles image extraction, tokenization, and streaming inference.
+    /// </summary>
     public class MultimodalChatAdapter : IChatAdapter
     {
         private readonly ILlamaModelManager _llamaManager;
@@ -43,34 +47,59 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             _modelRegistry = modelRegistry;
         }
 
+        /// <summary>
+        /// Generates a complete text response for a multimodal chat request.
+        /// </summary>
+        /// <param name="request">The chat request containing messages and optional images.</param>
+        /// <param name="ct">Cancellation token.</param>
+        /// <returns>The fully generated model response.</returns>
         public async Task<string> GenerateAsync(LlamaChatRequest request, CancellationToken ct = default)
         {
-            var sb = new StringBuilder();
-            await foreach (var token in StreamAsync(request, ct))
+            StringBuilder sb = new StringBuilder();
+            await foreach (string token in StreamAsync(request, ct))
             {
                 sb.Append(token);
             }
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Streams the generated response tokens for a multimodal chat request.
+        /// </summary>
+        /// <param name="request">The chat request containing messages and optional images.</param>
+        /// <param name="ct">Cancellation token.</param>
+        /// <returns>An asynchronous stream of string tokens.</returns>
         public async IAsyncEnumerable<string> StreamAsync(LlamaChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
         {
-            var (imageUrl, modifiedMessages) = PrepareMessagesWithImageMarker(request.Messages);
+            (string? imageUrl, List<ChatMessage> modifiedMessages) = PrepareMessagesWithImageMarker(request.Messages);
+
             if (string.IsNullOrEmpty(imageUrl))
             {
+                _logger.LogError("Validation failed: No image found in the multimodal request.");
                 throw new InvalidOperationException("No image found in the multimodal request.");
             }
 
             var imageResult = await _imageResolver.ResolveAsync(imageUrl, ct);
+            
+            if (string.IsNullOrEmpty(request.Model))
+            {
+                throw new ArgumentException("Model identifier cannot be null or empty.", nameof(request.Model));
+            }
 
             var manifest = await _modelRegistry.GetModelAsync(request.Model);
-            if (manifest == null) throw new InvalidOperationException("Manifest not found.");
+
+            if (manifest == null)
+            {
+                _logger.LogError("Manifest lookup failed for model: {Model}", request.Model);
+                throw new InvalidOperationException("Manifest not found.");
+            }
 
             var mainFile = manifest.GetMainTextFile();
             var projectorFile = manifest.GetVisionProjectorFile();
 
             if (mainFile == null || projectorFile == null)
             {
+                _logger.LogError("Multimodal package is incomplete for model: {Model}", request.Model);
                 throw new InvalidOperationException("Multimodal package is missing either the text model or the vision projector file.");
             }
 
@@ -90,11 +119,11 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
             if (!_llamaManager.ActiveModels.TryGetValue(request.Model, out var modelSettings))
             {
+                _logger.LogError("Configuration for model '{Model}' not found in active registry.", request.Model);
                 throw new InvalidOperationException($"Configuration for model '{request.Model}' not found in active registry.");
             }
 
-            int nBatchLimit = (int)modelSettings.BatchSize;
-            if (nBatchLimit <= 0) nBatchLimit = 512;
+            int nBatchLimit = (int)modelSettings.BatchSize > 0 ? (int)modelSettings.BatchSize : 512;
             int maxTokens = request.MaxTokens > 0 ? request.MaxTokens : 512;
 
             IntPtr vocab = _llamaApi.ModelGetVocab(llamaModel.Handle);
@@ -104,10 +133,10 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             IntPtr nativeChunks = IntPtr.Zero;
             IntPtr[] bitmapArray = new IntPtr[1];
 
-            var chainParams = _llamaApi.SamplerChainDefaultParams();
+            NativeSamplerChainParams chainParams = _llamaApi.SamplerChainDefaultParams();
             IntPtr sampler = _llamaApi.SamplerChainInit(chainParams);
             _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitTopK(request.TopK));
-            _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitTopP(request.TopP, (nuint)1));
+            _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitTopP(request.TopP, 1));
             _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitTemp(request.Temperature > 0 ? request.Temperature : 0.7f));
             _llamaApi.SamplerChainAdd(sampler, _llamaApi.SamplerInitDist(request.Seed.HasValue ? (uint)request.Seed.Value : (uint)Random.Shared.Next()));
 
@@ -117,14 +146,18 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 _llamaApi.SamplerChainAdd(sampler, repetitionSampler);
             }
 
-            var utf8Decoder = Encoding.UTF8.GetDecoder();
+            Decoder utf8Decoder = Encoding.UTF8.GetDecoder();
             byte[] byteBuffer = new byte[256];
             char[] charBuffer = new char[512];
 
             try
             {
                 nativeBitmap = _mtmdApi.CreateBitmap(imageResult.Width, imageResult.Height, pinnedRgb.AddrOfPinnedObject());
-                if (nativeBitmap == IntPtr.Zero) throw new InvalidOperationException("Failed to create native bitmap.");
+                if (nativeBitmap == IntPtr.Zero)
+                {
+                    _logger.LogError("Failed to create native bitmap for MTMD API.");
+                    throw new InvalidOperationException("Failed to create native bitmap.");
+                }
 
                 bitmapArray[0] = nativeBitmap;
                 nativeChunks = _mtmdApi.CreateInputChunks();
@@ -132,8 +165,8 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 string expectedMarker = _mtmdApi.GetExpectedImageMarker(mtmdContext.Handle);
                 string prompt = profile.Template.BuildPrompt(modifiedMessages);
 
-                prompt = prompt.Replace("{IMAGE_MARKER}", expectedMarker);
-                prompt = prompt.Replace("<image>", expectedMarker);
+                prompt = prompt.Replace("{IMAGE_MARKER}", expectedMarker)
+                               .Replace("<image>", expectedMarker);
 
                 int firstIdx = prompt.IndexOf(expectedMarker);
                 if (firstIdx == -1)
@@ -153,6 +186,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 int tokenizeResult = _mtmdApi.Tokenize(mtmdContext.Handle, nativeChunks, prompt, bitmapArray);
                 if (tokenizeResult < 0)
                 {
+                    _logger.LogError("Tokenization failed. Native API returned {ResultCode}", tokenizeResult);
                     throw new InvalidOperationException($"Failed to tokenize multimodal prompt. Native API returned {tokenizeResult}. Marker '{expectedMarker}' might be rejected.");
                 }
 
@@ -178,7 +212,11 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                         {
                             _mtmdApi.BatchAddChunk(mtmdBatch, chunk);
                             int encodeResult = _mtmdApi.BatchEncode(mtmdBatch);
-                            if (encodeResult != 0) throw new InvalidOperationException($"Batch encode failed with code {encodeResult}");
+                            if (encodeResult != 0)
+                            {
+                                _logger.LogError("Batch encode failed with code {Code}", encodeResult);
+                                throw new InvalidOperationException($"Batch encode failed with code {encodeResult}");
+                            }
                         }
                         finally
                         {
@@ -234,11 +272,20 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                                     hSeqIdPtrs.AddrOfPinnedObject(),
                                     hLogits.AddrOfPinnedObject());
 
-                                if (result != 0) throw new InvalidOperationException($"Decode failed for text chunk: {result}");
+                                if (result != 0)
+                                {
+                                    _logger.LogError("Decode failed for text chunk. Native API returned {ResultCode}", result);
+                                    throw new InvalidOperationException($"Decode failed for text chunk: {result}");
+                                }
                             }
                             finally
                             {
-                                hTokens.Free(); hPos.Free(); hNSeq.Free(); hLogits.Free(); hSeqIdPtrs.Free(); hSeqIdValue.Free();
+                                hTokens.Free();
+                                hPos.Free();
+                                hNSeq.Free();
+                                hLogits.Free();
+                                hSeqIdPtrs.Free();
+                                hSeqIdValue.Free();
                             }
                             currentPos += evalBatchSize;
                         }
@@ -270,7 +317,6 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                         int[] genBatchPos = new int[1] { currentPos++ };
                         int[] genBatchNSeq = new int[1] { 1 };
                         sbyte[] genBatchLogits = new sbyte[1] { 1 };
-
 
                         IntPtr[] genSeqIdPtrs = new IntPtr[1] { hGenSeqId.AddrOfPinnedObject() };
 
@@ -306,7 +352,11 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                                 hGenSeqIdPtrs.AddrOfPinnedObject(),
                                 hGenLogits.AddrOfPinnedObject());
 
-                            if (result != 0) throw new InvalidOperationException("Decode failed during generation.");
+                            if (result != 0)
+                            {
+                                _logger.LogError("Decode failed during generation loop. API returned {ResultCode}", result);
+                                throw new InvalidOperationException("Decode failed during generation.");
+                            }
                         }
                         finally
                         {
@@ -339,20 +389,20 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             if (messages == null) return (null, new List<ChatMessage>());
 
             string? foundUrl = null;
-            var modifiedMessages = new List<ChatMessage>();
+            List<ChatMessage> modifiedMessages = new List<ChatMessage>();
 
-            var systemMsg = messages.FirstOrDefault(m => m.Role == "system");
+            ChatMessage? systemMsg = messages.FirstOrDefault(m => m.Role == "system");
             if (systemMsg != null) modifiedMessages.Add(systemMsg);
 
-
-            foreach (var message in messages)
+            foreach (ChatMessage message in messages)
             {
                 if (message.Role == "system") continue;
 
                 if (message.ContentParts != null && message.ContentParts.Any(p => p.Type == "image_url"))
                 {
-                    var newParts = new List<ContentPart>();
-                    foreach (var part in message.ContentParts)
+                    List<ContentPart> newParts = new List<ContentPart>();
+
+                    foreach (ContentPart part in message.ContentParts)
                     {
                         if (part.Type == "image_url" && part.ImageUrl != null)
                         {
@@ -369,7 +419,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                     {
                         Role = message.Role,
                         Name = message.Name,
-                        Content = "{IMAGE_MARKER}\n" + (message.Content ?? ""),
+                        Content = "{IMAGE_MARKER}\n" + (message.Content ?? string.Empty),
                         ContentParts = newParts
                     });
                 }
@@ -381,6 +431,5 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
             return (foundUrl, modifiedMessages);
         }
-
     }
 }
