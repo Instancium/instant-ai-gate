@@ -7,7 +7,6 @@ using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Adapters;
 using InstantAIGate.Infrastructure.Inference.Drivers;
 using InstantAIGate.Infrastructure.Inference.Native;
-using InstantAIGate.Infrastructure.Inference.Vision;
 using InstantAIGate.Infrastructure.NvmlNative;
 using InstantAIGate.Infrastructure.Storage;
 using InstantAIGate.Infrastructure.Telemetry;
@@ -34,22 +33,12 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<INativeLlamaApi, NativeLlamaApi>();
             services.AddSingleton<IModelProvider, LlamaModelProvider>();
 
-            // --- MTMD (CLIP) Native Infrastructure ---
-            // Vision processing bindings and separate memory manager for projector models
-            services.AddSingleton<INativeMtmdApi, NativeMtmdApi>();
-            services.AddSingleton<IMtmdModelManager, ImageModelManager>();
-
-            // --- Multi-Model Lifecycle Orchestrator ---
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling
             services.AddSingleton<LlamaModelManager>();
             services.AddSingleton<IModelManager>(sp => sp.GetRequiredService<LlamaModelManager>());
             services.AddSingleton<ILlamaModelManager>(sp => sp.GetRequiredService<LlamaModelManager>());
 
-            // --- Inference Adapters (Router Pattern) ---
-            // Stateless high-level execution layer responsible for token-streaming and complete string generation blocks
-            services.AddTransient<LlamaChatAdapter>();
-            services.AddTransient<MultimodalChatAdapter>();
-            services.AddTransient<IChatAdapter, ChatAdapterRouter>(); // Main endpoint for the controller
+            services.AddTransient<IChatAdapter, LlamaChatAdapter>(); 
 
             services.AddTransient<IEmbeddingAdapter, LlamaEmbeddingAdapter>();
 
@@ -66,10 +55,6 @@ namespace InstantAIGate.Infrastructure
             services.AddHostedService<DriverInitializationHostedService>();
             services.AddSingleton<ITelemetryService, TelemetryService>();
 
-            services.AddHttpClient<IImageContentResolver, ImageContentResolver>(client =>
-            {
-                client.Timeout = TimeSpan.FromSeconds(15);
-            });
 
             return services;
         }
