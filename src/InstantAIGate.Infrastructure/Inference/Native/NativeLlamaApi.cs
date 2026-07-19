@@ -62,6 +62,17 @@ public sealed class NativeLlamaApi
     public void FreeModel(IntPtr model) => NativeLlamaMethods.llama_model_free(model);
     public void FreeContext(IntPtr context) => NativeLlamaMethods.llama_free(context);
 
+
+    /// <summary>
+    /// Accepts a sampled token and updates the internal state of the sampler chain.
+    /// Essential for repetition penalties and context-aware sampling.
+    /// </summary>
+    /// <param name="sampler">The pointer to the sampler chain.</param>
+    /// <param name="token">The sampled token ID.</param>
+    public void SamplerAccept(IntPtr sampler, int token)
+    {
+        NativeLlamaMethods.llama_sampler_accept(sampler, token);
+    }
     public IntPtr LoadModel(string path, int gpuLayers, int mainGpu, bool useMlock, bool useMmap, NativeLlamaSplitMode splitMode)
     {
         var p = NativeLlamaMethods.llama_model_default_params();
@@ -148,7 +159,7 @@ public sealed class NativeLlamaApi
         // 0 = disable penalty
         // -1 = use context size (penalize all tokens in context)
         // Positive value = penalize last N tokens
-        int penaltyLastN = -1; // Use context size for comprehensive penalty
+        int penaltyLastN = -1; 
 
         return NativeLlamaMethods.llama_sampler_init_penalties(
             penaltyLastN,

@@ -83,14 +83,14 @@
         /// Higher values increase topic diversity and prevent theme repetition.
         /// Helps maintain conversation freshness in multi-turn interactions.
         /// </summary>
-        public float PresencePenalty { get; init; } = 0.0f;
+        public float PresencePenalty { get; init; } = 1.1f;
 
         /// <summary>
         /// Positive values penalize new tokens based on their existing frequency in the text so far, 
         /// decreasing the likelihood of the model repeating the exact same lines verbatim.
         /// Range: -2.0 to 2.0. More effective than presence_penalty for reducing exact word repetitions.
         /// </summary>
-        public float FrequencyPenalty { get; init; } = 0.0f;
+        public float FrequencyPenalty { get; init; } = 1.1f;
 
         /// <summary>
         /// A penalty applied to discourage the model from repeating the same tokens or sequences.
