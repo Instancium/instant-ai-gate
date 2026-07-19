@@ -11,12 +11,73 @@ let abortController = null;
 let chatHistory = [];
 let currentImageBase64 = null;
 
+// ==========================================
+// SIGNALR TELEMETRY CONNECTION (Global Hook)
+// ==========================================
+function handleTelemetryUpdate(telemetryData) {
+    if (!telemetryData) return;
+
+    const activeModelDisplay = document.getElementById('active-model-display');
+    const currentModelLabel = document.getElementById('current-model-label');
+
+    // Safely handle both camelCase and PascalCase from SignalR JSON serialization
+    const modelsArray = telemetryData?.models || telemetryData?.Models || [];
+
+    // Identify the TRUE active model by checking MaxParallelUsers
+    const activeModel = modelsArray.find(m => (m.maxParallelUsers > 0) || (m.MaxParallelUsers > 0));
+
+    const activeRepoId = activeModel ? (activeModel.repoId || activeModel.RepoId) : null;
+    const displayText = activeRepoId || "No active pipeline target";
+
+    // Force DOM update robustly
+    if (activeModelDisplay) {
+        if (activeModelDisplay.tagName === 'INPUT' || activeModelDisplay.tagName === 'TEXTAREA' || activeModelDisplay.tagName === 'SELECT') {
+            activeModelDisplay.value = displayText;
+        } else {
+            activeModelDisplay.innerText = displayText;
+        }
+    }
+
+    if (currentModelLabel) {
+        if (currentModelLabel.tagName === 'INPUT') {
+            currentModelLabel.value = displayText;
+        } else {
+            currentModelLabel.innerText = displayText;
+        }
+    }
+
+    const pulse = document.getElementById('status-pulse');
+    if (!activeRepoId) {
+        updateStatusPulse('off');
+    } else if (pulse && pulse.classList.contains('status-off')) {
+        updateStatusPulse('active');
+    }
+}
+
+function attachToGlobalSignalR() {
+    // layout.js initializes window.HubConnection, we just need to wait for it and hook into it
+    if (window.HubConnection) {
+        window.HubConnection.on("ReceiveTelemetry", handleTelemetryUpdate);
+        console.log("LLM Console successfully attached to global SignalR connection.");
+    } else {
+        // Poll every 100ms until layout.js finishes SignalR initialization
+        setTimeout(attachToGlobalSignalR, 100);
+    }
+}
+
+// Start watching for global SignalR
+attachToGlobalSignalR();
+
+// ==========================================
+// CONSOLE LOGIC
+// ==========================================
+
 async function saveSamplingParams() {
     const params = {
         temperature: document.getElementById('param-temp').value,
         top_p: document.getElementById('param-topp').value,
-        top_k: document.getElementById('param-topk').value,
-        repeat_penalty: document.getElementById('param-rep-penalty').value,
+        top_k: document.getElementById('param-topk')?.value || "40",
+        repeat_penalty: document.getElementById('param-rep-penalty')?.value || "1.1",
         presence_penalty: document.getElementById('param-presence').value,
         frequency_penalty: document.getElementById('param-frequency').value,
         max_tokens: document.getElementById('param-tokens').value,
@@ -71,8 +132,12 @@ function updateStatusPulse(state) {
 }
 
 (function initConsoleOnLoad() {
-    const select = document.getElementById('console-repo-select');
-    if (select && select.value) updateStatusPulse('active');
+    const activeModelDisplay = document.getElementById('active-model-display');
+    const currentVal = (activeModelDisplay?.value || activeModelDisplay?.innerText || "").trim();
+
+    if (activeModelDisplay && currentVal !== "No active pipeline target" && currentVal !== "") {
+        updateStatusPulse('active');
+    }
 
     if (initialWarningMessage && initialWarningMessage.trim() !== "") {
         showConsoleAlert(initialWarningMessage);
@@ -92,8 +157,11 @@ function clearChatLayout() {
 
     chatHistory = [];
 
-    const select = document.getElementById('console-repo-select');
-    updateStatusPulse(select && select.value ? 'active' : 'off');
+    const activeModelDisplay = document.getElementById('active-model-display');
+    const currentVal = (activeModelDisplay?.value || activeModelDisplay?.innerText || "").trim();
+    const hasModel = activeModelDisplay && currentVal !== "No active pipeline target" && currentVal !== "";
+
+    updateStatusPulse(hasModel ? 'active' : 'off');
 }
 
 async function abortInferenceStreaming() {
@@ -137,7 +205,7 @@ function clearImagePreview() {
 }
 
 async function executeInferenceStreaming() {
-    const repoSelect = document.getElementById('console-repo-select');
+    const activeModelDisplay = document.getElementById('active-model-display');
     const promptInput = document.getElementById('user-prompt-input');
     const scroller = document.getElementById('chat-scroller');
     const sendBtn = document.getElementById('send-prompt-btn');
@@ -145,13 +213,13 @@ async function executeInferenceStreaming() {
     const sendIcon = document.getElementById('send-icon');
     const welcomeMsg = document.getElementById('welcome-message');
 
-    if (!repoSelect || !promptInput) return;
+    if (!activeModelDisplay || !promptInput) return;
 
-    const targetModelId = repoSelect.value;
+    const activeModelText = (activeModelDisplay.value || activeModelDisplay.innerText).trim();
     const userPrompt = promptInput.value.trim();
 
-    if (!targetModelId) {
-        showConsoleAlert("Target model selection is required for inference.");
+    if (activeModelText === "No active pipeline target" || activeModelText === "") {
+        showConsoleAlert("No active model available. Please wait for initialization.");
         return;
     }
 
@@ -231,7 +299,7 @@ async function executeInferenceStreaming() {
         messagesPayload.push(...chatHistory);
 
         const inferencePayload = {
-            model: targetModelId,
+            model: "auto-routed",
             messages: messagesPayload,
             temperature: parseFloat(document.getElementById('param-temp')?.value || "0.7"),
             top_p: parseFloat(document.getElementById('param-topp')?.value || "0.9"),
@@ -343,7 +411,7 @@ function resetUiAfterGeneration() {
     const sendBtn = document.getElementById('send-prompt-btn');
     const stopBtn = document.getElementById('stop-generation-btn');
     const sendIcon = document.getElementById('send-icon');
-    const select = document.getElementById('console-repo-select');
+    const activeModelDisplay = document.getElementById('active-model-display');
 
     currentStreamReader = null;
     abortController = null;
@@ -356,7 +424,9 @@ function resetUiAfterGeneration() {
     if (stopBtn) stopBtn.classList.add('display-none');
     if (sendIcon) sendIcon.className = 'las la-paper-plane';
 
-    if (select) updateStatusPulse(select.value ? 'active' : 'off');
+    const currentVal = (activeModelDisplay?.value || activeModelDisplay?.innerText || "").trim();
+    const hasModel = activeModelDisplay && currentVal !== "No active pipeline target" && currentVal !== "";
+    updateStatusPulse(hasModel ? 'active' : 'off');
 }
 
 function appendMessageToDom(role, htmlOrText) {
@@ -386,15 +456,6 @@ function appendSystemLogToDom(text) {
     logDiv.innerHTML = `<i class="las la-info-circle"></i> ${text}`;
     scroller.appendChild(logDiv);
     scroller.scrollTop = scroller.scrollHeight;
-}
-
-const repoSelectEl = document.getElementById('console-repo-select');
-if (repoSelectEl) {
-    repoSelectEl.addEventListener('change', function () {
-        const label = document.getElementById('current-model-label');
-        if (label) label.innerText = this.value || "No active pipeline target";
-        updateStatusPulse(this.value ? 'active' : 'off');
-    });
 }
 
 marked.setOptions({

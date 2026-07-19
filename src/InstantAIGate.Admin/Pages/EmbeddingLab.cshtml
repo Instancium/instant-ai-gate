@@ -21,18 +21,11 @@
     <div class="lab-toolbar">
         <h2 class="lab-toolbar__title">Live Comparison Tool</h2>
 
-        <div class="custom-select-wrapper" id="model-select-wrapper">
-            <div class="custom-select-trigger" id="custom-select-trigger">
-                <span>-- Select Active Pipeline --</span>
-                <i class="bi bi-chevron-down"></i>
-            </div>
-            <div class="custom-options" id="custom-options">
+        <div style="flex: 1; max-width: 400px; margin-left: 20px;">
+            <div id="active-model-display" class="console-select font-mono" style="display: flex; align-items: center; background-color: var(--console-bg-darker); cursor: not-allowed; opacity: 0.8; height: 38px; padding: 0 1rem; border-radius: 4px; border: 1px solid var(--console-border); color: var(--console-text);">
+                @(string.IsNullOrEmpty(Model.ActiveModel) ? "No active pipeline target" : Model.ActiveModel)
             </div>
         </div>
-
-        <select id="model-select" style="display: none;">
-            <option value="">-- Select Active Pipeline --</option>
-        </select>
     </div>
 
     <div class="lab-grid">
@@ -40,8 +33,8 @@
             <textarea id="text1" class="lab-textarea" placeholder="Enter first text..."></textarea>
             <textarea id="text2" class="lab-textarea" placeholder="Enter second text..."></textarea>
 
-            <button id="analyze-btn" class="lab-btn-primary">
-                Analyze & Compare
+            <button id="analyze-btn" class="lab-btn-primary" @(string.IsNullOrEmpty(Model.ActiveModel) ? "disabled" : "")>
+                @(string.IsNullOrEmpty(Model.ActiveModel) ? "No models available" : "Analyze & Compare")
             </button>
 
             <div class="gauge-card">

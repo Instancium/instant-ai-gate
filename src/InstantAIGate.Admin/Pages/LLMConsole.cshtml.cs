@@ -4,6 +4,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace InstantAIGate.Admin.Pages
 {
@@ -14,8 +18,7 @@ namespace InstantAIGate.Admin.Pages
         private readonly ILogger<LLMConsoleModel> _logger;
 
         public string APIUrl { get; set; }
-        public string? SelectedRepoId { get; set; }
-        public List<string> ActiveModels { get; set; } = new();
+        public string? ActiveModel { get; set; }
         public string? WarningMessage { get; set; }
 
         public LLMConsoleModel(
@@ -29,20 +32,19 @@ namespace InstantAIGate.Admin.Pages
             APIUrl = _apiOptions.Value.PublicUrl;
         }
 
-        public async Task<IActionResult> OnGetAsync(string? repoId)
+        public async Task<IActionResult> OnGetAsync()
         {
-            SelectedRepoId = repoId;
-            await LoadActiveModelsAsync();
+            await LoadActiveModelAsync();
 
-            if (!string.IsNullOrEmpty(SelectedRepoId) && !ActiveModels.Contains(SelectedRepoId))
+            if (string.IsNullOrEmpty(ActiveModel))
             {
-                WarningMessage = $"Warning: Model '{repoId}' is not currently initialized in VRAM.";
+                WarningMessage = "Warning: No active model is currently initialized in VRAM.";
             }
 
             return Page();
         }
 
-        private async Task LoadActiveModelsAsync()
+        private async Task LoadActiveModelAsync()
         {
             try
             {
@@ -66,7 +68,8 @@ namespace InstantAIGate.Admin.Pages
                                     var id = repoProp.GetString();
                                     if (!string.IsNullOrEmpty(id))
                                     {
-                                        ActiveModels.Add(id);
+                                        ActiveModel = id;
+                                        break; // Single-model paradigm: we only need the first active model
                                     }
                                 }
                             }
@@ -76,7 +79,7 @@ namespace InstantAIGate.Admin.Pages
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to retrieve the list of active execution cores for the console.");
+                _logger.LogError(ex, "Failed to retrieve the active execution core for the console.");
             }
         }
     }
