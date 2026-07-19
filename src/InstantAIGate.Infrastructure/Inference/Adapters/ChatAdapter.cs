@@ -6,6 +6,7 @@ using InstantAIGate.Infrastructure.Templates;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -62,17 +63,12 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
         /// </summary>
         public async IAsyncEnumerable<string> StreamAsync(ChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
         {
-            // ==========================================
-            // VIRTUAL ROUTING (Single-Model Paradigm)
-            // ==========================================
             var modelSettings = _modelManager.GetActiveSettings();
             if (modelSettings == null)
             {
                 throw new InvalidOperationException("No active model is currently loaded in the system.");
             }
 
-            // We ignore request.Model entirely to support seamless hot-swapping.
-            // Even if the client asks for an old model, we route to the active one.
             string activeRepoId = modelSettings.RepoId;
 
             if (!string.Equals(request.Model, activeRepoId, StringComparison.OrdinalIgnoreCase))
@@ -86,9 +82,6 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             using var model = await _modelManager.AcquireModelAsync(activeRepoId, ct);
             using var context = await _modelManager.AcquireContextAsync(activeRepoId, ct);
 
-            // ==========================================
-            // CLEAN CONFIGURATION RETRIEVAL
-            // ==========================================
             int nBatchLimit = (int)modelSettings.BatchSize;
             if (nBatchLimit <= 0)
             {
@@ -109,7 +102,9 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             IntPtr vocab = _nativeApi.ModelGetVocab(model.Handle);
             IntPtr ctxHandle = context.TextContext.Handle;
 
-            string prompt = profile.Template.BuildPrompt(request.Messages);
+            var messages = request.Messages.ToList();
+
+            string prompt = profile.Template.BuildPrompt(messages);
             byte[] promptBytes = Encoding.UTF8.GetBytes(prompt);
 
             int[] tokens = new int[contextLimit + maxTokens + 128];
@@ -130,16 +125,13 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 nTokens = _nativeApi.Tokenize(vocab, prompt, promptBytes.Length, tokens, tokens.Length, false, true);
             }
 
-            // ==========================================
-            // SLIDING WINDOW & DYNAMIC TRUNCATION
-            // ==========================================
             while (nTokens > availableTokensForPrompt)
             {
                 int oldestMessageIndex = -1;
 
-                for (int i = 0; i < request.Messages.Count - 1; i++)
+                for (int i = 0; i < messages.Count - 1; i++)
                 {
-                    if (request.Messages[i].Role != "system")
+                    if (messages[i].Role != "system")
                     {
                         oldestMessageIndex = i;
                         break;
@@ -150,23 +142,23 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 {
                     _logger.LogDebug("Context overflow: {Tokens}/{Limit}. Trimming historical message pair starting at index {Index}.", nTokens, availableTokensForPrompt, oldestMessageIndex);
 
-                    request.Messages.RemoveAt(oldestMessageIndex);
+                    messages.RemoveAt(oldestMessageIndex);
 
-                    if (oldestMessageIndex < request.Messages.Count && request.Messages[oldestMessageIndex].Role == "assistant")
+                    if (oldestMessageIndex < messages.Count && messages[oldestMessageIndex].Role == "assistant")
                     {
-                        request.Messages.RemoveAt(oldestMessageIndex);
+                        messages.RemoveAt(oldestMessageIndex);
                     }
                 }
                 else
                 {
-                    int lastMessageIndex = request.Messages.FindLastIndex(m => m.Role != "system");
+                    int lastMessageIndex = messages.FindLastIndex(m => m.Role != "system");
 
                     if (lastMessageIndex == -1)
                     {
                         break;
                     }
 
-                    var lastMessage = request.Messages[lastMessageIndex];
+                    var lastMessage = messages[lastMessageIndex];
 
                     if (string.IsNullOrWhiteSpace(lastMessage.Content))
                     {
@@ -174,26 +166,49 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                     }
 
                     int excessTokens = nTokens - availableTokensForPrompt;
-                    int charsToRemove = (int)(excessTokens * 4.5);
 
-                    string truncatedContent;
+       
+                    byte[] contentBytes = Encoding.UTF8.GetBytes(lastMessage.Content);
+                    int[] contentTokens = new int[contentBytes.Length + 128];
+                    int messageTokenCount = _nativeApi.Tokenize(vocab, lastMessage.Content, contentBytes.Length, contentTokens, contentTokens.Length, false, true);
 
-                    if (charsToRemove >= lastMessage.Content.Length)
+                    if (messageTokenCount > 0 && messageTokenCount > excessTokens)
                     {
-                        int keepLength = Math.Max(lastMessage.Content.Length / 10, 100);
-                        truncatedContent = "..." + lastMessage.Content.Substring(lastMessage.Content.Length - keepLength);
+                        int tokensToKeep = messageTokenCount - excessTokens - 10; 
+                        if (tokensToKeep > 0)
+                        {
+                            var safeAccumulator = new StringBuilder();
+                            var truncationDecoder = Encoding.UTF8.GetDecoder();
+                            byte[] pieceBuffer = new byte[256];
+                            char[] pieceChars = new char[512];
+
+                            for (int i = messageTokenCount - tokensToKeep; i < messageTokenCount; i++)
+                            {
+                                int pieceSize = _nativeApi.TokenToPiece(vocab, contentTokens[i], pieceBuffer, pieceBuffer.Length, 0, false);
+                                if (pieceSize > 0)
+                                {
+                                    int charsDecoded = truncationDecoder.GetChars(pieceBuffer, 0, pieceSize, pieceChars, 0, false);
+                                    safeAccumulator.Append(new string(pieceChars, 0, charsDecoded));
+                                }
+                            }
+
+                            truncationDecoder.GetChars(pieceBuffer, 0, 0, pieceChars, 0, true); // flush
+                            messages[lastMessageIndex] = lastMessage with { Content = "..." + safeAccumulator.ToString() };
+                        }
+                        else
+                        {
+                            messages.RemoveAt(lastMessageIndex);
+                        }
                     }
                     else
                     {
-                        truncatedContent = "..." + lastMessage.Content.Substring(charsToRemove);
+                        messages.RemoveAt(lastMessageIndex);
                     }
-
-                    request.Messages[lastMessageIndex] = lastMessage with { Content = truncatedContent };
 
                     _logger.LogWarning("Context overflow: {Tokens}/{Limit}. Truncating the beginning of the last message.", nTokens, availableTokensForPrompt);
                 }
 
-                prompt = profile.Template.BuildPrompt(request.Messages);
+                prompt = profile.Template.BuildPrompt(messages);
                 promptBytes = Encoding.UTF8.GetBytes(prompt);
 
                 nTokens = _nativeApi.Tokenize(vocab, prompt, promptBytes.Length, tokens, tokens.Length, false, true);
@@ -238,6 +253,12 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             else
             {
                 _logger.LogWarning("Repetition sampler creation failed. Penalties will not be applied.");
+            }
+
+
+            for (int i = 0; i < nTokens; i++)
+            {
+                _nativeApi.SamplerAccept(sampler, tokens[i]);
             }
 
             int eos = _nativeApi.VocabEos(vocab);
@@ -345,15 +366,18 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                     if (token == eos || token < 0)
                         yield break;
 
+                    _nativeApi.SamplerAccept(sampler, token);
+
                     tokens[nTokens + generated] = token;
                     generated++;
 
-                    int pieceSize = _nativeApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, false);
+         
+                    int pieceSize = _nativeApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, true);
 
                     if (pieceSize > byteBuffer.Length)
                     {
                         byteBuffer = new byte[pieceSize];
-                        pieceSize = _nativeApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, false);
+                        pieceSize = _nativeApi.TokenToPiece(vocab, token, byteBuffer, byteBuffer.Length, 0, true);
                     }
 
                     if (pieceSize > 0)
