@@ -5,7 +5,7 @@ using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
 using System.Text;
-
+using InstantAIGate.Infrastructure.Inference.Context;
 
 namespace InstantAIGate.Infrastructure.Inference.Adapters
 {

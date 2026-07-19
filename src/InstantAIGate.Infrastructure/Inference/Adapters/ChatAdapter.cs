@@ -104,7 +104,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             }
 
             IntPtr vocab = _nativeApi.ModelGetVocab(model.Handle);
-            IntPtr ctxHandle = context.Handle;
+            IntPtr ctxHandle = context.TextContext.Handle;
 
             // Initial prompt building
             string prompt = profile.Template.BuildPrompt(request.Messages);

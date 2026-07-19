@@ -1,6 +1,7 @@
 ﻿using InstantAIGate.Application.Dtos.Inference;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Domain.Dtos.Config;
+using InstantAIGate.Infrastructure.Inference.Context;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
@@ -10,15 +11,16 @@ namespace InstantAIGate.Infrastructure.Inference
 {
     /// <summary>
     /// Manages model loading, context pooling, and inference lifecycle.
-    /// Uses INativeLlamaApi for all native operations.
-    /// Backend selection and native library loading is handled by INativeLibraryLoader.
+    /// Uses INativeLlamaApi for all native operations and NativeVisionApi for multimodal support.
     /// </summary>
     public class ModelProvider : IDisposable
     {
         private readonly ILogger<ModelProvider> _logger;
         private readonly NativeLlamaApi _nativeApi;
+        private readonly NativeVisionApi _visionApi;
 
         private readonly ConcurrentDictionary<string, IntPtr> _modelCache = new();
+        private readonly ConcurrentDictionary<string, VisionContext> _visionCache = new();
         private readonly ConcurrentDictionary<string, ModelSettings> _configCache = new();
         private readonly ConcurrentDictionary<string, ConcurrentBag<IntPtr>> _pools = new();
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _initLocks = new();
@@ -30,10 +32,11 @@ namespace InstantAIGate.Infrastructure.Inference
         private static bool _isStderrRedirected = false;
         private static readonly object _stderrLock = new();
 
-        public ModelProvider(ILogger<ModelProvider> logger, NativeLlamaApi nativeApi)
+        public ModelProvider(ILogger<ModelProvider> logger, NativeLlamaApi nativeApi, NativeVisionApi visionApi)
         {
             _logger = logger;
             _nativeApi = nativeApi;
+            _visionApi = visionApi;
             _staticLogger = logger;
 
             RedirectStderr();
@@ -149,6 +152,8 @@ namespace InstantAIGate.Infrastructure.Inference
                         _logger.LogWarning("Auto-corrected config.ModelPath. Switched from projector '{Proj}' to text model '{Text}'",
                             currentFileName, Path.GetFileName(textModel));
 
+                        // Set the actual projector path since we discovered it
+                        config.ProjectorPath = config.ModelPath;
                         config.ModelPath = textModel;
                     }
                     else
@@ -218,6 +223,25 @@ namespace InstantAIGate.Infrastructure.Inference
                     _configCache.TryAdd(repoId, config);
                     _logger.LogInformation("Model '{RepoId}' loaded successfully with {Layers} GPU layers",
                         repoId, config.GpuLayerCount);
+
+                    // Initialize vision context if multimodal is supported
+                    if (config.VisionSupport)
+                    {
+                        try
+                        {
+                            var visionContext = _visionApi.InitializeVision(config.ProjectorPath!, modelHandle);
+                            _visionCache.TryAdd(repoId, visionContext);
+                            _logger.LogInformation("Vision projector loaded and bound to '{RepoId}'", repoId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to load vision projector for '{RepoId}'. Unloading base model.", repoId);
+                            _nativeApi.FreeModel(modelHandle);
+                            _modelCache.TryRemove(repoId, out _);
+                            _configCache.TryRemove(repoId, out _);
+                            throw;
+                        }
+                    }
                 }
                 else
                 {
@@ -230,69 +254,76 @@ namespace InstantAIGate.Infrastructure.Inference
             }
         }
 
-        public async Task<ModelContext> GetContextAsync(string repoId, CancellationToken ct = default)
+        public async Task<InferenceContext> GetInferenceContextAsync(string repoId, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(repoId))
                 throw new ArgumentException("RepoId required.", nameof(repoId));
 
+            ModelContext textContext;
+
             if (_pools.TryGetValue(repoId, out var pool) && pool.TryTake(out IntPtr ctxPtr))
             {
                 _nativeApi.ClearMemory(_nativeApi.GetMemory(ctxPtr), true);
-                return new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
+                textContext = new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
             }
-
-            var initLock = _initLocks.GetOrAdd(repoId, _ => new SemaphoreSlim(1, 1));
-            await initLock.WaitAsync(ct);
-            try
+            else
             {
-                if (_pools.TryGetValue(repoId, out pool) && pool.TryTake(out ctxPtr))
+                var initLock = _initLocks.GetOrAdd(repoId, _ => new SemaphoreSlim(1, 1));
+                await initLock.WaitAsync(ct);
+                try
                 {
-                    _nativeApi.ClearMemory(_nativeApi.GetMemory(ctxPtr), true);
-                    return new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
-                }
+                    if (_pools.TryGetValue(repoId, out pool) && pool.TryTake(out ctxPtr))
+                    {
+                        _nativeApi.ClearMemory(_nativeApi.GetMemory(ctxPtr), true);
+                        textContext = new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
+                    }
+                    else if (_modelCache.TryGetValue(repoId, out IntPtr modelPtr) &&
+                        _configCache.TryGetValue(repoId, out var config))
+                    {
+                        var flashAttn = config.FlashAttention
+                            ? NativeLlamaFlashAttnType.Enabled
+                            : NativeLlamaFlashAttnType.Disabled;
+                        var kvType = ResolveKvCacheType(config.KvCacheQuantization);
+                        bool offloadKqv = config.GpuLayerCount > 0;
 
-                if (_modelCache.TryGetValue(repoId, out IntPtr modelPtr) &&
-                    _configCache.TryGetValue(repoId, out var config))
+                        uint nCtx = config.ContextSize > 0 ? (uint)config.ContextSize : 2048;
+                        uint nBatch = config.BatchSize > 0 ? (uint)config.BatchSize : 512;
+                        int nThreads = config.Threads > 0 ? config.Threads : Environment.ProcessorCount;
+
+                        _logger.LogDebug(
+                            "Creating context for '{RepoId}': n_ctx={Ctx}, batch={Batch}, " +
+                            "flash={Flash}, embeddings={Emb}, kv_quant={KvQuant}, offload_kqv={Kqv}",
+                            repoId, nCtx, nBatch,
+                            flashAttn, config.Embeddings, config.KvCacheQuantization, offloadKqv);
+
+                        IntPtr newCtxPtr = _nativeApi.CreateContext(
+                            modelPtr,
+                            nCtx,
+                            nBatch,
+                            nThreads,
+                            config.Embeddings,
+                            flashAttn,
+                            kvType,
+                            offloadKqv);
+
+                        if (newCtxPtr == IntPtr.Zero)
+                            throw new InvalidOperationException($"Failed to create context for '{repoId}'.");
+
+                        textContext = new ModelContext(newCtxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Model '{repoId}' not loaded.");
+                    }
+                }
+                finally
                 {
-                    var flashAttn = config.FlashAttention
-                        ? NativeLlamaFlashAttnType.Enabled
-                        : NativeLlamaFlashAttnType.Disabled;
-                    var kvType = ResolveKvCacheType(config.KvCacheQuantization);
-                    bool offloadKqv = config.GpuLayerCount > 0;
-
-                    uint nCtx = config.ContextSize > 0 ? (uint)config.ContextSize : 2048;
-                    uint nBatch = config.BatchSize > 0 ? (uint)config.BatchSize : 512;
-                    int nThreads = config.Threads > 0 ? config.Threads : Environment.ProcessorCount;
-
-                    _logger.LogDebug(
-                        "Creating context for '{RepoId}': n_ctx={Ctx}, batch={Batch}, " +
-                        "flash={Flash}, embeddings={Emb}, kv_quant={KvQuant}, offload_kqv={Kqv}",
-                        repoId, nCtx, nBatch,
-                        flashAttn, config.Embeddings, config.KvCacheQuantization, offloadKqv);
-
-                    bool isGpuBackend = config.GpuLayerCount > 0;
-
-                    IntPtr newCtxPtr = _nativeApi.CreateContext(
-                        modelPtr,
-                        nCtx,
-                        nBatch,
-                        nThreads,
-                        config.Embeddings,
-                        flashAttn,
-                        kvType,
-                        offloadKqv);
-
-                    if (newCtxPtr == IntPtr.Zero)
-                        throw new InvalidOperationException($"Failed to create context for '{repoId}'.");
-
-                    return new ModelContext(newCtxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
+                    initLock.Release();
                 }
-                throw new InvalidOperationException($"Model '{repoId}' not loaded.");
             }
-            finally
-            {
-                initLock.Release();
-            }
+
+            _visionCache.TryGetValue(repoId, out var visionContext);
+            return new InferenceContext(textContext, visionContext);
         }
 
         private NativeGgmlType ResolveKvCacheType(string quantization)
@@ -336,6 +367,9 @@ namespace InstantAIGate.Infrastructure.Inference
                 while (pool.TryTake(out IntPtr ctxPtr))
                     _nativeApi.FreeContext(ctxPtr);
 
+            if (_visionCache.TryRemove(repoId, out var visionCtx))
+                visionCtx.Dispose();
+
             if (_modelCache.TryRemove(repoId, out IntPtr modelPtr))
                 _nativeApi.FreeModel(modelPtr);
 
@@ -362,13 +396,16 @@ namespace InstantAIGate.Infrastructure.Inference
                 Threads = c?.Threads ?? 4,
                 FlashAttention = c?.FlashAttention ?? false,
                 IdleContextsCount = p?.Count ?? 0,
-                Backend = "auto" // Backend is now managed by INativeLibraryLoader
+                Backend = "auto"
             };
         });
 
         public void Dispose()
         {
             GC.SuppressFinalize(this);
+
+            foreach (var visionCtx in _visionCache.Values)
+                visionCtx.Dispose();
 
             foreach (var p in _pools.Values)
                 while (p.TryTake(out IntPtr ctxPtr))
@@ -379,6 +416,7 @@ namespace InstantAIGate.Infrastructure.Inference
 
             _pools.Clear();
             _modelCache.Clear();
+            _visionCache.Clear();
             _initLocks.Clear();
             _configCache.Clear();
 

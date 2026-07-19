@@ -1,6 +1,6 @@
 ﻿using InstantAIGate.Infrastructure.Inference.Native;
 
-namespace InstantAIGate.Infrastructure.Inference.Vision
+namespace InstantAIGate.Infrastructure.Inference.Context
 {
     /// <summary>
     /// Manages the lifecycle of a native MTMD context and ensures proper resource release.

@@ -1,6 +1,6 @@
-﻿using InstantAIGate.Application.Interfaces.Inference;
+﻿
 
-namespace InstantAIGate.Infrastructure.Inference
+namespace InstantAIGate.Infrastructure.Inference.Context
 {
     public sealed class ModelContext : IDisposable
     {

@@ -31,6 +31,7 @@ namespace InstantAIGate.Infrastructure
 
             // Holds raw native model weight references and manages low-level context recycling pools
             services.AddSingleton<NativeLlamaApi>();
+            services.AddSingleton<NativeVisionApi>();
             services.AddSingleton<ModelProvider>();
 
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling

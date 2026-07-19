@@ -2,14 +2,13 @@
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Domain.Dtos.Config;
+using InstantAIGate.Infrastructure.Inference.Context;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
-
 namespace InstantAIGate.Infrastructure.Inference
 {
-
-    public sealed class ModelManager : IDisposable, IModelManager 
+    public sealed class ModelManager : IDisposable, IModelManager
     {
         private readonly ModelProvider _modelProvider;
         private readonly IModelPathProvider _pathProvider;
@@ -54,8 +53,7 @@ namespace InstantAIGate.Infrastructure.Inference
             }
         }
 
-
-        public async Task<ModelContext> AcquireContextAsync(string repoId, CancellationToken ct = default)
+        public async Task<InferenceContext> AcquireContextAsync(string repoId, CancellationToken ct = default)
         {
             var semaphore = GetSemaphoreOrThrow(repoId);
 
@@ -63,13 +61,12 @@ namespace InstantAIGate.Infrastructure.Inference
 
             try
             {
-                var llamaContext = await _modelProvider.GetContextAsync(repoId, ct);
+                var inferenceContext = await _modelProvider.GetInferenceContextAsync(repoId, ct);
 
-                if (llamaContext is ModelContext ctx)
+                if (inferenceContext.TextContext != null)
                 {
-                    ctx.AttachOnDispose(() => semaphore.Release());
-
-                    return ctx;
+                    inferenceContext.TextContext.AttachOnDispose(() => semaphore.Release());
+                    return inferenceContext;
                 }
 
                 throw new InvalidCastException("Internal infrastructure error.");

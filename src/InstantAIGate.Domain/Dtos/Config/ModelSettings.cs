@@ -19,6 +19,16 @@ namespace InstantAIGate.Domain.Dtos.Config
         public string ModelPath { get; set; } = string.Empty;
 
         /// <summary>
+        /// Absolute path to the multimodal projector file (.mmproj).
+        /// </summary>
+        public string? ProjectorPath { get; set; }
+
+        /// <summary>
+        /// Indicates whether the model configuration includes multimodal support.
+        /// </summary>
+        public bool VisionSupport => !string.IsNullOrWhiteSpace(ProjectorPath);
+
+        /// <summary>
         /// Explicit flag indicating whether the computational graph should expose text vectorization vector layers.
         /// </summary>
         public bool Embeddings { get; set; }
@@ -53,12 +63,30 @@ namespace InstantAIGate.Domain.Dtos.Config
         /// </summary>
         public int MaxContexts { get; set; } = 2;
 
+        /// <summary>
+        /// The maximum number of tokens processed in a single batch during inference or embedding generation. 
+        /// Larger values may improve throughput but require additional VRAM.
+        /// </summary>
         public uint BatchSize { get; set; } = 512;
+
+        /// <summary>
+        /// Indicates whether to lock the model weights in physical RAM to prevent OS paging or swapping. 
+        /// This improves inference stability and latency at the cost of higher resident memory usage.
+        /// </summary>
         public bool UseMemoryLock { get; set; } = false;
 
+        /// <summary>
+        /// The index of the primary GPU device to be used for computation and memory allocation. 
+        /// Defaults to 0, representing the first available GPU in the system.
+        /// </summary>
         public int MainGPU { get; set; } = 0;
 
-        public string KvCacheQuantization { get; set; } = "F16";  //"F16", "Q8_K", "Q5_K", "Q4_K"
+        /// <summary>
+        /// The quantization format for the Key-Value (KV) cache. 
+        /// Reducing precision (e.g., to "Q8_K" or "Q4_K") decreases VRAM consumption during long context windows, 
+        /// with a potential minor trade-off in accuracy. Valid values include "F16", "Q8_K", "Q5_K", and "Q4_K".
+        /// </summary>
+        public string KvCacheQuantization { get; set; } = "F16";
 
         /// <summary>
         /// Traditional parameter-free constructor for standard serialization engines.
@@ -73,7 +101,6 @@ namespace InstantAIGate.Domain.Dtos.Config
             RepoId = repoId;
             ModelPath = modelPath;
         }
-
 
         /// <summary>
         /// Maximum allowed model file size in megabytes (MB). Checked when loading GGUF/weights from disk.
