@@ -13,18 +13,18 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
     /// Adapter for generating dense text embeddings using LLaMA models.
     /// Fully isolated from native P/Invoke calls through INativeLlamaApi.
     /// </summary>
-    public class LlamaEmbeddingAdapter : IEmbeddingAdapter
+    public class EmbeddingAdapter : IEmbeddingAdapter
     {
-        private readonly IModelManager _modelManager;
+        private readonly ModelManager _modelManager;
         private readonly IModelPathProvider _pathProvider;
-        private readonly INativeLlamaApi _nativeApi;
-        private readonly ILogger<LlamaEmbeddingAdapter> _logger;
+        private readonly NativeLlamaApi _nativeApi;
+        private readonly ILogger<EmbeddingAdapter> _logger;
 
-        public LlamaEmbeddingAdapter(
-            IModelManager modelManager,
+        public EmbeddingAdapter(
+            ModelManager modelManager,
             IModelPathProvider pathProvider,
-            INativeLlamaApi nativeApi,
-            ILogger<LlamaEmbeddingAdapter> logger)
+            NativeLlamaApi nativeApi,
+            ILogger<EmbeddingAdapter> logger)
         {
             _modelManager = modelManager ?? throw new ArgumentNullException(nameof(modelManager));
             _pathProvider = pathProvider ?? throw new ArgumentNullException(nameof(pathProvider));
@@ -45,7 +45,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 throw new InvalidOperationException($"Configuration settings for active model '{model}' could not be resolved.");
 
             using var weightsLease = await _modelManager.AcquireModelAsync(model, ct);
-            if (weightsLease is not LlamaModel modelWrapper)
+            if (weightsLease is not ModelWeights modelWrapper)
                 throw new InvalidOperationException("Incompatible weights handle variant.");
 
             IntPtr modelHandle = modelWrapper.Handle;
@@ -64,7 +64,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             if (ctxPtr == IntPtr.Zero)
                 throw new InvalidOperationException("Failed to establish unmanaged embedding execution infrastructure grid layers.");
 
-            using var embeddingContext = new LlamaContext(ctxPtr, returnToPool: null);
+            using var embeddingContext = new ModelContext(ctxPtr, returnToPool: null);
 
             var results = new List<float[]>(inputs.Count);
 

@@ -30,17 +30,16 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<IModelRegistry, InMemoryModelRegistry>();
 
             // Holds raw native model weight references and manages low-level context recycling pools
-            services.AddSingleton<INativeLlamaApi, NativeLlamaApi>();
-            services.AddSingleton<IModelProvider, ModelProvider>();
+            services.AddSingleton<NativeLlamaApi>();
+            services.AddSingleton<ModelProvider>();
 
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling
-            services.AddSingleton<LlamaModelManager>();
-            services.AddSingleton<IModelManager>(sp => sp.GetRequiredService<LlamaModelManager>());
-            services.AddSingleton<ILlamaModelManager>(sp => sp.GetRequiredService<LlamaModelManager>());
+            services.AddSingleton<ModelManager>();
+            services.AddSingleton<IModelManager>(sp => sp.GetRequiredService<ModelManager>());
 
-            services.AddTransient<IChatAdapter, LlamaChatAdapter>(); 
+            services.AddTransient<IChatAdapter, ChatAdapter>(); 
 
-            services.AddTransient<IEmbeddingAdapter, LlamaEmbeddingAdapter>();
+            services.AddTransient<IEmbeddingAdapter, EmbeddingAdapter>();
 
             // --- Remote Storage and File Management Services ---
             services.AddSingleton<IHttpDownloader, HttpDownloader>();

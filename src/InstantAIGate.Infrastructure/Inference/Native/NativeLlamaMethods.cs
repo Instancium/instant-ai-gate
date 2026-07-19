@@ -6,7 +6,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
     /// P/Invoke bindings for llama.cpp and ggml.
     /// Based on llama.h and ggml.h (build b9631).
     /// </summary>
-    internal static partial class NativeLlamaMethods
+    public static partial class NativeLlamaMethods
     {
         // ==========================================
         // 1. ENUMS (ggml.h & llama.h)

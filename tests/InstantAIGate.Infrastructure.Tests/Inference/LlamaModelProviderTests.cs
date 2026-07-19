@@ -15,13 +15,13 @@ namespace InstantAIGate.Infrastructure.Tests.Inference;
 public class LlamaModelProviderTests : IDisposable
 {
     private readonly Mock<ILogger<ModelProvider>> _loggerMock;
-    private readonly Mock<INativeLlamaApi> _nativeApiMock;
+    private readonly Mock<NativeLlamaApi> _nativeApiMock;
     private readonly string _testModelPath;
 
     public LlamaModelProviderTests()
     {
         _loggerMock = new Mock<ILogger<ModelProvider>>();
-        _nativeApiMock = new Mock<INativeLlamaApi>();
+        _nativeApiMock = new Mock<NativeLlamaApi>();
 
         // Use realistic test data path (not "test" or "string")
         _testModelPath = Path.Combine(

@@ -18,26 +18,6 @@ namespace InstantAIGate.Application.Interfaces.Inference
         Task LoadModelAsync(ModelSettings config, CancellationToken ct = default);
 
         /// <summary>
-        /// Atomically acquires a safe, isolated context lease for active text generation and chat inference (Chat/Completions).
-        /// Restricts concurrent orchestration based on the capacity limits defined during the model initialization phase.
-        /// </summary>
-        /// <param name="modelPath">The unique identifier or physical storage path of the targeted active model.</param>
-        /// <param name="ct">The token to monitor for cancellation requests.</param>
-        /// <returns>A thread-safe context wrapper that automatically returns resources to the underlying pool upon disposal.</returns>
-        /// <exception cref="KeyNotFoundException">Thrown when the requested model path is not currently active or loaded in memory.</exception>
-        Task<IInferenceContext> AcquireContextAsync(string modelPath, CancellationToken ct = default);
-
-        /// <summary>
-        /// Atomically acquires safe access to model weights for high-throughput text vectorization tasks (Embeddings).
-        /// Restricts concurrent orchestrations based on the capacity limits defined during the model initialization phase.
-        /// </summary>
-        /// <param name="modelPath">The unique identifier or physical storage path of the targeted active model.</param>
-        /// <param name="ct">The token to monitor for cancellation requests.</param>
-        /// <returns>A thread-safe weights wrapper that automatically releases its concurrency throttle slot upon disposal.</returns>
-        /// <exception cref="KeyNotFoundException">Thrown when the requested model path is not currently active or loaded in memory.</exception>
-        Task<IInferenceModel> AcquireModelAsync(string modelPath, CancellationToken ct = default);
-
-        /// <summary>
         /// Evicts the specified model from memory, performing a clean, forced teardown of all allocated native execution contexts, 
         /// model weights, backing pools, and semaphores from VRAM/RAM.
         /// </summary>

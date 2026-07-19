@@ -2,28 +2,18 @@
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Domain.Dtos.Config;
-using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
 
 namespace InstantAIGate.Infrastructure.Inference
 {
-    /// <summary>
-    /// Infrastructure contract. Returns concrete types with exposed IntPtr.
-    /// </summary>
-    public interface ILlamaModelManager
-    {
-        Task<LlamaModel> AcquireModelAsync(string repoId, CancellationToken ct = default);
-        Task<LlamaContext> AcquireContextAsync(string repoId, CancellationToken ct = default);
-        IReadOnlyDictionary<string, ModelSettings> ActiveModels { get; }
-    }
 
-    public sealed class LlamaModelManager : ILlamaModelManager, IModelManager, IDisposable
+    public sealed class ModelManager : IDisposable, IModelManager 
     {
-        private readonly IModelProvider _modelProvider;
+        private readonly ModelProvider _modelProvider;
         private readonly IModelPathProvider _pathProvider;
-        private readonly ILogger<LlamaModelManager> _logger;
+        private readonly ILogger<ModelManager> _logger;
 
         private readonly ConcurrentDictionary<string, ModelSettings> _activeModels = new();
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _contextSemaphores = new();
@@ -32,10 +22,10 @@ namespace InstantAIGate.Infrastructure.Inference
         public IReadOnlyDictionary<string, ModelSettings> ActiveModels => _activeModels;
         public IReadOnlyDictionary<string, SemaphoreSlim> UserSemaphores => _contextSemaphores;
 
-        public LlamaModelManager(
-            IModelProvider modelProvider,
+        public ModelManager(
+            ModelProvider modelProvider,
             IModelPathProvider pathProvider,
-            ILogger<LlamaModelManager> logger)
+            ILogger<ModelManager> logger)
         {
             _modelProvider = modelProvider;
             _pathProvider = pathProvider;
@@ -64,10 +54,8 @@ namespace InstantAIGate.Infrastructure.Inference
             }
         }
 
-        async Task<LlamaContext> ILlamaModelManager.AcquireContextAsync(string repoId, CancellationToken ct)
-             => (LlamaContext)await AcquireContextAsync(repoId, ct);
 
-        public async Task<IInferenceContext> AcquireContextAsync(string repoId, CancellationToken ct = default)
+        public async Task<ModelContext> AcquireContextAsync(string repoId, CancellationToken ct = default)
         {
             var semaphore = GetSemaphoreOrThrow(repoId);
 
@@ -77,7 +65,7 @@ namespace InstantAIGate.Infrastructure.Inference
             {
                 var llamaContext = await _modelProvider.GetContextAsync(repoId, ct);
 
-                if (llamaContext is LlamaContext ctx)
+                if (llamaContext is ModelContext ctx)
                 {
                     ctx.AttachOnDispose(() => semaphore.Release());
 
@@ -93,10 +81,7 @@ namespace InstantAIGate.Infrastructure.Inference
             }
         }
 
-        async Task<LlamaModel> ILlamaModelManager.AcquireModelAsync(string repoId, CancellationToken ct)
-                 => (LlamaModel)await AcquireModelAsync(repoId, ct);
-
-        public async Task<IInferenceModel> AcquireModelAsync(string repoId, CancellationToken ct = default)
+        public async Task<ModelWeights> AcquireModelAsync(string repoId, CancellationToken ct = default)
         {
             var llamaModel = await _modelProvider.GetWeightsAsync(repoId, ct);
 

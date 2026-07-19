@@ -15,12 +15,12 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
     /// Fully isolated from native P/Invoke calls through INativeLlamaApi.
     /// Supports both streaming and non-streaming inference with configurable sampling parameters.
     /// </summary>
-    public class LlamaChatAdapter : IChatAdapter
+    public class ChatAdapter : IChatAdapter
     {
-        private readonly ILlamaModelManager _modelManager;
+        private readonly ModelManager _modelManager;
         private readonly IModelPathProvider _pathProvider;
-        private readonly ILogger<LlamaChatAdapter> _logger;
-        private readonly INativeLlamaApi _nativeApi;
+        private readonly ILogger<ChatAdapter> _logger;
+        private readonly NativeLlamaApi _nativeApi;
 
         /// <summary>
         /// Initializes a new instance of the LlamaChatAdapter with required dependencies.
@@ -29,11 +29,11 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
         /// <param name="pathProvider">Provider for resolving model file paths from model identifiers.</param>
         /// <param name="nativeApi">Abstraction layer over native llama.cpp P/Invoke calls.</param>
         /// <param name="logger">Logger instance for diagnostic and error reporting.</param>
-        public LlamaChatAdapter(
-            ILlamaModelManager modelManager,
+        public ChatAdapter(
+            ModelManager modelManager,
             IModelPathProvider pathProvider,
-            INativeLlamaApi nativeApi,
-            ILogger<LlamaChatAdapter> logger)
+            NativeLlamaApi nativeApi,
+            ILogger<ChatAdapter> logger)
         {
             _modelManager = modelManager;
             _pathProvider = pathProvider;

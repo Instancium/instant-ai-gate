@@ -6,7 +6,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
     /// Provides native C# bindings for the libmtmd library, which enables multimodal support 
     /// (vision and audio processing) within the llama.cpp ecosystem.
     /// </summary>
-    internal static partial class NativeMtmdMethods 
+    public static partial class NativeMtmdMethods 
     {
         private const string LibName = "mtmd";
 

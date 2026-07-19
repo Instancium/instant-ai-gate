@@ -13,10 +13,10 @@ namespace InstantAIGate.Infrastructure.Inference
     /// Uses INativeLlamaApi for all native operations.
     /// Backend selection and native library loading is handled by INativeLibraryLoader.
     /// </summary>
-    public class ModelProvider : IModelProvider, IDisposable
+    public class ModelProvider : IDisposable
     {
         private readonly ILogger<ModelProvider> _logger;
-        private readonly INativeLlamaApi _nativeApi;
+        private readonly NativeLlamaApi _nativeApi;
 
         private readonly ConcurrentDictionary<string, IntPtr> _modelCache = new();
         private readonly ConcurrentDictionary<string, ModelSettings> _configCache = new();
@@ -30,7 +30,7 @@ namespace InstantAIGate.Infrastructure.Inference
         private static bool _isStderrRedirected = false;
         private static readonly object _stderrLock = new();
 
-        public ModelProvider(ILogger<ModelProvider> logger, INativeLlamaApi nativeApi)
+        public ModelProvider(ILogger<ModelProvider> logger, NativeLlamaApi nativeApi)
         {
             _logger = logger;
             _nativeApi = nativeApi;
@@ -230,7 +230,7 @@ namespace InstantAIGate.Infrastructure.Inference
             }
         }
 
-        public async Task<IInferenceContext> GetContextAsync(string repoId, CancellationToken ct = default)
+        public async Task<ModelContext> GetContextAsync(string repoId, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(repoId))
                 throw new ArgumentException("RepoId required.", nameof(repoId));
@@ -238,7 +238,7 @@ namespace InstantAIGate.Infrastructure.Inference
             if (_pools.TryGetValue(repoId, out var pool) && pool.TryTake(out IntPtr ctxPtr))
             {
                 _nativeApi.ClearMemory(_nativeApi.GetMemory(ctxPtr), true);
-                return new LlamaContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
+                return new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
             }
 
             var initLock = _initLocks.GetOrAdd(repoId, _ => new SemaphoreSlim(1, 1));
@@ -248,7 +248,7 @@ namespace InstantAIGate.Infrastructure.Inference
                 if (_pools.TryGetValue(repoId, out pool) && pool.TryTake(out ctxPtr))
                 {
                     _nativeApi.ClearMemory(_nativeApi.GetMemory(ctxPtr), true);
-                    return new LlamaContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
+                    return new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
                 }
 
                 if (_modelCache.TryGetValue(repoId, out IntPtr modelPtr) &&
@@ -285,7 +285,7 @@ namespace InstantAIGate.Infrastructure.Inference
                     if (newCtxPtr == IntPtr.Zero)
                         throw new InvalidOperationException($"Failed to create context for '{repoId}'.");
 
-                    return new LlamaContext(newCtxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
+                    return new ModelContext(newCtxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
                 }
                 throw new InvalidOperationException($"Model '{repoId}' not loaded.");
             }
@@ -322,11 +322,12 @@ namespace InstantAIGate.Infrastructure.Inference
             }
         }
 
-        public Task<IInferenceModel> GetWeightsAsync(string repoId, CancellationToken ct = default)
+        internal Task<ModelWeights> GetWeightsAsync(string repoId, CancellationToken ct = default)
         {
             if (!_modelCache.TryGetValue(repoId, out IntPtr modelPtr))
                 throw new KeyNotFoundException($"Weights for '{repoId}' missing.");
-            return Task.FromResult<IInferenceModel>(new LlamaModel(modelPtr, isOwned: false, _nativeApi));
+
+            return Task.FromResult(new ModelWeights(modelPtr, isOwned: false, _nativeApi));
         }
 
         public void UnloadModel(string repoId)

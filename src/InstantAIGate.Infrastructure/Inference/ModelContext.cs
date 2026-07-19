@@ -1,15 +1,15 @@
 ﻿using InstantAIGate.Application.Interfaces.Inference;
 
-namespace InstantAIGate.Infrastructure.Inference.Native
+namespace InstantAIGate.Infrastructure.Inference
 {
-    public sealed class LlamaContext : IInferenceContext
+    public sealed class ModelContext : IDisposable
     {
         public IntPtr Handle { get; private set; }
-        private readonly Action<LlamaContext>? _returnToPool;
+        private readonly Action<ModelContext>? _returnToPool;
 
         private readonly List<Action> _onDisposeActions = new();
 
-        public LlamaContext(IntPtr handle, Action<LlamaContext>? returnToPool = null)
+        public ModelContext(IntPtr handle, Action<ModelContext>? returnToPool = null)
         {
             Handle = handle;
             _returnToPool = returnToPool;

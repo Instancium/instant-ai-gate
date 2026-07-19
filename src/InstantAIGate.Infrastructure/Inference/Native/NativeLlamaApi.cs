@@ -6,7 +6,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native;
 /// Default implementation of <see cref="INativeLlamaApi"/> that delegates all calls to NativeLlamaMethods.
 /// This is the only class that directly invokes P/Invoke methods.
 /// </summary>
-public sealed class NativeLlamaApi : INativeLlamaApi
+public sealed class NativeLlamaApi
 {
     private NativeLlamaMethods.ggml_log_callback? _nativeCallback;
 
