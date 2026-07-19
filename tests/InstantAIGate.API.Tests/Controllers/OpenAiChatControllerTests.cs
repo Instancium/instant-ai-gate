@@ -162,7 +162,7 @@ public class OpenAiChatControllerTests
         request.Temperature = validTemperature;
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("Paris is the capital of France.");
 
         // Act
@@ -204,7 +204,7 @@ public class OpenAiChatControllerTests
         request.TopP = validTopP;
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("Paris is the capital of France.");
 
         // Act
@@ -226,7 +226,7 @@ public class OpenAiChatControllerTests
         var expectedContent = "Paris is the capital of France.";
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedContent);
 
         // Act
@@ -248,7 +248,7 @@ public class OpenAiChatControllerTests
         var request = CreateValidRequest(stream: false);
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("Response content");
 
         // Act
@@ -257,7 +257,7 @@ public class OpenAiChatControllerTests
         // Assert
         _chatAdapterMock.Verify(
             a => a.GenerateAsync(
-                It.Is<LlamaChatRequest>(r => r.Messages.Count == request.Messages!.Count),
+                It.Is<ChatRequest>(r => r.Messages.Count == request.Messages!.Count),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -271,10 +271,10 @@ public class OpenAiChatControllerTests
         request.TopP = 0.95f;
         request.MaxTokens = 200;
 
-        LlamaChatRequest? capturedRequest = null;
+        ChatRequest? capturedRequest = null;
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
-            .Callback<LlamaChatRequest, CancellationToken>((req, _) => capturedRequest = req)
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ChatRequest, CancellationToken>((req, _) => capturedRequest = req)
             .ReturnsAsync("Response");
 
         // Act
@@ -301,10 +301,10 @@ public class OpenAiChatControllerTests
             new() { Role = "user", Content = "Tell me about AI" }
         };
 
-        LlamaChatRequest? capturedRequest = null;
+        ChatRequest? capturedRequest = null;
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
-            .Callback<LlamaChatRequest, CancellationToken>((req, _) => capturedRequest = req)
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ChatRequest, CancellationToken>((req, _) => capturedRequest = req)
             .ReturnsAsync("AI is artificial intelligence.");
 
         // Act
@@ -327,7 +327,7 @@ public class OpenAiChatControllerTests
         var exceptionMessage = "Model 'llama-3.1-8b-instruct' not found";
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException(exceptionMessage));
 
         // Act
@@ -347,7 +347,7 @@ public class OpenAiChatControllerTests
         var request = CreateValidRequest();
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
 
         // Act
@@ -366,7 +366,7 @@ public class OpenAiChatControllerTests
         var request = CreateValidRequest();
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Unexpected error"));
 
         // Act
@@ -389,7 +389,7 @@ public class OpenAiChatControllerTests
         var request = CreateValidRequest();
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("Test response");
 
         // Act
@@ -415,7 +415,7 @@ public class OpenAiChatControllerTests
         var request = CreateValidRequest();
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("Test response");
 
         // Act
@@ -435,7 +435,7 @@ public class OpenAiChatControllerTests
         var expectedContent = "This is the AI response";
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedContent);
 
         // Act
@@ -481,7 +481,7 @@ def factorial(n):
 ```";
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(codeResponse);
 
         // Act
@@ -501,7 +501,7 @@ def factorial(n):
         var request = CreateValidRequest();
 
         _chatAdapterMock
-            .Setup(a => a.GenerateAsync(It.IsAny<LlamaChatRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.GenerateAsync(It.IsAny<ChatRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(string.Empty);
 
         // Act

@@ -5,7 +5,7 @@
     /// Contains all parameters needed for generating AI responses, including both
     /// OpenAI-compatible parameters and llama.cpp-specific settings.
     /// </summary>
-    public record LlamaChatRequest
+    public record ChatRequest
     {
         #region Core Parameters
 

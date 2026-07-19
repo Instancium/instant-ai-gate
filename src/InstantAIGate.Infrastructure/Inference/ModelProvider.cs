@@ -13,9 +13,9 @@ namespace InstantAIGate.Infrastructure.Inference
     /// Uses INativeLlamaApi for all native operations.
     /// Backend selection and native library loading is handled by INativeLibraryLoader.
     /// </summary>
-    public class LlamaModelProvider : IModelProvider, IDisposable
+    public class ModelProvider : IModelProvider, IDisposable
     {
-        private readonly ILogger<LlamaModelProvider> _logger;
+        private readonly ILogger<ModelProvider> _logger;
         private readonly INativeLlamaApi _nativeApi;
 
         private readonly ConcurrentDictionary<string, IntPtr> _modelCache = new();
@@ -26,11 +26,11 @@ namespace InstantAIGate.Infrastructure.Inference
         private static bool _isBackendInitialized = false;
         private static readonly object _backendLock = new();
         private static NativeLogCallback? _logCallback;
-        private static ILogger<LlamaModelProvider>? _staticLogger;
+        private static ILogger<ModelProvider>? _staticLogger;
         private static bool _isStderrRedirected = false;
         private static readonly object _stderrLock = new();
 
-        public LlamaModelProvider(ILogger<LlamaModelProvider> logger, INativeLlamaApi nativeApi)
+        public ModelProvider(ILogger<ModelProvider> logger, INativeLlamaApi nativeApi)
         {
             _logger = logger;
             _nativeApi = nativeApi;

@@ -48,7 +48,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
         /// <param name="request">The chat request containing model, messages, and sampling parameters.</param>
         /// <param name="ct">Cancellation token to abort the generation process.</param>
         /// <returns>The complete generated text response.</returns>
-        public async Task<string> GenerateAsync(LlamaChatRequest request, CancellationToken ct = default)
+        public async Task<string> GenerateAsync(ChatRequest request, CancellationToken ct = default)
         {
             var sb = new StringBuilder();
             await foreach (var token in StreamAsync(request, ct))
@@ -66,7 +66,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
         /// <param name="request">The chat request containing model, messages, and sampling parameters.</param>
         /// <param name="ct">Cancellation token to abort the generation process.</param>
         /// <returns>An async enumerable of string tokens representing the generated text.</returns>
-        public async IAsyncEnumerable<string> StreamAsync(LlamaChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
+        public async IAsyncEnumerable<string> StreamAsync(ChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(request.Model))
                 throw new ArgumentException("Model identifier is required.");

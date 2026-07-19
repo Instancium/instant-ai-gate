@@ -77,7 +77,7 @@ namespace InstantAIGate.API.Controllers
             };
         }
 
-        private async Task<IActionResult> HandleStreamingResponseAsync(LlamaChatRequest chatRequest, string targetModel, string chatId, long createdTimestamp)
+        private async Task<IActionResult> HandleStreamingResponseAsync(ChatRequest chatRequest, string targetModel, string chatId, long createdTimestamp)
         {
             Response.ContentType = "text/event-stream";
             Response.Headers.Append("Cache-Control", "no-cache");
@@ -114,7 +114,7 @@ namespace InstantAIGate.API.Controllers
             return new EmptyResult();
         }
 
-        private async Task<IActionResult> HandleStandardResponseAsync(LlamaChatRequest chatRequest, string targetModel, string chatId, long createdTimestamp, List<OpenAiMessage> originalMessages)
+        private async Task<IActionResult> HandleStandardResponseAsync(ChatRequest chatRequest, string targetModel, string chatId, long createdTimestamp, List<OpenAiMessage> originalMessages)
         {
             try
             {
@@ -312,11 +312,11 @@ namespace InstantAIGate.API.Controllers
             return (combinedText, contentParts.Count > 0 ? contentParts : null);
         }
 
-        private LlamaChatRequest MapToLlamaChatRequest(OpenAiChatRequest request)
+        private ChatRequest MapToLlamaChatRequest(OpenAiChatRequest request)
         {
             var effectiveMaxTokens = request.MaxCompletionTokens ?? request.MaxTokens ?? 4096;
 
-            return new LlamaChatRequest
+            return new ChatRequest
             {
                 Model = request.Model,
                 Messages = (request.Messages ?? Enumerable.Empty<OpenAiMessage>())
