@@ -1,7 +1,7 @@
 ﻿using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Infrastructure.Inference.Native;
 
-namespace InstantAIGate.Infrastructure.Inference
+namespace InstantAIGate.Infrastructure.Inference.layers
 {
     /// <summary>
     /// Managed wrapper around a native llama_model pointer.

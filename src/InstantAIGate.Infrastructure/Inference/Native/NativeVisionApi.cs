@@ -1,4 +1,4 @@
-﻿using InstantAIGate.Infrastructure.Inference.Context;
+﻿using InstantAIGate.Infrastructure.Inference.layers;
 using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
 

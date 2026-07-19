@@ -2,7 +2,7 @@
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Domain.Dtos.Config;
-using InstantAIGate.Infrastructure.Inference.Context;
+using InstantAIGate.Infrastructure.Inference.layers;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 

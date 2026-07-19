@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace InstantAIGate.Infrastructure.Inference.Context
+namespace InstantAIGate.Infrastructure.Inference.layers
 {
     /// <summary>
     /// Encapsulates the runtime context for an inference session, providing access 

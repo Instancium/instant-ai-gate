@@ -1,6 +1,6 @@
 ﻿
 
-namespace InstantAIGate.Infrastructure.Inference.Context
+namespace InstantAIGate.Infrastructure.Inference.layers
 {
     public sealed class ModelContext : IDisposable
     {
