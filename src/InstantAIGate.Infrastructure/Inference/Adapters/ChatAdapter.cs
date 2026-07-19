@@ -27,7 +27,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
         private readonly NativeLlamaApi _nativeApi;
 
         /// <summary>
-        /// Initializes a new instance of the LlamaChatAdapter with required dependencies.
+        /// Initializes a new instance of the ChatAdapter with required dependencies.
         /// </summary>
         public ChatAdapter(
             ModelManager modelManager,
@@ -62,29 +62,38 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
         /// </summary>
         public async IAsyncEnumerable<string> StreamAsync(ChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(request.Model))
-                throw new ArgumentException("Model identifier is required.");
+            // ==========================================
+            // VIRTUAL ROUTING (Single-Model Paradigm)
+            // ==========================================
+            var modelSettings = _modelManager.GetActiveSettings();
+            if (modelSettings == null)
+            {
+                throw new InvalidOperationException("No active model is currently loaded in the system.");
+            }
 
-            string resolvedPath = await _pathProvider.GetFullModelPathAsync(request.Model);
+            // We ignore request.Model entirely to support seamless hot-swapping.
+            // Even if the client asks for an old model, we route to the active one.
+            string activeRepoId = modelSettings.RepoId;
+
+            if (!string.Equals(request.Model, activeRepoId, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug("Client requested '{RequestedModel}', dynamically routing to active model '{ActiveModel}'.", request.Model, activeRepoId);
+            }
+
+            string resolvedPath = await _pathProvider.GetFullModelPathAsync(activeRepoId);
             var profile = ModelProfileResolver.Resolve(resolvedPath);
 
-            using var model = await _modelManager.AcquireModelAsync(request.Model, ct);
-            using var context = await _modelManager.AcquireContextAsync(request.Model, ct);
+            using var model = await _modelManager.AcquireModelAsync(activeRepoId, ct);
+            using var context = await _modelManager.AcquireContextAsync(activeRepoId, ct);
 
             // ==========================================
             // CLEAN CONFIGURATION RETRIEVAL
             // ==========================================
-            var modelSettings = _modelManager.GetActiveSettings();
-            if (modelSettings == null || modelSettings.RepoId != request.Model)
-            {
-                throw new InvalidOperationException($"Configuration for model '{request.Model}' not found or model is not currently active.");
-            }
-
             int nBatchLimit = (int)modelSettings.BatchSize;
             if (nBatchLimit <= 0)
             {
                 nBatchLimit = 512;
-                _logger.LogWarning("Invalid BatchSize in settings for '{Model}'. Falling back to 512.", request.Model);
+                _logger.LogWarning("Invalid BatchSize in settings for '{Model}'. Falling back to 512.", activeRepoId);
             }
 
             int contextLimit = (int)modelSettings.ContextSize;

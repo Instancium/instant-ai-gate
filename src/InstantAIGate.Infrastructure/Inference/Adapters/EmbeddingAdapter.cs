@@ -37,17 +37,27 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
         public async Task<IReadOnlyList<float[]>> GetEmbeddingAsync(string model, List<string> inputs, CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(model))
-                throw new ArgumentException("Model target identifier must be specified.", nameof(model));
-
             if (inputs == null || inputs.Count == 0)
                 return Array.Empty<float[]>();
 
+            // ==========================================
+            // VIRTUAL ROUTING (Single-Model Paradigm)
+            // ==========================================
             var settings = _modelManager.GetActiveSettings();
-            if (settings == null || settings.RepoId != model)
-                throw new InvalidOperationException($"Configuration settings for active model '{model}' could not be resolved or model is not active.");
+            if (settings == null)
+            {
+                throw new InvalidOperationException("No active model is currently loaded in the system.");
+            }
 
-            using var weightsLease = await _modelManager.AcquireModelAsync(model, ct);
+            // We ignore the requested 'model' parameter to enforce Single-Model hot-swapping
+            string activeRepoId = settings.RepoId;
+
+            if (!string.Equals(model, activeRepoId, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug("Embedding client requested '{RequestedModel}', dynamically routing to active model '{ActiveModel}'.", model, activeRepoId);
+            }
+
+            using var weightsLease = await _modelManager.AcquireModelAsync(activeRepoId, ct);
             if (weightsLease is not ModelWeights modelWrapper)
                 throw new InvalidOperationException("Incompatible weights handle variant.");
 
@@ -220,7 +230,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Dense text embedding vectorization failed for model: {RepoId}.", model);
+                _logger.LogError(ex, "Dense text embedding vectorization failed for model: {RepoId}.", activeRepoId);
                 throw;
             }
         }
