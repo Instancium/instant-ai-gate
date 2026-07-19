@@ -36,6 +36,7 @@ The embedded `windows-x64.7z` archive contains the following compiled dynamic li
 * `ggml-base.dll`
 * `ggml-cpu.dll`
 * `ggml-cuda.dll`
+* `mtmd.dll`
 
 
 ## ⚖️ License

@@ -35,6 +35,7 @@ The embedded `linux-x64.7z` archive contains the following compiled shared objec
 * `libggml-base.so`
 * `libggml-cpu.so`
 * `libggml-cuda.so`
+* `libmtmd.so`
 
 
 ## ⚖️ License
