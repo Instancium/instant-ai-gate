@@ -1,5 +1,4 @@
 using FluentAssertions;
-using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Domain.Dtos.Config;
 using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Native;
@@ -15,14 +14,14 @@ namespace InstantAIGate.Infrastructure.Tests.Inference;
 /// </summary>
 public class LlamaModelProviderTests : IDisposable
 {
-    private readonly Mock<ILogger<LlamaModelProvider>> _loggerMock;
-    private readonly Mock<INativeLlamaApi> _nativeApiMock;
+    private readonly Mock<ILogger<ModelProvider>> _loggerMock;
+    private readonly Mock<NativeLlamaApi> _nativeApiMock;
     private readonly string _testModelPath;
 
     public LlamaModelProviderTests()
     {
-        _loggerMock = new Mock<ILogger<LlamaModelProvider>>();
-        _nativeApiMock = new Mock<INativeLlamaApi>();
+        _loggerMock = new Mock<ILogger<ModelProvider>>();
+        _nativeApiMock = new Mock<NativeLlamaApi>();
 
         // Use realistic test data path (not "test" or "string")
         _testModelPath = Path.Combine(
@@ -48,9 +47,9 @@ public class LlamaModelProviderTests : IDisposable
         }
     }
 
-    private LlamaModelProvider CreateSut()
+    private ModelProvider CreateSut()
     {
-        return new LlamaModelProvider(
+        return new ModelProvider(
             _loggerMock.Object,
             _nativeApiMock.Object
         );
@@ -258,7 +257,7 @@ public class LlamaModelProviderTests : IDisposable
     [InlineData(35, NativeLlamaSplitMode.Layer)]
     [InlineData(99, NativeLlamaSplitMode.Layer)]
     public async Task InitializeAsync_DifferentGpuLayerCounts_UseCorrectSplitMode(
-        int gpuLayers, 
+        int gpuLayers,
         NativeLlamaSplitMode expectedSplitMode)
     {
         // Arrange

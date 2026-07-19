@@ -1,7 +1,5 @@
 ﻿using InstantAIGate.Application.Dtos.Requests;
 using InstantAIGate.Application.Interfaces.Templates;
-using System;
-using System.Collections.Generic;
 using System.Text;
 
 namespace InstantAIGate.Infrastructure.Templates

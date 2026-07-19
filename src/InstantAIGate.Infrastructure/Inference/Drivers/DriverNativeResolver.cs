@@ -1,8 +1,5 @@
-﻿using System;
-using System.IO;
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace InstantAIGate.Infrastructure.Inference.Drivers;
 
@@ -32,14 +29,15 @@ internal static class DriverNativeResolver
         {
             _driverDirectory = driverDirectory;
             _isPathRegistered = true;
-            _extractionWaitHandle.Set(); 
+            _extractionWaitHandle.Set();
         }
     }
 
     private static IntPtr DllImportResolver(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (libraryName.Contains("llama", StringComparison.OrdinalIgnoreCase) ||
-            libraryName.Contains("ggml", StringComparison.OrdinalIgnoreCase))
+            libraryName.Contains("ggml", StringComparison.OrdinalIgnoreCase) || 
+            libraryName.Contains("mtmd"))
         {
 
             if (!_isPathRegistered)

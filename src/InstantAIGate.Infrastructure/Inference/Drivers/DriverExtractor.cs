@@ -1,10 +1,6 @@
-﻿using System;
-using System.IO;
-using System.Linq;
+﻿using SharpCompress.Archives.SevenZip;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Threading;
-using SharpCompress.Archives.SevenZip;
 
 namespace InstantAIGate.Infrastructure.Inference.Drivers;
 
@@ -118,7 +114,7 @@ internal static class DriverExtractor
             throw new InvalidOperationException($"Failed to load the embedded resource stream for '{resourceName}'.");
         }
 
- 
+
         Directory.CreateDirectory(targetDirectory);
 
         using var archive = SevenZipArchive.OpenArchive(stream);
@@ -149,7 +145,7 @@ internal static class DriverExtractor
 
                 if (File.Exists(sourceFile))
                 {
-                  
+
                     File.Copy(sourceFile, linkFile, true);
                 }
             }

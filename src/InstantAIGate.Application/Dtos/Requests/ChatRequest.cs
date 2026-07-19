@@ -1,16 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-
-
-
-namespace InstantAIGate.Application.Dtos.Requests
+﻿namespace InstantAIGate.Application.Dtos.Requests
 {
     /// <summary>
     /// Represents a chat completion request for LLM inference.
     /// Contains all parameters needed for generating AI responses, including both
     /// OpenAI-compatible parameters and llama.cpp-specific settings.
     /// </summary>
-    public record LlamaChatRequest
+    public record ChatRequest
     {
         #region Core Parameters
 

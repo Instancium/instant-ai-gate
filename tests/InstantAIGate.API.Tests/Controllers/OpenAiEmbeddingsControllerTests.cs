@@ -1,7 +1,7 @@
 using FluentAssertions;
+using InstantAiGate.Api.Controllers;
 using InstantAIGate.API.Dtos;
 using InstantAIGate.Application.Interfaces.Inference;
-using InstantAiGate.Api.Controllers;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 
@@ -508,7 +508,7 @@ public class OpenAiEmbeddingsControllerTests
     {
         // Arrange
         var longText = string.Join(" ", Enumerable.Repeat(
-            "This is a sentence that will be repeated to create a long document for testing purposes.", 
+            "This is a sentence that will be repeated to create a long document for testing purposes.",
             50));
         var request = new OpenAiEmbeddingRequest
         {

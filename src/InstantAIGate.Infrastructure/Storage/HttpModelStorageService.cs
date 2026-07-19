@@ -1,8 +1,6 @@
 ﻿using InstantAIGate.Application.Dtos.Streaming;
 using InstantAIGate.Application.Interfaces.Storage;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using System.Net;
 using System.Runtime.CompilerServices;
 
 namespace InstantAIGate.Infrastructure.Storage

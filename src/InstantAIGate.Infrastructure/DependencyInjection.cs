@@ -11,6 +11,7 @@ using InstantAIGate.Infrastructure.NvmlNative;
 using InstantAIGate.Infrastructure.Storage;
 using InstantAIGate.Infrastructure.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
+using System;
 
 namespace InstantAIGate.Infrastructure
 {
@@ -29,21 +30,22 @@ namespace InstantAIGate.Infrastructure
             // --- Model Registry Tracking ---
             services.AddSingleton<IModelRegistry, InMemoryModelRegistry>();
 
-            // --- Core LLamaSharp Native Infrastructure ---
             // Holds raw native model weight references and manages low-level context recycling pools
-            services.AddSingleton<INativeLlamaApi, NativeLlamaApi>();
-            services.AddSingleton<IModelProvider, LlamaModelProvider>();
+            services.AddSingleton<NativeLlamaApi>();
+            services.AddSingleton<NativeVisionApi>();
+            services.AddSingleton<ModelProvider>();
 
-            // --- Multi-Model Lifecycle Orchestrator ---
+            // --- Single-Model Queue Architecture ---
+            services.AddSingleton<RequestQueue>();
+            services.AddHostedService<InferenceWorker>();
+
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling
-            services.AddSingleton<LlamaModelManager>();
-            services.AddSingleton<IModelManager>(sp => sp.GetRequiredService<LlamaModelManager>());
-            services.AddSingleton<ILlamaModelManager>(sp => sp.GetRequiredService<LlamaModelManager>());
+            services.AddSingleton<ModelManager>();
+            services.AddSingleton<IModelManager>(sp => sp.GetRequiredService<ModelManager>());
 
-            // --- Text Inference Adapters ---
-            // Stateless high-level execution layer responsible for token-streaming and complete string generation blocks
-            services.AddTransient<IChatAdapter, LlamaChatAdapter>();
-            services.AddTransient<IEmbeddingAdapter, LlamaEmbeddingAdapter>();
+            services.AddTransient<IChatAdapter, ChatAdapter>();
+
+            services.AddTransient<IEmbeddingAdapter, EmbeddingAdapter>();
 
             // --- Remote Storage and File Management Services ---
             services.AddSingleton<IHttpDownloader, HttpDownloader>();
@@ -57,7 +59,6 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<IDriverStateProvider, DriverStateProvider>();
             services.AddHostedService<DriverInitializationHostedService>();
             services.AddSingleton<ITelemetryService, TelemetryService>();
-
 
             return services;
         }

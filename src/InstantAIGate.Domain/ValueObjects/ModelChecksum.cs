@@ -1,5 +1,3 @@
-using System;
-
 namespace InstantAIGate.Domain.ValueObjects
 {
     /// <summary>

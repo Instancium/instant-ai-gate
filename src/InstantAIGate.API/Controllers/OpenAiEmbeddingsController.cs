@@ -1,7 +1,6 @@
 ﻿using InstantAIGate.API.Dtos;
 using InstantAIGate.Application.Interfaces.Inference;
 using Microsoft.AspNetCore.Mvc;
-using System.Linq;
 using System.Text.Json;
 
 namespace InstantAiGate.Api.Controllers

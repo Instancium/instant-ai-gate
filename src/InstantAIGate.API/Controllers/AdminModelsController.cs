@@ -53,7 +53,7 @@ namespace InstantAIGate.API.Controllers
                 {
                     m.RepoId,
                     m.DisplayName,
-                    SizeBytes = resolvedBytes, 
+                    SizeBytes = resolvedBytes,
                     IsDownloaded = checker.IsModelDownloaded(m),
                     PrimaryLocalPath = checker.GetModelPath(m),
                     Type = m.Type.ToString(),
@@ -182,7 +182,7 @@ namespace InstantAIGate.API.Controllers
                 MaxModelFileSizeMb = 0
             };
 
-            if (req is not null && (req is { } ))
+            if (req is not null && (req is { }))
             {
                 // try to compute default size from metadata
                 long totalBytes = 0;

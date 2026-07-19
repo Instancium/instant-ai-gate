@@ -1,11 +1,14 @@
 ﻿using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
-using InstantAIGate.Domain.Dtos.Config;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
-
+using System.Threading;
+using System.Threading.Tasks;
+using InstantAIGate.Infrastructure.Inference.layers;
 
 namespace InstantAIGate.Infrastructure.Inference.Adapters
 {
@@ -13,18 +16,18 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
     /// Adapter for generating dense text embeddings using LLaMA models.
     /// Fully isolated from native P/Invoke calls through INativeLlamaApi.
     /// </summary>
-    public class LlamaEmbeddingAdapter : IEmbeddingAdapter
+    public class EmbeddingAdapter : IEmbeddingAdapter
     {
-        private readonly IModelManager _modelManager;
+        private readonly ModelManager _modelManager;
         private readonly IModelPathProvider _pathProvider;
-        private readonly INativeLlamaApi _nativeApi;
-        private readonly ILogger<LlamaEmbeddingAdapter> _logger;
+        private readonly NativeLlamaApi _nativeApi;
+        private readonly ILogger<EmbeddingAdapter> _logger;
 
-        public LlamaEmbeddingAdapter(
-            IModelManager modelManager,
+        public EmbeddingAdapter(
+            ModelManager modelManager,
             IModelPathProvider pathProvider,
-            INativeLlamaApi nativeApi,
-            ILogger<LlamaEmbeddingAdapter> logger)
+            NativeLlamaApi nativeApi,
+            ILogger<EmbeddingAdapter> logger)
         {
             _modelManager = modelManager ?? throw new ArgumentNullException(nameof(modelManager));
             _pathProvider = pathProvider ?? throw new ArgumentNullException(nameof(pathProvider));
@@ -34,18 +37,28 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
 
         public async Task<IReadOnlyList<float[]>> GetEmbeddingAsync(string model, List<string> inputs, CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(model))
-                throw new ArgumentException("Model target identifier must be specified.", nameof(model));
-
             if (inputs == null || inputs.Count == 0)
                 return Array.Empty<float[]>();
 
-            var activeConfig = _modelManager.ActiveModels.FirstOrDefault(x => x.Key == model);
-            if (activeConfig.Value is not ModelSettings settings)
-                throw new InvalidOperationException($"Configuration settings for active model '{model}' could not be resolved.");
+            // ==========================================
+            // VIRTUAL ROUTING (Single-Model Paradigm)
+            // ==========================================
+            var settings = _modelManager.GetActiveSettings();
+            if (settings == null)
+            {
+                throw new InvalidOperationException("No active model is currently loaded in the system.");
+            }
 
-            using var weightsLease = await _modelManager.AcquireModelAsync(model, ct);
-            if (weightsLease is not LlamaModel modelWrapper)
+            // We ignore the requested 'model' parameter to enforce Single-Model hot-swapping
+            string activeRepoId = settings.RepoId;
+
+            if (!string.Equals(model, activeRepoId, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug("Embedding client requested '{RequestedModel}', dynamically routing to active model '{ActiveModel}'.", model, activeRepoId);
+            }
+
+            using var weightsLease = await _modelManager.AcquireModelAsync(activeRepoId, ct);
+            if (weightsLease is not ModelWeights modelWrapper)
                 throw new InvalidOperationException("Incompatible weights handle variant.");
 
             IntPtr modelHandle = modelWrapper.Handle;
@@ -64,7 +77,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             if (ctxPtr == IntPtr.Zero)
                 throw new InvalidOperationException("Failed to establish unmanaged embedding execution infrastructure grid layers.");
 
-            using var embeddingContext = new LlamaContext(ctxPtr, returnToPool: null);
+            using var embeddingContext = new ModelContext(ctxPtr, returnToPool: null);
 
             var results = new List<float[]>(inputs.Count);
 
@@ -217,7 +230,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Dense text embedding vectorization failed for model: {RepoId}.", model);
+                _logger.LogError(ex, "Dense text embedding vectorization failed for model: {RepoId}.", activeRepoId);
                 throw;
             }
         }

@@ -1,6 +1,7 @@
-﻿using Microsoft.Extensions.Logging;
-using InstantAIGate.Application.Interfaces.Storage;
+﻿using InstantAIGate.Application.Interfaces.Storage;
 using InstantAIGate.Domain.Entities;
+using InstantAIGate.Domain.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace InstantAIGate.Infrastructure.Storage
 {
@@ -72,8 +73,14 @@ namespace InstantAIGate.Infrastructure.Storage
             if (model == null || model.Files == null || model.Files.Count == 0)
                 return null;
 
-            // Sorting naturally guarantees selection of the primary entry node (-00001-of-XXXXX.gguf)
-            var primaryFile = model.Files.OrderBy(f => f.FileName).First();
+            // Use the extension method to guarantee we get the core LLM execution binary
+            var primaryFile = model.GetMainTextFile();
+            if (primaryFile == null)
+            {
+                _logger.LogWarning("Failed to resolve the primary text binary for model '{RepoId}'.", model.RepoId);
+                return null;
+            }
+
             string fullPath = _pathProvider.GetModelFilePath(model.RepoId, primaryFile.FileName);
 
             return File.Exists(fullPath) ? fullPath : null;

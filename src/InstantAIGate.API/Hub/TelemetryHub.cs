@@ -1,7 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR;
-using System.Threading.Tasks;
-
-namespace InstantAIGate.API.Hub
+﻿namespace InstantAIGate.API.Hub
 {
     public sealed class TelemetryHub : Microsoft.AspNetCore.SignalR.Hub
     {

@@ -1,5 +1,4 @@
-﻿using System;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace InstantAIGate.Infrastructure.Inference.Native
 {
@@ -7,7 +6,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
     /// P/Invoke bindings for llama.cpp and ggml.
     /// Based on llama.h and ggml.h (build b9631).
     /// </summary>
-    public static partial class NativeMethods
+    public static partial class NativeLlamaMethods
     {
         // ==========================================
         // 1. ENUMS (ggml.h & llama.h)
@@ -372,7 +371,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             public IntPtr devices;
             public IntPtr tensor_buft_overrides;
             public int n_gpu_layers;
-            public NativeMethods.llama_split_mode split_mode;
+            public llama_split_mode split_mode;
             public int main_gpu;
             public IntPtr tensor_split;
             public IntPtr progress_callback;
@@ -404,11 +403,11 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             public int n_threads;
             public int n_threads_batch;
 
-            public NativeMethods.llama_context_type ctx_type;
-            public NativeMethods.llama_rope_scaling_type rope_scaling_type;
-            public NativeMethods.llama_pooling_type pooling_type;
-            public NativeMethods.llama_attention_type attention_type;
-            public NativeMethods.llama_flash_attn_type flash_attn_type;
+            public llama_context_type ctx_type;
+            public llama_rope_scaling_type rope_scaling_type;
+            public llama_pooling_type pooling_type;
+            public llama_attention_type attention_type;
+            public llama_flash_attn_type flash_attn_type;
 
             public float rope_freq_base;
             public float rope_freq_scale;
@@ -422,8 +421,8 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             public IntPtr cb_eval;
             public IntPtr cb_eval_user_data;
 
-            public NativeMethods.ggml_type type_k;
-            public NativeMethods.ggml_type type_v;
+            public ggml_type type_k;
+            public ggml_type type_v;
 
             public IntPtr abort_callback;
             public IntPtr abort_callback_data;

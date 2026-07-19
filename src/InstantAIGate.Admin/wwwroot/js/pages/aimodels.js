@@ -12,7 +12,6 @@ async function initializeLiveDownloadTelemetry() {
     const tokenElement = document.querySelector('input[name="__RequestVerificationToken"]');
     const rvt = tokenElement ? tokenElement.value : '';
 
-    // --- 1. SECURELY REQUEST TICKET FROM LOCAL RAZOR HANDLER ---
     let ticket;
     try {
         const response = await fetch('?handler=GetStreamTicket', {
@@ -23,7 +22,7 @@ async function initializeLiveDownloadTelemetry() {
         });
 
         if (!response.ok) {
-            throw new Error(`Failed to obtain stream ticket from Razor backend. Status: ${response.status}`);
+            throw new Error(`Failed to obtain stream ticket. Status: ${response.status}`);
         }
 
         const data = await response.json();
@@ -33,14 +32,12 @@ async function initializeLiveDownloadTelemetry() {
         return;
     }
 
-    // --- 2. OPEN STREAM DIRECTLY TO API USING OBTAINED TICKET ---
     const sseUrl = `${window.PageConfig.apiUrl}/api/admin/fetch/progress-stream?ticket=${ticket}`;
     const eventSource = new EventSource(sseUrl);
 
     const trackedDownloads = new Map();
     const displayNames = new Map();
 
-    // Mapping of repoId -> displayName collected at DOM ready to avoid recomputing later
     document.querySelectorAll('.data-table tbody tr').forEach(tr => {
         const titleEl = tr.querySelector('.model-title');
         const repoEl = tr.querySelector('.model-repo');
@@ -49,12 +46,10 @@ async function initializeLiveDownloadTelemetry() {
         }
     });
 
-    // Initialize existing download cancellation forms with a special class to prevent duplication
     document.querySelectorAll('form[action*="handler=CancelDownload"]').forEach(form => {
         form.classList.add('cancel-download-form');
     });
 
-    // Handle incoming telemetry stream
     eventSource.onmessage = (event) => {
         const activeDownloads = JSON.parse(event.data);
         const currentSafeIds = new Set();
@@ -64,23 +59,28 @@ async function initializeLiveDownloadTelemetry() {
             currentSafeIds.add(safeId);
 
             const displayName = item.displayName || displayNames.get(item.repoId) || item.repoId;
-            trackedDownloads.set(safeId, { repoId: item.repoId, displayName: displayName });
+
+            trackedDownloads.set(safeId, {
+                repoId: item.repoId,
+                displayName: displayName,
+                lastProgress: item.progress,
+                lastStatus: item.status
+            });
 
             const statusCell = document.getElementById(`status-cell-${safeId}`);
             const actionsCell = document.getElementById(`actions-cell-${safeId}`);
 
             const isCompleted = item.progress >= 100 || item.status === 'completed' || item.status === 'success';
-            const isFailed = item.status === 'failed' || item.status === 'error' || item.status === 'canceled';
+            const isFailed = item.progress < 0 || item.status === 'failed' || item.status === 'error' || item.status === 'canceled';
             const isDownloading = !isCompleted && !isFailed;
 
-            // --- Dynamic Status Cell Update ---
             if (statusCell) {
                 if (isCompleted) {
                     statusCell.innerHTML = `<span class="badge-status info">Ready for Allocation</span>`;
                 } else if (isFailed) {
                     statusCell.innerHTML = `
                         <span class="badge-status">
-                            <i class="bi bi-exclamation-circle text-danger"></i> Failed / Canceled
+                            <i class="bi bi-exclamation-circle text-danger"></i> Fetch Failed
                         </span>
                     `;
                 } else {
@@ -95,7 +95,6 @@ async function initializeLiveDownloadTelemetry() {
                 }
             }
 
-            // --- Dynamic Action Buttons Update ---
             if (actionsCell) {
                 if (actionsCell.querySelector('.unload-btn')) {
                     return;
@@ -112,7 +111,7 @@ async function initializeLiveDownloadTelemetry() {
                         <form action="?handler=StartDownload&repoId=${encodeURIComponent(item.repoId)}" method="post" class="inline-form">
                             <input type="hidden" name="__RequestVerificationToken" value="${rvt}" />
                             <button type="submit" class="btn-outline-primary">
-                                <i class="bi bi-cloud-download"></i> Download
+                                <i class="bi bi-cloud-download"></i> Retry Download
                             </button>
                         </form>
                     `;
@@ -131,22 +130,40 @@ async function initializeLiveDownloadTelemetry() {
             }
         });
 
-        // Handle tasks that have disappeared from the server's active downloads stream
         for (const [safeId, data] of trackedDownloads.entries()) {
             if (!currentSafeIds.has(safeId)) {
                 const statusCell = document.getElementById(`status-cell-${safeId}`);
                 const actionsCell = document.getElementById(`actions-cell-${safeId}`);
 
+                // Relaxed threshold: if it drops from stream but was >= 95%, assume success.
+                // This mitigates the backend race condition where tasks are removed before sending 100%.
+                const actuallyCompleted = data.lastProgress >= 95.0 || data.lastStatus === 'completed';
+
                 if (statusCell) {
-                    statusCell.innerHTML = `<span class="badge-status info">Ready for Allocation</span>`;
+                    if (actuallyCompleted) {
+                        statusCell.innerHTML = `<span class="badge-status info">Ready for Allocation</span>`;
+                    } else {
+                        statusCell.innerHTML = `<span class="badge-status default">Remote Instance</span>`;
+                    }
                 }
 
                 if (actionsCell && !actionsCell.querySelector('.unload-btn')) {
-                    actionsCell.innerHTML = `
-                        <button onclick="openConfigDrawer('${data.repoId}', '${data.displayName.replace(/'/g, "\\'")}')" class="btn-secondary">
-                            <i class="bi bi-power"></i> Configure & Load
-                        </button>
-                    `;
+                    if (actuallyCompleted) {
+                        actionsCell.innerHTML = `
+                            <button onclick="openConfigDrawer('${data.repoId}', '${data.displayName.replace(/'/g, "\\'")}')" class="btn-secondary">
+                                <i class="bi bi-power"></i> Configure & Load
+                            </button>
+                        `;
+                    } else {
+                        actionsCell.innerHTML = `
+                            <form action="?handler=StartDownload&repoId=${encodeURIComponent(data.repoId)}" method="post" class="inline-form">
+                                <input type="hidden" name="__RequestVerificationToken" value="${rvt}" />
+                                <button type="submit" class="btn-outline-primary">
+                                    <i class="bi bi-cloud-download"></i> Download
+                                </button>
+                            </form>
+                        `;
+                    }
                 }
 
                 trackedDownloads.delete(safeId);
@@ -158,7 +175,6 @@ async function initializeLiveDownloadTelemetry() {
         console.warn("SSE stream channel dropped. Reconnecting automatically...");
         eventSource.close();
 
-        // Automatic reconnection fallback
         setTimeout(() => {
             initializeLiveDownloadTelemetry();
         }, 3000);

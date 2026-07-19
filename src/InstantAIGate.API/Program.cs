@@ -4,7 +4,6 @@ using InstantAIGate.API.Hub;
 using InstantAIGate.API.Services;
 using InstantAIGate.Application.Config;
 using InstantAIGate.Infrastructure;
-using InstantAIGate.Infrastructure.Inference.Drivers;
 using Microsoft.AspNetCore.Authentication;
 using System.Text;
 using System.Text.Json;
@@ -100,7 +99,8 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddSignalR()
-    .AddJsonProtocol(options => {
+    .AddJsonProtocol(options =>
+    {
         options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     });
 

@@ -1,7 +1,7 @@
 using FluentAssertions;
+using InstantAiGate.Api.Controllers;
 using InstantAIGate.API.Dtos;
 using InstantAIGate.Application.Interfaces.Inference;
-using InstantAiGate.Api.Controllers;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 
@@ -157,7 +157,7 @@ public class OpenAiModelsControllerTests
         response.data.Should().HaveCount(4);
         foreach (var modelId in activeModels)
         {
-            response.data.Should().Contain(m => m.id == modelId, 
+            response.data.Should().Contain(m => m.id == modelId,
                 $"response should include model '{modelId}'");
         }
     }

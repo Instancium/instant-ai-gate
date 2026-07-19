@@ -1,7 +1,4 @@
 ﻿using InstantAIGate.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace InstantAIGate.Application.Interfaces.Storage
 {
