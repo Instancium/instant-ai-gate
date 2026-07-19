@@ -6,7 +6,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<PackageId>InstantAIGate.Runtimes.Windows</PackageId>
-		<Version>1.0.12</Version>
+		<Version>1.0.13</Version>
 		<Authors>Instancium</Authors>
 		<Description>Native Windows runtimes (CPU/CUDA) for llama.cpp, embedded as a compressed archive.</Description>
 		<IncludeBuildOutput>true</IncludeBuildOutput>
