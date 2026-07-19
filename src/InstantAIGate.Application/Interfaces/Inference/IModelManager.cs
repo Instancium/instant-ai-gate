@@ -17,6 +17,9 @@ namespace InstantAIGate.Application.Interfaces.Inference
         /// <param name="ct">The token to monitor for cancellation requests.</param>
         Task LoadModelAsync(ModelSettings config, CancellationToken ct = default);
 
+
+        Task SwapModelAsync(ModelSettings newConfig, CancellationToken ct = default);
+
         /// <summary>
         /// Evicts the specified model from memory, performing a clean, forced teardown of all allocated native execution contexts, 
         /// model weights, backing pools, and semaphores from VRAM/RAM.
@@ -25,27 +28,25 @@ namespace InstantAIGate.Application.Interfaces.Inference
         /// <param name="ct">The token to monitor for cancellation requests.</param>
         Task UnloadModelAsync(string modelPath, CancellationToken ct = default);
 
+
+        /// <summary>
+        /// Gets the configuration of the currently active model, if any.
+        /// </summary>
+        ModelSettings? GetActiveSettings();
+
         /// <summary>
         /// Retrieves the identifiers (RepoIds/Paths) of all models currently active in memory and ready to process client requests.
         /// Directly feeds the OpenAI-compliant `/v1/models` endpoint payload.
         /// </summary>
         IEnumerable<string> GetActiveModels();
 
+        /// <summary>
+        /// Gets the current throughput and queue metrics for telemetry.
+        /// </summary>
+        InferenceMetrics GetMetrics();
+
         IEnumerable<ModelRegistryStatus> GetActiveModelsStatus();
         IEnumerable<NativeModelDetails> GetNativeDetails();
-
-        /// <summary>
-        /// Provides read-only access to the internal registry of currently loaded model configurations.
-        /// Useful for telemetry services to derive active load parameters without modifying manager state.
-        /// </summary>
-        IReadOnlyDictionary<string, ModelSettings> ActiveModels { get; }
-
-        /// <summary>
-        /// Provides read-only access to the concurrency throttle registry. 
-        /// Allows external monitoring of semaphore states (CurrentCount/Available slots) to accurately calculate real-time usage.
-        /// </summary>
-        IReadOnlyDictionary<string, SemaphoreSlim> UserSemaphores { get; }
-
 
     }
 }

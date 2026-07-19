@@ -4,8 +4,14 @@ using InstantAIGate.Domain.Dtos.Config;
 using InstantAIGate.Infrastructure.Inference.layers;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace InstantAIGate.Infrastructure.Inference
 {
@@ -54,7 +60,10 @@ namespace InstantAIGate.Infrastructure.Inference
                     Console.SetError(new LlamaStderrLogger(_logger));
                     _isStderrRedirected = true;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _staticLogger?.LogWarning(ex, "Failed to redirect standard error stream.");
+                }
             }
         }
 
@@ -134,7 +143,6 @@ namespace InstantAIGate.Infrastructure.Inference
             if (config == null || string.IsNullOrWhiteSpace(config.RepoId))
                 throw new ArgumentException("Config and RepoId required.", nameof(config));
 
-            // Auto-correct the path if the upstream controller passed the mmproj file by alphabetical directory order
             var currentFileName = Path.GetFileName(config.ModelPath);
             if (currentFileName != null &&
                (currentFileName.Contains("mmproj", StringComparison.OrdinalIgnoreCase) ||
@@ -152,7 +160,6 @@ namespace InstantAIGate.Infrastructure.Inference
                         _logger.LogWarning("Auto-corrected config.ModelPath. Switched from projector '{Proj}' to text model '{Text}'",
                             currentFileName, Path.GetFileName(textModel));
 
-                        // Set the actual projector path since we discovered it
                         config.ProjectorPath = config.ModelPath;
                         config.ModelPath = textModel;
                     }
@@ -176,9 +183,9 @@ namespace InstantAIGate.Infrastructure.Inference
 
                 var fileInfo = new FileInfo(config.ModelPath);
                 long sizeMb = fileInfo.Length / (1024 * 1024);
+
                 if (sizeMb > config.MaxModelFileSizeMb)
-                    throw new InvalidOperationException(
-                        $"Model file too large: {sizeMb} MB > limit {config.MaxModelFileSizeMb} MB");
+                    throw new InvalidOperationException($"Model file too large: {sizeMb} MB > limit {config.MaxModelFileSizeMb} MB");
 
                 lock (_backendLock)
                 {
@@ -195,7 +202,10 @@ namespace InstantAIGate.Infrastructure.Inference
                             bool gpuSupport = _nativeApi.SupportsGpuOffload();
                             _logger.LogInformation("GPU offload support: {Support}", gpuSupport ? "YES" : "NO");
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to evaluate GPU support.");
+                        }
                     }
                 }
 
@@ -221,10 +231,8 @@ namespace InstantAIGate.Infrastructure.Inference
                 if (_modelCache.TryAdd(repoId, modelHandle))
                 {
                     _configCache.TryAdd(repoId, config);
-                    _logger.LogInformation("Model '{RepoId}' loaded successfully with {Layers} GPU layers",
-                        repoId, config.GpuLayerCount);
+                    _logger.LogInformation("Model '{RepoId}' loaded successfully with {Layers} GPU layers", repoId, config.GpuLayerCount);
 
-                    // Initialize vision context if multimodal is supported
                     if (config.VisionSupport)
                     {
                         try
@@ -293,8 +301,7 @@ namespace InstantAIGate.Infrastructure.Inference
                         _logger.LogDebug(
                             "Creating context for '{RepoId}': n_ctx={Ctx}, batch={Batch}, " +
                             "flash={Flash}, embeddings={Emb}, kv_quant={KvQuant}, offload_kqv={Kqv}",
-                            repoId, nCtx, nBatch,
-                            flashAttn, config.Embeddings, config.KvCacheQuantization, offloadKqv);
+                            repoId, nCtx, nBatch, flashAttn, config.Embeddings, config.KvCacheQuantization, offloadKqv);
 
                         IntPtr newCtxPtr = _nativeApi.CreateContext(
                             modelPtr,
@@ -344,11 +351,19 @@ namespace InstantAIGate.Infrastructure.Inference
             if (ctxPtr == IntPtr.Zero) return;
             try
             {
+                if (!_modelCache.ContainsKey(repoId))
+                {
+                    _logger.LogInformation("Model '{RepoId}' is no longer active. Freeing orphaned context.", repoId);
+                    _nativeApi.FreeContext(ctxPtr);
+                    return;
+                }
+
                 _nativeApi.ClearMemory(_nativeApi.GetMemory(ctxPtr), true);
                 _pools.GetOrAdd(repoId, _ => new ConcurrentBag<IntPtr>()).Add(ctxPtr);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Failed to pool context for '{RepoId}'. Freeing memory natively.", repoId);
                 _nativeApi.FreeContext(ctxPtr);
             }
         }
@@ -364,17 +379,27 @@ namespace InstantAIGate.Infrastructure.Inference
         public void UnloadModel(string repoId)
         {
             if (_pools.TryRemove(repoId, out var pool))
+            {
                 while (pool.TryTake(out IntPtr ctxPtr))
+                {
                     _nativeApi.FreeContext(ctxPtr);
+                }
+            }
 
             if (_visionCache.TryRemove(repoId, out var visionCtx))
+            {
                 visionCtx.Dispose();
+            }
 
             if (_modelCache.TryRemove(repoId, out IntPtr modelPtr))
+            {
                 _nativeApi.FreeModel(modelPtr);
+            }
 
             _configCache.TryRemove(repoId, out _);
             _initLocks.TryRemove(repoId, out _);
+
+            _logger.LogInformation("Model '{RepoId}' was successfully unloaded and memory cleared.", repoId);
         }
 
         public IEnumerable<ModelRegistryStatus> GetStatus() => _modelCache.Keys.Select(r =>

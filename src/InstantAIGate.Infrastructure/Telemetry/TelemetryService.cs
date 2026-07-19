@@ -4,7 +4,9 @@ using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Infrastructure.NvmlNative;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace InstantAIGate.Infrastructure.Telemetry
@@ -63,17 +65,17 @@ namespace InstantAIGate.Infrastructure.Telemetry
                 var modelManager = scope.ServiceProvider.GetRequiredService<IModelManager>();
 
                 var nativeDetails = modelManager.GetNativeDetails();
-                var activeModels = modelManager.ActiveModels;
-                var semaphores = modelManager.UserSemaphores;
+                var activeConfig = modelManager.GetActiveSettings();
+                var metrics = modelManager.GetMetrics();
 
                 foreach (var detail in nativeDetails)
                 {
                     var repoId = detail.RepoId;
-                    activeModels.TryGetValue(repoId, out var config);
-                    semaphores.TryGetValue(repoId, out var sem);
+                    bool isActive = activeConfig != null && activeConfig.RepoId == repoId;
 
-                    var maxUsers = config?.MaxContexts ?? 0;
-                    var activeUsers = sem != null && maxUsers > 0 ? maxUsers - sem.CurrentCount : 0;
+                    var maxUsers = isActive ? (activeConfig!.MaxContexts > 0 ? activeConfig.MaxContexts : 1) : 0;
+                    var activeUsers = isActive ? metrics.ActiveLeases : 0;
+                    var isQueueWaiting = isActive && metrics.PendingRequestsCount > 0;
 
                     telemetry.Models.Add(new ModelTelemetry
                     {
@@ -86,7 +88,7 @@ namespace InstantAIGate.Infrastructure.Telemetry
                         IdleContextsCount = detail.IdleContextsCount,
                         MaxParallelUsers = maxUsers,
                         ActiveUsersCount = activeUsers,
-                        IsQueueWaiting = sem != null && sem.CurrentCount == 0
+                        IsQueueWaiting = isQueueWaiting
                     });
                 }
             }

@@ -11,6 +11,7 @@ using InstantAIGate.Infrastructure.NvmlNative;
 using InstantAIGate.Infrastructure.Storage;
 using InstantAIGate.Infrastructure.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
+using System;
 
 namespace InstantAIGate.Infrastructure
 {
@@ -34,11 +35,15 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<NativeVisionApi>();
             services.AddSingleton<ModelProvider>();
 
+            // --- Single-Model Queue Architecture ---
+            services.AddSingleton<RequestQueue>();
+            services.AddHostedService<InferenceWorker>();
+
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling
             services.AddSingleton<ModelManager>();
             services.AddSingleton<IModelManager>(sp => sp.GetRequiredService<ModelManager>());
 
-            services.AddTransient<IChatAdapter, ChatAdapter>(); 
+            services.AddTransient<IChatAdapter, ChatAdapter>();
 
             services.AddTransient<IEmbeddingAdapter, EmbeddingAdapter>();
 
@@ -54,7 +59,6 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<IDriverStateProvider, DriverStateProvider>();
             services.AddHostedService<DriverInitializationHostedService>();
             services.AddSingleton<ITelemetryService, TelemetryService>();
-
 
             return services;
         }
