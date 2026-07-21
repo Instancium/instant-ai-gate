@@ -50,10 +50,10 @@ namespace InstantAIGate.Infrastructure.Inference.Native
 
             var ctxParams = NativeMtmdMethods.GetDefaultContextParams();
 
-            // Explicitly synchronize backend state and capacity limits
             ctxParams.UseGpu = useGpu;
             ctxParams.BatchMaxTokens = batchMaxTokens;
-            // Warmup ensures memory is pre-allocated immediately, failing fast if out of bounds
+            // Fulfill Qwen-VL architectural requirements for grounding tasks
+            ctxParams.ImageMinTokens = 1024;
             ctxParams.Warmup = true;
 
             var handle = NativeMtmdMethods.InitFromFile(projectorPath, textModelHandle, ctxParams);
