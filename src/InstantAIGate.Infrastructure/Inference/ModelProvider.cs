@@ -23,7 +23,7 @@ namespace InstantAIGate.Infrastructure.Inference
     {
         private readonly ILogger<ModelProvider> _logger;
         private readonly NativeLlamaApi _nativeApi;
-        private readonly NativeVisionApi _visionApi;
+        private readonly VisionEngineFacade _visionApi;
 
         private readonly ConcurrentDictionary<string, IntPtr> _modelCache = new();
         private readonly ConcurrentDictionary<string, VisionContext> _visionCache = new();
@@ -38,7 +38,7 @@ namespace InstantAIGate.Infrastructure.Inference
         private static bool _isStderrRedirected = false;
         private static readonly object _stderrLock = new();
 
-        public ModelProvider(ILogger<ModelProvider> logger, NativeLlamaApi nativeApi, NativeVisionApi visionApi)
+        public ModelProvider(ILogger<ModelProvider> logger, NativeLlamaApi nativeApi, VisionEngineFacade visionApi)
         {
             _logger = logger;
             _nativeApi = nativeApi;

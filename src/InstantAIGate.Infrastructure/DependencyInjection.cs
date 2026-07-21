@@ -32,7 +32,7 @@ namespace InstantAIGate.Infrastructure
 
             // Holds raw native model weight references and manages low-level context recycling pools
             services.AddSingleton<NativeLlamaApi>();
-            services.AddSingleton<NativeVisionApi>();
+            services.AddSingleton<VisionEngineFacade>();
             services.AddSingleton<ModelProvider>();
 
             // --- Single-Model Queue Architecture ---
