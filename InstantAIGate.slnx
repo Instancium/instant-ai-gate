@@ -10,4 +10,5 @@
   <Project Path="src/Runtimes/InstantAIGate.Runtimes.Linux/InstantAIGate.Runtimes.Linux.csproj" />
   <Project Path="src/Runtimes/InstantAIGate.Runtimes.Windows/InstantAIGate.Runtimes.Windows.csproj" />
   <Project Path="tests/InstantAIGate.API.Tests/InstantAIGate.API.Tests.csproj" />
+  <Project Path="tests/InstantAIGate.Tests/InstantAIGate.Tests.csproj" Id="21a0b84e-18b8-4ca6-a833-13ff8b2bbc7a" />
 </Solution>

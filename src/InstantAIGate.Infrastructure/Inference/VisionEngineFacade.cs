@@ -7,11 +7,13 @@ namespace InstantAIGate.Infrastructure.Inference.Native
 {
     /// <summary>
     /// Represents the extracted inference data ready for standard LLM evaluation.
+    /// Includes the non-causal attention flag required by models like Qwen VL.
     /// </summary>
     public sealed record ExtractedVisionData(
         IntPtr EmbeddingsPtr,
         NativeMtmdMethods.MtmdDecoderPos[] Positions,
-        int TokenCount
+        int TokenCount,
+        bool RequiresNonCausalAttention
     );
 
     /// <summary>
@@ -29,13 +31,16 @@ namespace InstantAIGate.Infrastructure.Inference.Native
 
         /// <summary>
         /// Initializes the multimodal context by binding the projection model to the text model.
+        /// Configures hardware acceleration and batch limits to prevent allocation mismatches.[cite: 2, 4]
         /// </summary>
         /// <param name="projectorPath">Path to the .mmproj file.</param>
         /// <param name="textModelHandle">Handle of the loaded native llama model.</param>
+        /// <param name="useGpu">Must match the GPU execution state of the text model to prevent backend access violations.</param>
+        /// <param name="batchMaxTokens">Maximum number of tokens allowed in a single vision encoding pass.</param>
         /// <returns>A managed context wrapping the native mtmd handle.</returns>
         /// <exception cref="ArgumentException">Thrown when paths or handles are invalid.</exception>
         /// <exception cref="InvalidOperationException">Thrown when native initialization fails.</exception>
-        public VisionContext InitializeVision(string projectorPath, IntPtr textModelHandle)
+        public VisionContext InitializeVision(string projectorPath, IntPtr textModelHandle, bool useGpu = true, int batchMaxTokens = 4096)
         {
             if (string.IsNullOrWhiteSpace(projectorPath))
                 throw new ArgumentException("Projector path cannot be empty.", nameof(projectorPath));
@@ -44,15 +49,24 @@ namespace InstantAIGate.Infrastructure.Inference.Native
                 throw new ArgumentException("Text model handle cannot be zero.", nameof(textModelHandle));
 
             var ctxParams = NativeMtmdMethods.GetDefaultContextParams();
+
+            // Explicitly synchronize backend state and capacity limits
+            ctxParams.UseGpu = useGpu;
+            ctxParams.BatchMaxTokens = batchMaxTokens;
+            // Warmup ensures memory is pre-allocated immediately, failing fast if out of bounds
+            ctxParams.Warmup = true;
+
             var handle = NativeMtmdMethods.InitFromFile(projectorPath, textModelHandle, ctxParams);
 
             if (handle == IntPtr.Zero)
             {
-                _logger.LogError("Failed to initialize vision context from projector: {Path}", projectorPath);
+                _logger.LogError("Failed to initialize vision context from projector: {Path}. UseGpu: {UseGpu}", projectorPath, useGpu);
                 throw new InvalidOperationException("Native mtmd initialization failed.");
             }
 
-            _logger.LogInformation("Vision context initialized successfully using projector: {Path}", projectorPath);
+            _logger.LogInformation("Vision context initialized successfully. Projector: {Path}, GPU: {UseGpu}, BatchTokens: {Tokens}",
+                projectorPath, useGpu, batchMaxTokens);
+
             return new VisionContext(handle);
         }
 
@@ -203,8 +217,8 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         }
 
         /// <summary>
-        /// Aggregates chunks into a batch and encodes them through the vision model.
-        /// Asserts the state of batch creation and encoding execution.
+        /// Aggregates only media chunks (Image/Audio) into a batch and encodes them through the vision model.
+        /// Asserts the state of batch creation and encoding execution, strictly ignoring text chunks.
         /// </summary>
         /// <param name="contextHandle">The active vision context handle.</param>
         /// <param name="chunksPtr">The validated chunks list pointer.</param>
@@ -222,18 +236,37 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             }
 
             nuint size = NativeMtmdMethods.InputChunksSize(chunksPtr);
+            int mediaChunksAdded = 0;
+
             for (nuint i = 0; i < size; i++)
             {
                 IntPtr chunk = NativeMtmdMethods.InputChunksGet(chunksPtr, i);
+                var chunkType = NativeMtmdMethods.InputChunkGetType(chunk);
+
+                // ViT encoder only processes media. Text chunks must be explicitly skipped.
+                if (chunkType != NativeMtmdMethods.MtmdInputChunkType.Image && chunkType != NativeMtmdMethods.MtmdInputChunkType.Audio)
+                {
+                    _logger.LogDebug("Skipping chunk {Index} of type {Type} during media batch allocation.", i, chunkType);
+                    continue;
+                }
+
                 int addResult = NativeMtmdMethods.BatchAddChunk(batchPtr, chunk);
                 if (addResult != 0)
                 {
-                    _logger.LogError("BatchAddChunk failed for chunk {Index} with code: {Code}", i, addResult);
-                    throw new InvalidOperationException($"Failed to add chunk {i} to batch. Code: {addResult}");
+                    _logger.LogError("BatchAddChunk failed for media chunk {Index} with code: {Code}", i, addResult);
+                    throw new InvalidOperationException($"Failed to add media chunk {i} to batch. Code: {addResult}");
                 }
+
+                mediaChunksAdded++;
             }
 
-            _logger.LogDebug("Starting BatchEncode for {Count} chunks.", size);
+            if (mediaChunksAdded == 0)
+            {
+                _logger.LogWarning("No media chunks found to encode. Bypassing BatchEncode.");
+                return batchPtr;
+            }
+
+            _logger.LogDebug("Starting BatchEncode for {Count} media chunks.", mediaChunksAdded);
 
             int encodeResult = NativeMtmdMethods.BatchEncode(batchPtr);
             if (encodeResult != 0)
@@ -248,13 +281,15 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         }
 
         /// <summary>
-        /// Extracts the generated embeddings and M-RoPE positional data required for LLM evaluation.
+        /// Extracts the generated embeddings, M-RoPE positional data, and attention requirements for LLM evaluation.
         /// </summary>
+        /// <param name="contextHandle">The active vision context handle.</param>
         /// <param name="batchPtr">The successfully encoded batch pointer.</param>
         /// <param name="visionChunkPtr">The specific pointer to the vision chunk.</param>
-        /// <returns>An immutable record containing the embeddings pointer and positional data array.</returns>
-        public ExtractedVisionData ExtractInferenceData(IntPtr batchPtr, IntPtr visionChunkPtr)
+        /// <returns>An immutable record containing the embeddings pointer, positions, and attention flags.</returns>
+        public ExtractedVisionData ExtractInferenceData(IntPtr contextHandle, IntPtr batchPtr, IntPtr visionChunkPtr)
         {
+            if (contextHandle == IntPtr.Zero) throw new ArgumentException("Context handle cannot be zero.", nameof(contextHandle));
             if (batchPtr == IntPtr.Zero) throw new ArgumentException("Batch pointer cannot be zero.", nameof(batchPtr));
             if (visionChunkPtr == IntPtr.Zero) throw new ArgumentException("Vision chunk pointer cannot be zero.", nameof(visionChunkPtr));
 
@@ -270,7 +305,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
 
             if ((nuint)posCount != tokenCount)
             {
-                _logger.LogWarning("Position count ({PosCount}) differs from token count ({TokenCount}). This may be expected for specific M-RoPE architectures.", posCount, tokenCount);
+                _logger.LogWarning("Position count ({PosCount}) differs from token count ({TokenCount}). Expected for specific M-RoPE architectures.", posCount, tokenCount);
             }
 
             IntPtr imageTokensPtr = NativeMtmdMethods.InputChunkGetTokensImage(visionChunkPtr);
@@ -286,9 +321,12 @@ namespace InstantAIGate.Infrastructure.Inference.Native
                 positions[i] = NativeMtmdMethods.ImageTokensGetDecoderPos(imageTokensPtr, 0, i);
             }
 
-            _logger.LogDebug("Successfully extracted inference data. Tokens: {Tokens}, Positions extracted: {PosCount}", tokenCount, posCount);
+            // Critical for Qwen VL: determine if this chunk requires full bidirectional attention
+            bool nonCausal = NativeMtmdMethods.DecodeUseNonCausal(contextHandle, visionChunkPtr);
 
-            return new ExtractedVisionData(embeddingsPtr, positions, (int)tokenCount);
+            _logger.LogDebug("Extracted data. Tokens: {Tokens}, Positions: {PosCount}, Non-Causal: {NonCausal}", tokenCount, posCount, nonCausal);
+
+            return new ExtractedVisionData(embeddingsPtr, positions, (int)tokenCount, nonCausal);
         }
     }
 }
