@@ -86,7 +86,7 @@ namespace InstantAIGate.Tests.Integration.Inference
             }
 
             var llamaLogger = NullLogger<NativeLlamaApi>.Instance;
-            _llamaApi = new NativeLlamaApi();
+            _llamaApi = new NativeLlamaApi(llamaLogger);
             _llamaApi.LoadAllBackends();
             _llamaApi.BackendInit();
 

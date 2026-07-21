@@ -1,197 +1,238 @@
-﻿using System.Runtime.InteropServices;
+﻿using Microsoft.Extensions.Logging;
+using System;
+using System.Runtime.InteropServices;
 
-namespace InstantAIGate.Infrastructure.Inference.Native;
-
-/// <summary>
-/// Default implementation of <see cref="INativeLlamaApi"/> that delegates all calls to NativeLlamaMethods.
-/// This is the only class that directly invokes P/Invoke methods.
-/// </summary>
-public sealed class NativeLlamaApi
+namespace InstantAIGate.Infrastructure.Inference.Native
 {
-    private NativeLlamaMethods.ggml_log_callback? _nativeCallback;
-
-    public void LoadAllBackends()
-    {
-        try { NativeLlamaMethods.ggml_backend_load_all_ggml(); } catch { }
-        try { NativeLlamaMethods.ggml_backend_load_all_llama(); } catch { }
-    }
-
-    public int GetModelEmbeddingSize(IntPtr model)
-    {
-        return NativeLlamaMethods.llama_model_n_embd(model);
-    }
-
-    public int DecodeEmbeddings(IntPtr context, int batchSize, IntPtr embdPtr, IntPtr posPtr, IntPtr nSeqIdPtr, IntPtr seqIdPtr, IntPtr logitsPtr)
-    {
-        var batch = new NativeLlamaMethods.LlamaBatch
-        {
-            n_tokens = batchSize,
-            token = IntPtr.Zero, // Token array is ignored when using embeddings
-            embd = embdPtr,      // Pass the float array pointer here
-            pos = posPtr,
-            n_seq_id = nSeqIdPtr,
-            seq_id = seqIdPtr,
-            logits = logitsPtr
-        };
-
-        return NativeLlamaMethods.llama_decode(context, batch);
-    }
-
-    public void BackendInit() => NativeLlamaMethods.llama_backend_init();
-    public void BackendFree() => NativeLlamaMethods.llama_backend_free();
-    public bool SupportsGpuOffload() => NativeLlamaMethods.llama_supports_gpu_offload();
-
-    public void SetLogCallback(NativeLogCallback callback)
-    {
-        _nativeCallback = (NativeLlamaMethods.ggml_log_level level, IntPtr text, IntPtr user_data) =>
-        {
-            if (text == IntPtr.Zero) return;
-            string? message = Marshal.PtrToStringAnsi(text)?.TrimEnd('\n', '\r');
-            if (string.IsNullOrEmpty(message)) return;
-
-            var cleanLevel = (NativeGgmlLogLevel)level;
-            callback(cleanLevel, message!);
-        };
-
-        try { NativeLlamaMethods.ggml_log_set(_nativeCallback, IntPtr.Zero); } catch { }
-        try { NativeLlamaMethods.llama_log_set(_nativeCallback, IntPtr.Zero); } catch { }
-    }
-
-    public IntPtr GetMemory(IntPtr context) => NativeLlamaMethods.llama_get_memory(context);
-    public void ClearMemory(IntPtr memory, bool clear) => NativeLlamaMethods.llama_memory_clear(memory, clear);
-    public void FreeModel(IntPtr model) => NativeLlamaMethods.llama_model_free(model);
-    public void FreeContext(IntPtr context) => NativeLlamaMethods.llama_free(context);
-
-
     /// <summary>
-    /// Accepts a sampled token and updates the internal state of the sampler chain.
-    /// Essential for repetition penalties and context-aware sampling.
+    /// Robust facade for llama.cpp P/Invoke operations.
+    /// Provides memory safety assertions, batch bounds checking, and strict error handling.
+    /// Acts as an isolation layer for ChatAdapter, EmbeddingAdapter, and ModelProvider.
     /// </summary>
-    /// <param name="sampler">The pointer to the sampler chain.</param>
-    /// <param name="token">The sampled token ID.</param>
-    public void SamplerAccept(IntPtr sampler, int token)
+    public sealed class NativeLlamaApi
     {
-        NativeLlamaMethods.llama_sampler_accept(sampler, token);
-    }
-    public IntPtr LoadModel(string path, int gpuLayers, int mainGpu, bool useMlock, bool useMmap, NativeLlamaSplitMode splitMode)
-    {
-        var p = NativeLlamaMethods.llama_model_default_params();
-        p.n_gpu_layers = gpuLayers;
-        p.main_gpu = mainGpu;
-        p.use_mlock = useMlock;
-        p.use_mmap = useMmap;
-        p.split_mode = (NativeLlamaMethods.llama_split_mode)splitMode;
+        private NativeLlamaMethods.GgmlLogCallback? _nativeCallback;
+        private readonly ILogger<NativeLlamaApi> _logger;
 
-        return NativeLlamaMethods.llama_model_load_from_file(path, p);
-    }
-
-    public IntPtr CreateContext(IntPtr model, uint nCtx, uint nBatch, int nThreads, bool embeddings, NativeLlamaFlashAttnType flashAttn, NativeGgmlType kvType, bool offloadKqv)
-    {
-        var p = NativeLlamaMethods.llama_context_default_params();
-        p.n_ctx = nCtx;
-        p.n_batch = nBatch;
-        p.n_ubatch = nBatch;
-        p.n_threads = nThreads;
-        p.n_threads_batch = nThreads;
-        p.embeddings = embeddings;
-        p.flash_attn_type = (NativeLlamaMethods.llama_flash_attn_type)flashAttn;
-        p.type_k = (NativeLlamaMethods.ggml_type)kvType;
-        p.type_v = (NativeLlamaMethods.ggml_type)kvType;
-        p.offload_kqv = offloadKqv;
-
-        return NativeLlamaMethods.llama_init_from_model(model, p);
-    }
-
-    // === Tokenization ===
-    public IntPtr ModelGetVocab(IntPtr model) => NativeLlamaMethods.llama_model_get_vocab(model);
-
-    public int Tokenize(IntPtr vocab, string text, int textLen, int[] tokens, int maxTokens, bool addSpecial, bool parseSpecial)
-        => NativeLlamaMethods.llama_tokenize(vocab, text, textLen, tokens, maxTokens, addSpecial, parseSpecial);
-
-    public int VocabEos(IntPtr vocab) => NativeLlamaMethods.llama_vocab_eos(vocab);
-
-    public int TokenToPiece(IntPtr vocab, int token, byte[] buffer, int bufferSize, int lstrip, bool special)
-        => NativeLlamaMethods.llama_token_to_piece(vocab, token, buffer, bufferSize, lstrip, special);
-
-    // === Sampler ===
-    public NativeSamplerChainParams SamplerChainDefaultParams()
-    {
-        var nativeParams = NativeLlamaMethods.llama_sampler_chain_default_params();
-        return new NativeSamplerChainParams { NoPerf = nativeParams.no_perf };
-    }
-
-    public IntPtr SamplerChainInit(NativeSamplerChainParams @params)
-    {
-        var nativeParams = new NativeLlamaMethods.llama_sampler_chain_params { no_perf = @params.NoPerf };
-        return NativeLlamaMethods.llama_sampler_chain_init(nativeParams);
-    }
-
-    public void SamplerChainAdd(IntPtr chain, IntPtr sampler)
-        => NativeLlamaMethods.llama_sampler_chain_add(chain, sampler);
-
-    public IntPtr SamplerInitTopK(int k) => NativeLlamaMethods.llama_sampler_init_top_k(k);
-    public IntPtr SamplerInitTopP(float p, nuint minKeep) => NativeLlamaMethods.llama_sampler_init_top_p(p, minKeep);
-    public IntPtr SamplerInitTemp(float temp) => NativeLlamaMethods.llama_sampler_init_temp(temp);
-    public IntPtr SamplerInitDist(uint seed) => NativeLlamaMethods.llama_sampler_init_dist(seed);
-    public int SamplerSample(IntPtr sampler, IntPtr context, int index) => NativeLlamaMethods.llama_sampler_sample(sampler, context, index);
-    public void SamplerFree(IntPtr sampler) => NativeLlamaMethods.llama_sampler_free(sampler);
-
-    // === Inference ===
-    public int Decode(IntPtr context, int batchSize, IntPtr tokenPtr, IntPtr posPtr, IntPtr nSeqIdPtr, IntPtr seqIdPtr, IntPtr logitsPtr)
-    {
-        var batch = new NativeLlamaMethods.LlamaBatch
+        public NativeLlamaApi(ILogger<NativeLlamaApi> logger)
         {
-            n_tokens = batchSize,
-            token = tokenPtr,
-            embd = IntPtr.Zero,
-            pos = posPtr,
-            n_seq_id = nSeqIdPtr,
-            seq_id = seqIdPtr,
-            logits = logitsPtr
-        };
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
 
-        return NativeLlamaMethods.llama_decode(context, batch);
+        public void LoadAllBackends()
+        {
+            try { NativeLlamaMethods.GgmlBackendLoadAll(); } catch (Exception ex) { _logger.LogWarning(ex, "Failed to load GGML backends."); }
+            try { NativeLlamaMethods.LlamaBackendLoadAll(); } catch (Exception ex) { _logger.LogWarning(ex, "Failed to load LLaMA backends."); }
+        }
+
+        public void BackendInit() => NativeLlamaMethods.LlamaBackendInit();
+        public void BackendFree() => NativeLlamaMethods.LlamaBackendFree();
+        public bool SupportsGpuOffload() => NativeLlamaMethods.LlamaSupportsGpuOffload();
+
+        public void SetLogCallback(NativeLogCallback callback)
+        {
+            _nativeCallback = (NativeLlamaMethods.GgmlLogLevel level, IntPtr text, IntPtr userData) =>
+            {
+                if (text == IntPtr.Zero) return;
+                string? message = Marshal.PtrToStringAnsi(text)?.TrimEnd('\n', '\r');
+                if (string.IsNullOrEmpty(message)) return;
+
+                callback((NativeGgmlLogLevel)level, message);
+            };
+
+            try { NativeLlamaMethods.GgmlLogSet(_nativeCallback, IntPtr.Zero); } catch { }
+            try { NativeLlamaMethods.LlamaLogSet(_nativeCallback, IntPtr.Zero); } catch { }
+        }
+
+        public IntPtr LoadModel(string path, int gpuLayers, int mainGpu, bool useMlock, bool useMmap, NativeLlamaSplitMode splitMode)
+        {
+            var p = NativeLlamaMethods.LlamaModelDefaultParams();
+            p.NGpuLayers = gpuLayers;
+            p.MainGpu = mainGpu;
+            p.UseMlock = useMlock;
+            p.UseMmap = useMmap;
+            p.SplitMode = (NativeLlamaMethods.LlamaSplitMode)splitMode;
+
+            IntPtr modelHandle = NativeLlamaMethods.LlamaModelLoadFromFile(path, p);
+            if (modelHandle == IntPtr.Zero)
+            {
+                _logger.LogError("NativeLlamaMethods.LlamaModelLoadFromFile returned a zero pointer for path: {Path}", path);
+                throw new InvalidOperationException("Failed to load native LLM weights into memory.");
+            }
+
+            return modelHandle;
+        }
+
+        public void FreeModel(IntPtr model)
+        {
+            if (model != IntPtr.Zero) NativeLlamaMethods.LlamaModelFree(model);
+        }
+
+        public IntPtr CreateContext(IntPtr model, uint nCtx, uint nBatch, int nThreads, bool embeddings, NativeLlamaFlashAttnType flashAttn, NativeGgmlType kvType, bool offloadKqv)
+        {
+            if (model == IntPtr.Zero) throw new ArgumentException("Model handle cannot be zero.", nameof(model));
+
+            var p = NativeLlamaMethods.LlamaContextDefaultParams();
+            p.NCtx = nCtx;
+            p.NBatch = nBatch;
+            p.NUBatch = nBatch;
+            p.NThreads = nThreads;
+            p.NThreadsBatch = nThreads;
+            p.Embeddings = embeddings;
+            p.FlashAttnType = (NativeLlamaMethods.LlamaFlashAttnType)flashAttn;
+            p.TypeK = (NativeLlamaMethods.GgmlType)kvType;
+            p.TypeV = (NativeLlamaMethods.GgmlType)kvType;
+            p.OffloadKqv = offloadKqv;
+
+            IntPtr ctxHandle = NativeLlamaMethods.LlamaInitFromModel(model, p);
+            if (ctxHandle == IntPtr.Zero)
+            {
+                _logger.LogError("NativeLlamaMethods.LlamaInitFromModel returned a zero pointer. Check VRAM capacity.");
+                throw new InvalidOperationException("Failed to initialize inference context.");
+            }
+
+            return ctxHandle;
+        }
+
+        public IntPtr CreateEmbeddingContext(IntPtr model, uint nCtx, uint nBatch, int nThreads, NativeLlamaFlashAttnType flashAttn)
+        {
+            if (model == IntPtr.Zero) throw new ArgumentException("Model handle cannot be zero.", nameof(model));
+
+            var p = NativeLlamaMethods.LlamaContextDefaultParams();
+            p.NCtx = nCtx;
+            p.NBatch = nBatch;
+            p.NUBatch = nBatch;
+            p.NThreads = nThreads;
+            p.NThreadsBatch = nThreads;
+            p.Embeddings = true;
+            p.PoolingType = NativeLlamaMethods.LlamaPoolingType.None;
+            p.FlashAttnType = (NativeLlamaMethods.LlamaFlashAttnType)flashAttn;
+
+            IntPtr ctxHandle = NativeLlamaMethods.LlamaInitFromModel(model, p);
+            if (ctxHandle == IntPtr.Zero)
+            {
+                _logger.LogError("Failed to initialize embedding context.");
+                throw new InvalidOperationException("Failed to initialize embedding context.");
+            }
+
+            return ctxHandle;
+        }
+
+        public void FreeContext(IntPtr context)
+        {
+            if (context != IntPtr.Zero) NativeLlamaMethods.LlamaFree(context);
+        }
+
+        public IntPtr GetMemory(IntPtr context) => NativeLlamaMethods.LlamaGetMemory(context);
+        public void ClearMemory(IntPtr memory, bool clear) => NativeLlamaMethods.LlamaMemoryClear(memory, clear);
+
+        // === Batch & Decode ===
+
+        public int Decode(IntPtr context, int batchSize, IntPtr tokenPtr, IntPtr posPtr, IntPtr nSeqIdPtr, IntPtr seqIdPtr, IntPtr logitsPtr)
+        {
+            if (context == IntPtr.Zero) throw new ArgumentException("Context cannot be zero.", nameof(context));
+            if (batchSize <= 0) return 0;
+
+            var batch = new NativeLlamaMethods.LlamaBatch
+            {
+                NTokens = batchSize,
+                Token = tokenPtr,
+                Embd = IntPtr.Zero,
+                Pos = posPtr,
+                NSeqId = nSeqIdPtr,
+                SeqId = seqIdPtr,
+                Logits = logitsPtr
+            };
+
+            int result = NativeLlamaMethods.LlamaDecode(context, batch);
+            if (result != 0)
+            {
+                _logger.LogError("LlamaDecode failed during token evaluation with error code: {Code}. Possible KV-cache slot exhaustion.", result);
+            }
+            return result;
+        }
+
+        public int DecodeEmbeddings(IntPtr context, int batchSize, IntPtr embdPtr, IntPtr posPtr, IntPtr nSeqIdPtr, IntPtr seqIdPtr, IntPtr logitsPtr)
+        {
+            if (context == IntPtr.Zero) throw new ArgumentException("Context cannot be zero.", nameof(context));
+            if (embdPtr == IntPtr.Zero) throw new ArgumentException("Embeddings pointer cannot be zero.", nameof(embdPtr));
+            if (batchSize <= 0) return 0;
+
+            var batch = new NativeLlamaMethods.LlamaBatch
+            {
+                NTokens = batchSize,
+                Token = IntPtr.Zero,
+                Embd = embdPtr,
+                Pos = posPtr,
+                NSeqId = nSeqIdPtr,
+                SeqId = seqIdPtr,
+                Logits = logitsPtr
+            };
+
+            int result = NativeLlamaMethods.LlamaDecode(context, batch);
+            if (result != 0)
+            {
+                _logger.LogError("LlamaDecode failed during embeddings evaluation with error code: {Code}.", result);
+            }
+            return result;
+        }
+
+        // === Vocab & Embeddings ===
+
+        public IntPtr ModelGetVocab(IntPtr model) => NativeLlamaMethods.LlamaModelGetVocab(model);
+        public int ModelNEmbd(IntPtr model) => NativeLlamaMethods.LlamaModelNEmbd(model);
+        public int VocabEos(IntPtr vocab) => NativeLlamaMethods.LlamaVocabEos(vocab);
+        public IntPtr GetEmbeddingsIth(IntPtr context, int i) => NativeLlamaMethods.LlamaGetEmbeddingsIth(context, i);
+
+        public int Tokenize(IntPtr vocab, string text, int textLen, int[] tokens, int maxTokens, bool addSpecial, bool parseSpecial)
+        {
+            if (vocab == IntPtr.Zero) throw new ArgumentException("Vocab pointer is zero.", nameof(vocab));
+            return NativeLlamaMethods.LlamaTokenize(vocab, text, textLen, tokens, maxTokens, addSpecial, parseSpecial);
+        }
+
+        public int TokenToPiece(IntPtr vocab, int token, byte[] buffer, int bufferSize, int lstrip, bool special)
+        {
+            return NativeLlamaMethods.LlamaTokenToPiece(vocab, token, buffer, bufferSize, lstrip, special);
+        }
+
+        // === Samplers ===
+
+        public NativeSamplerChainParams SamplerChainDefaultParams()
+        {
+            var nativeParams = NativeLlamaMethods.LlamaSamplerChainDefaultParams();
+            return new NativeSamplerChainParams { NoPerf = nativeParams.NoPerf };
+        }
+
+        public IntPtr SamplerChainInit(NativeSamplerChainParams @params)
+        {
+            var nativeParams = new NativeLlamaMethods.LlamaSamplerChainParams { NoPerf = @params.NoPerf };
+            return NativeLlamaMethods.LlamaSamplerChainInit(nativeParams);
+        }
+
+        public void SamplerChainAdd(IntPtr chain, IntPtr sampler)
+        {
+            if (chain != IntPtr.Zero && sampler != IntPtr.Zero)
+            {
+                NativeLlamaMethods.LlamaSamplerChainAdd(chain, sampler);
+            }
+        }
+
+        public IntPtr SamplerInitTopK(int k) => NativeLlamaMethods.LlamaSamplerInitTopK(k);
+        public IntPtr SamplerInitTopP(float p, nuint minKeep) => NativeLlamaMethods.LlamaSamplerInitTopP(p, minKeep);
+        public IntPtr SamplerInitTemp(float temp) => NativeLlamaMethods.LlamaSamplerInitTemp(temp);
+        public IntPtr SamplerInitDist(uint seed) => NativeLlamaMethods.LlamaSamplerInitDist(seed);
+
+        public nint SamplerInitRepetition(float penaltyRepeat, float penaltyFreq, float penaltyPresent)
+        {
+            int penaltyLastN = -1;
+            return NativeLlamaMethods.LlamaSamplerInitPenalties(penaltyLastN, penaltyRepeat, penaltyFreq, penaltyPresent);
+        }
+
+        public int SamplerSample(IntPtr sampler, IntPtr context, int index) => NativeLlamaMethods.LlamaSamplerSample(sampler, context, index);
+        public void SamplerAccept(IntPtr sampler, int token) => NativeLlamaMethods.LlamaSamplerAccept(sampler, token);
+        public void SamplerFree(IntPtr sampler)
+        {
+            if (sampler != IntPtr.Zero) NativeLlamaMethods.LlamaSamplerFree(sampler);
+        }
     }
-
-    public nint SamplerInitRepetition(float penaltyRepeat, float penaltyFreq, float penaltyPresent)
-    {
-        // penalty_last_n: number of last tokens to penalize
-        // 0 = disable penalty
-        // -1 = use context size (penalize all tokens in context)
-        // Positive value = penalize last N tokens
-        int penaltyLastN = -1; 
-
-        return NativeLlamaMethods.llama_sampler_init_penalties(
-            penaltyLastN,
-            penaltyRepeat,
-            penaltyFreq,
-            penaltyPresent
-        );
-    }
-
-    public int ModelNEmbd(IntPtr model)
-    {
-        return NativeLlamaMethods.llama_model_n_embd(model);
-    }
-
-    public IntPtr GetEmbeddingsIth(IntPtr context, int i)
-    {
-        return NativeLlamaMethods.llama_get_embeddings_ith(context, i);
-    }
-
-    public IntPtr CreateEmbeddingContext(IntPtr model, uint nCtx, uint nBatch, int nThreads, NativeLlamaFlashAttnType flashAttn)
-    {
-        var p = NativeLlamaMethods.llama_context_default_params();
-        p.n_ctx = nCtx;
-        p.n_batch = nBatch;
-        p.n_ubatch = nBatch;
-        p.n_threads = nThreads;
-        p.n_threads_batch = nThreads;
-        p.embeddings = true;
-        p.pooling_type = NativeLlamaMethods.llama_pooling_type.LLAMA_POOLING_TYPE_NONE;
-        p.flash_attn_type = (NativeLlamaMethods.llama_flash_attn_type)flashAttn;
-
-        return NativeLlamaMethods.llama_init_from_model(model, p);
-    }
-
 }
