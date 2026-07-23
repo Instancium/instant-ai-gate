@@ -45,131 +45,129 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             int maxTokens,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
-            IntPtr bitmapPtr = IntPtr.Zero;
-            IntPtr rawRgbPtr = IntPtr.Zero;
-            IntPtr chunksPtr = IntPtr.Zero;
-            IntPtr visionBatchPtr = IntPtr.Zero;
-            IntPtr samplerChain = IntPtr.Zero;
+            using var resources = new InferenceResources();
 
-            try
+            var (bitmapPtr, rawRgbPtr) = _visionFacade.PrepareMediaValidated(imageBytes, width, height, hashId);
+            resources.BitmapPtr = bitmapPtr;
+            resources.RawRgbPtr = rawRgbPtr;
+
+            var (newChunksPtr, _) = _visionFacade.TokenizeAndValidateChunks(visionContext.Handle, prompt, resources.BitmapPtr);
+            resources.ChunksPtr = newChunksPtr;
+
+            resources.VisionBatchPtr = _visionFacade.EncodeBatchSafe(visionContext.Handle, resources.ChunksPtr);
+
+            int currentSequencePosition = 0;
+            nuint chunksCount = NativeMtmdMethods.InputChunksSize(resources.ChunksPtr);
+
+            for (nuint i = 0; i < chunksCount; i++)
             {
-                // 1. Prepare Media via Vision Facade
-                (bitmapPtr, rawRgbPtr) = _visionFacade.PrepareMediaValidated(imageBytes, width, height, hashId);
+                ct.ThrowIfCancellationRequested();
+                IntPtr chunk = NativeMtmdMethods.InputChunksGet(resources.ChunksPtr, i);
+                var chunkType = NativeMtmdMethods.InputChunkGetType(chunk);
 
-                // 2. Tokenize prompt into mixed Text/Image chunks
-                var (newChunksPtr, _) = _visionFacade.TokenizeAndValidateChunks(visionContext.Handle, prompt, bitmapPtr);
-                chunksPtr = newChunksPtr;
-
-                // 3. Pre-compute vision embeddings in a dedicated batch
-                visionBatchPtr = _visionFacade.EncodeBatchSafe(visionContext.Handle, chunksPtr);
-
-                int currentSequencePosition = 0;
-                nuint chunksCount = NativeMtmdMethods.InputChunksSize(chunksPtr);
-
-                // 4. Sequential Evaluation Loop (Feed LLM in exact prompt order)
-                for (nuint i = 0; i < chunksCount; i++)
+                if (chunkType == NativeMtmdMethods.MtmdInputChunkType.Text)
                 {
-                    ct.ThrowIfCancellationRequested();
-                    IntPtr chunk = NativeMtmdMethods.InputChunksGet(chunksPtr, i);
-                    var type = NativeMtmdMethods.InputChunkGetType(chunk);
-
-                    if (type == NativeMtmdMethods.MtmdInputChunkType.Text)
+                    IntPtr textTokensPtr = NativeMtmdMethods.InputChunkGetTokensText(chunk, out nuint nTokens);
+                    if (nTokens > 0)
                     {
-                        IntPtr textTokensPtr = NativeMtmdMethods.InputChunkGetTokensText(chunk, out nuint nTokens);
-                        if (nTokens > 0)
-                        {
-                            int[] tokenArray = new int[nTokens];
-                            Marshal.Copy(textTokensPtr, tokenArray, 0, (int)nTokens);
+                        int[] tokenArray = new int[nTokens];
+                        Marshal.Copy(textTokensPtr, tokenArray, 0, (int)nTokens);
 
-                            _logger.LogDebug("Decoding text chunk {Index} with {Count} tokens.", i, nTokens);
-                            int evaluated = _llamaFacade.DecodeTextBatchSafe(llamaContext, tokenArray, currentSequencePosition);
-                            currentSequencePosition += evaluated;
-                        }
-                    }
-                    else if (type == NativeMtmdMethods.MtmdInputChunkType.Image)
-                    {
-                        ExtractedVisionData visionData = _visionFacade.ExtractInferenceData(visionContext.Handle, visionBatchPtr, chunk);
-
-                        _logger.LogDebug("Decoding vision chunk {Index} with {Count} embeddings.", i, visionData.TokenCount);
-                        int evaluated = _llamaFacade.DecodeVisionBatchSafe(llamaContext, visionData, currentSequencePosition);
+                        _logger.LogDebug("Decoding text chunk {Index} with {Count} tokens.", i, nTokens);
+                        int evaluated = _llamaFacade.DecodeTextBatchSafe(llamaContext, tokenArray, currentSequencePosition);
                         currentSequencePosition += evaluated;
                     }
                 }
-
-                // 5. Initialize Sampler with Repetition Penalties
-                var samplerParams = NativeLlamaMethods.LlamaSamplerChainDefaultParams();
-                samplerChain = NativeLlamaMethods.LlamaSamplerChainInit(samplerParams);
-
-                // Штраф за повторяемость (penalty_last_n = 64, repeat = 1.1f, freq = 0.1f, present = 0.1f)
-                IntPtr repetitionSampler = NativeLlamaMethods.LlamaSamplerInitPenalties(64, 1.1f, 0.1f, 0.1f);
-                if (repetitionSampler != IntPtr.Zero)
+                else if (chunkType == NativeMtmdMethods.MtmdInputChunkType.Image)
                 {
-                    NativeLlamaMethods.LlamaSamplerChainAdd(samplerChain, repetitionSampler);
+                    ExtractedVisionData visionData = _visionFacade.ExtractInferenceData(visionContext.Handle, resources.VisionBatchPtr, chunk);
+
+                    _logger.LogDebug("Decoding vision chunk {Index} with {Count} embeddings.", i, visionData.TokenCount);
+                    int evaluated = _llamaFacade.DecodeVisionBatchSafe(llamaContext, visionData, currentSequencePosition);
+                    currentSequencePosition += evaluated;
+                }
+            }
+
+            var samplerParams = NativeLlamaMethods.LlamaSamplerChainDefaultParams();
+            resources.SamplerChain = NativeLlamaMethods.LlamaSamplerChainInit(samplerParams);
+
+            // Configures repetition penalties to prevent text generation loops.
+            IntPtr repetitionSampler = NativeLlamaMethods.LlamaSamplerInitPenalties(64, 1.1f, 0.1f, 0.1f);
+            if (repetitionSampler != IntPtr.Zero)
+            {
+                NativeLlamaMethods.LlamaSamplerChainAdd(resources.SamplerChain, repetitionSampler);
+            }
+
+            NativeLlamaMethods.LlamaSamplerChainAdd(resources.SamplerChain, NativeLlamaMethods.LlamaSamplerInitTopK(40));
+            NativeLlamaMethods.LlamaSamplerChainAdd(resources.SamplerChain, NativeLlamaMethods.LlamaSamplerInitTopP(0.95f, 1));
+            NativeLlamaMethods.LlamaSamplerChainAdd(resources.SamplerChain, NativeLlamaMethods.LlamaSamplerInitTemp(0.7f));
+
+            uint seed = (uint)Random.Shared.Next();
+            NativeLlamaMethods.LlamaSamplerChainAdd(resources.SamplerChain, NativeLlamaMethods.LlamaSamplerInitDist(seed));
+
+            int generatedTokens = 0;
+            int eosToken = NativeLlamaMethods.LlamaVocabEos(llamaVocab);
+            int lastTokenId = -1;
+            int repetitionCount = 0;
+
+            while (generatedTokens < maxTokens)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                int nextToken = _llamaFacade.SampleTokenSafe(resources.SamplerChain, llamaContext, -1);
+
+                if (nextToken == eosToken || nextToken < 0)
+                {
+                    break;
                 }
 
-                NativeLlamaMethods.LlamaSamplerChainAdd(samplerChain, NativeLlamaMethods.LlamaSamplerInitTopK(40));
-                NativeLlamaMethods.LlamaSamplerChainAdd(samplerChain, NativeLlamaMethods.LlamaSamplerInitTopP(0.95f, 1));
-                NativeLlamaMethods.LlamaSamplerChainAdd(samplerChain, NativeLlamaMethods.LlamaSamplerInitTemp(0.7f));
-
-                uint seed = (uint)Random.Shared.Next();
-                NativeLlamaMethods.LlamaSamplerChainAdd(samplerChain, NativeLlamaMethods.LlamaSamplerInitDist(seed));
-
-                int generatedTokens = 0;
-                int eosToken = NativeLlamaMethods.LlamaVocabEos(llamaVocab);
-                int lastTokenId = -1;
-                int repetitionCount = 0;
-
-                // Защита от зацикливания строки
-                string lastPieces = string.Empty;
-
-                // 6. Generation Loop
-                while (generatedTokens < maxTokens)
+                // Breaks execution to prevent infinite repeating token loops.
+                if (nextToken == lastTokenId)
                 {
-                    ct.ThrowIfCancellationRequested();
-
-                    int nextToken = _llamaFacade.SampleTokenSafe(samplerChain, llamaContext, -1);
-
-                    if (nextToken == eosToken || nextToken < 0)
+                    repetitionCount++;
+                    if (repetitionCount > 3)
                     {
                         break;
                     }
-
-                    // Защита от зацикливания одного и того же токена
-                    if (nextToken == lastTokenId)
-                    {
-                        repetitionCount++;
-                        if (repetitionCount > 3) // Если токен повторился 4 раза подряд — принудительно стоп
-                        {
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        repetitionCount = 0;
-                        lastTokenId = nextToken;
-                    }
-
-                    _llamaFacade.AcceptTokenSafe(samplerChain, nextToken);
-                    generatedTokens++;
-
-                    string piece = _llamaFacade.TokenToTextSafe(llamaVocab, nextToken);
-                    yield return piece;
-
-                    int[] nextTokenArray = { nextToken };
-                    _llamaFacade.DecodeTextBatchSafe(llamaContext, nextTokenArray, currentSequencePosition);
-                    currentSequencePosition++;
-
-                    await Task.Yield();
                 }
+                else
+                {
+                    repetitionCount = 0;
+                    lastTokenId = nextToken;
+                }
+
+                _llamaFacade.AcceptTokenSafe(resources.SamplerChain, nextToken);
+                generatedTokens++;
+
+                string piece = _llamaFacade.TokenToTextSafe(llamaVocab, nextToken);
+                yield return piece;
+
+                int[] nextTokenArray = { nextToken };
+                _llamaFacade.DecodeTextBatchSafe(llamaContext, nextTokenArray, currentSequencePosition);
+                currentSequencePosition++;
+
+                await Task.Yield();
             }
-            finally
+        }
+
+        /// <summary>
+        /// Manages unmanaged pointers for vision inference to ensure safe disposal.
+        /// </summary>
+        private sealed class InferenceResources : IDisposable
+        {
+            public IntPtr SamplerChain { get; set; } = IntPtr.Zero;
+            public IntPtr VisionBatchPtr { get; set; } = IntPtr.Zero;
+            public IntPtr ChunksPtr { get; set; } = IntPtr.Zero;
+            public IntPtr BitmapPtr { get; set; } = IntPtr.Zero;
+            public IntPtr RawRgbPtr { get; set; } = IntPtr.Zero;
+
+            public void Dispose()
             {
-                // Strict unmanaged memory cleanup
-                if (samplerChain != IntPtr.Zero) NativeLlamaMethods.LlamaSamplerFree(samplerChain);
-                if (visionBatchPtr != IntPtr.Zero) NativeMtmdMethods.BatchFree(visionBatchPtr);
-                if (chunksPtr != IntPtr.Zero) NativeMtmdMethods.InputChunksFree(chunksPtr);
-                if (bitmapPtr != IntPtr.Zero) NativeMtmdMethods.BitmapFree(bitmapPtr);
-                if (rawRgbPtr != IntPtr.Zero) Marshal.FreeHGlobal(rawRgbPtr);
+                if (SamplerChain != IntPtr.Zero) NativeLlamaMethods.LlamaSamplerFree(SamplerChain);
+                if (VisionBatchPtr != IntPtr.Zero) NativeMtmdMethods.BatchFree(VisionBatchPtr);
+                if (ChunksPtr != IntPtr.Zero) NativeMtmdMethods.InputChunksFree(ChunksPtr);
+                if (BitmapPtr != IntPtr.Zero) NativeMtmdMethods.BitmapFree(BitmapPtr);
+                if (RawRgbPtr != IntPtr.Zero) Marshal.FreeHGlobal(RawRgbPtr);
             }
         }
     }
