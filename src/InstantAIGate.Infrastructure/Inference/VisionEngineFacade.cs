@@ -1,14 +1,12 @@
 ﻿using InstantAIGate.Infrastructure.Inference.layers;
+using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
-namespace InstantAIGate.Infrastructure.Inference.Native
+namespace InstantAIGate.Infrastructure.Inference
 {
-    /// <summary>
-    /// Represents the extracted inference data ready for standard LLM evaluation.
-    /// Includes the non-causal attention flag required by models like Qwen VL.
-    /// </summary>
     public sealed record ExtractedVisionData(
         IntPtr EmbeddingsPtr,
         NativeMtmdMethods.MtmdDecoderPos[] Positions,
@@ -16,10 +14,8 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         bool RequiresNonCausalAttention
     );
 
-    /// <summary>
-    /// Encapsulates the multimodal pipeline into validated, isolated stages.
-    /// Provides strict assertions for native memory state and prevents silent failures.
-    /// </summary>
+    public sealed record PromptSegment(int[]? TextTokens, ExtractedVisionData? VisionData);
+
     public sealed class VisionEngineFacade
     {
         private readonly ILogger<VisionEngineFacade> _logger;
@@ -29,35 +25,20 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        /// <summary>
-        /// Initializes the multimodal context by binding the projection model to the text model.
-        /// Configures hardware acceleration and batch limits to prevent allocation mismatches.[cite: 2, 4]
-        /// </summary>
-        /// <param name="projectorPath">Path to the .mmproj file.</param>
-        /// <param name="textModelHandle">Handle of the loaded native llama model.</param>
-        /// <param name="useGpu">Must match the GPU execution state of the text model to prevent backend access violations.</param>
-        /// <param name="batchMaxTokens">Maximum number of tokens allowed in a single vision encoding pass.</param>
-        /// <returns>A managed context wrapping the native mtmd handle.</returns>
-        /// <exception cref="ArgumentException">Thrown when paths or handles are invalid.</exception>
-        /// <exception cref="InvalidOperationException">Thrown when native initialization fails.</exception>
         public VisionContext InitializeVision(string projectorPath, IntPtr textModelHandle, bool useGpu = true, int batchMaxTokens = 4096)
         {
             if (string.IsNullOrWhiteSpace(projectorPath))
                 throw new ArgumentException("Projector path cannot be empty.", nameof(projectorPath));
-
             if (textModelHandle == IntPtr.Zero)
                 throw new ArgumentException("Text model handle cannot be zero.", nameof(textModelHandle));
 
             var ctxParams = NativeMtmdMethods.GetDefaultContextParams();
-
             ctxParams.UseGpu = useGpu;
             ctxParams.BatchMaxTokens = batchMaxTokens;
-            // Fulfill Qwen-VL architectural requirements for grounding tasks
             ctxParams.ImageMinTokens = 1024;
             ctxParams.Warmup = true;
 
             var handle = NativeMtmdMethods.InitFromFile(projectorPath, textModelHandle, ctxParams);
-
             if (handle == IntPtr.Zero)
             {
                 _logger.LogError("Failed to initialize vision context from projector: {Path}. UseGpu: {UseGpu}", projectorPath, useGpu);
@@ -70,21 +51,10 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             return new VisionContext(handle);
         }
 
-        /// <summary>
-        /// Allocates memory for the image, initializes the native bitmap, and assigns an ID for KV-cache tracking.
-        /// Validates memory bounds and metadata consistency.
-        /// </summary>
-        /// <param name="rawRgbData">Decoded RGB byte array.</param>
-        /// <param name="width">Image width.</param>
-        /// <param name="height">Image height.</param>
-        /// <param name="hashId">Unique identifier for the image cache.</param>
-        /// <returns>A tuple containing the native bitmap pointer and the allocated RGB data pointer.</returns>
-        /// <exception cref="InvalidOperationException">Thrown when native validation fails.</exception>
         public (IntPtr BitmapPtr, IntPtr RawRgbPtr) PrepareMediaValidated(byte[] rawRgbData, uint width, uint height, string hashId)
         {
             if (rawRgbData == null || rawRgbData.Length == 0)
                 throw new ArgumentException("Image data cannot be null or empty.", nameof(rawRgbData));
-
             if (string.IsNullOrWhiteSpace(hashId))
                 throw new ArgumentException("Hash ID is required for KV caching.", nameof(hashId));
 
@@ -125,18 +95,9 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             }
 
             _logger.LogDebug("Media prepared and validated successfully. ID: {HashId}, Size: {Width}x{Height}", hashId, width, height);
-
             return (bitmapPtr, rawRgbPtr);
         }
 
-        /// <summary>
-        /// Tokenizes the prompt, applying media markers, and generates typed input chunks.
-        /// Validates tokenization success and extracts the specific vision chunk pointer.
-        /// </summary>
-        /// <param name="contextHandle">The active vision context handle.</param>
-        /// <param name="prompt">The text prompt containing the media marker.</param>
-        /// <param name="bitmapPtr">The validated native bitmap pointer.</param>
-        /// <returns>A tuple containing the chunks list pointer and the specific vision chunk pointer.</returns>
         public (IntPtr ChunksPtr, IntPtr VisionChunkPtr) TokenizeAndValidateChunks(IntPtr contextHandle, string prompt, IntPtr bitmapPtr)
         {
             if (contextHandle == IntPtr.Zero) throw new ArgumentException("Context handle cannot be zero.", nameof(contextHandle));
@@ -161,7 +122,6 @@ namespace InstantAIGate.Infrastructure.Inference.Native
 
                 var bitmaps = new[] { bitmapPtr };
                 int tokenizationResult = NativeMtmdMethods.Tokenize(contextHandle, chunksPtr, ref inputText, bitmaps, 1);
-
                 if (tokenizationResult != 0)
                 {
                     _logger.LogError("NativeMtmdMethods.Tokenize failed with code: {Code}", tokenizationResult);
@@ -216,13 +176,6 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             }
         }
 
-        /// <summary>
-        /// Aggregates only media chunks (Image/Audio) into a batch and encodes them through the vision model.
-        /// Asserts the state of batch creation and encoding execution, strictly ignoring text chunks.
-        /// </summary>
-        /// <param name="contextHandle">The active vision context handle.</param>
-        /// <param name="chunksPtr">The validated chunks list pointer.</param>
-        /// <returns>The pointer to the encoded batch.</returns>
         public IntPtr EncodeBatchSafe(IntPtr contextHandle, IntPtr chunksPtr)
         {
             if (contextHandle == IntPtr.Zero) throw new ArgumentException("Context handle cannot be zero.", nameof(contextHandle));
@@ -243,7 +196,6 @@ namespace InstantAIGate.Infrastructure.Inference.Native
                 IntPtr chunk = NativeMtmdMethods.InputChunksGet(chunksPtr, i);
                 var chunkType = NativeMtmdMethods.InputChunkGetType(chunk);
 
-                // ViT encoder only processes media. Text chunks must be explicitly skipped.
                 if (chunkType != NativeMtmdMethods.MtmdInputChunkType.Image && chunkType != NativeMtmdMethods.MtmdInputChunkType.Audio)
                 {
                     _logger.LogDebug("Skipping chunk {Index} of type {Type} during media batch allocation.", i, chunkType);
@@ -267,7 +219,6 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             }
 
             _logger.LogDebug("Starting BatchEncode for {Count} media chunks.", mediaChunksAdded);
-
             int encodeResult = NativeMtmdMethods.BatchEncode(batchPtr);
             if (encodeResult != 0)
             {
@@ -276,17 +227,9 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             }
 
             _logger.LogInformation("Batch encoding completed successfully.");
-
             return batchPtr;
         }
 
-        /// <summary>
-        /// Extracts the generated embeddings, M-RoPE positional data, and attention requirements for LLM evaluation.
-        /// </summary>
-        /// <param name="contextHandle">The active vision context handle.</param>
-        /// <param name="batchPtr">The successfully encoded batch pointer.</param>
-        /// <param name="visionChunkPtr">The specific pointer to the vision chunk.</param>
-        /// <returns>An immutable record containing the embeddings pointer, positions, and attention flags.</returns>
         public ExtractedVisionData ExtractInferenceData(IntPtr contextHandle, IntPtr batchPtr, IntPtr visionChunkPtr)
         {
             if (contextHandle == IntPtr.Zero) throw new ArgumentException("Context handle cannot be zero.", nameof(contextHandle));
@@ -321,12 +264,48 @@ namespace InstantAIGate.Infrastructure.Inference.Native
                 positions[i] = NativeMtmdMethods.ImageTokensGetDecoderPos(imageTokensPtr, 0, i);
             }
 
-            // Critical for Qwen VL: determine if this chunk requires full bidirectional attention
             bool nonCausal = NativeMtmdMethods.DecodeUseNonCausal(contextHandle, visionChunkPtr);
 
             _logger.LogDebug("Extracted data. Tokens: {Tokens}, Positions: {PosCount}, Non-Causal: {NonCausal}", tokenCount, posCount, nonCausal);
 
             return new ExtractedVisionData(embeddingsPtr, positions, (int)tokenCount, nonCausal);
+        }
+
+        public List<PromptSegment> ParseChunksIntoSegments(IntPtr contextHandle, IntPtr chunksPtr, IntPtr visionBatchPtr)
+        {
+            var segments = new List<PromptSegment>();
+            nuint chunksCount = NativeMtmdMethods.InputChunksSize(chunksPtr);
+
+            for (nuint i = 0; i < chunksCount; i++)
+            {
+                IntPtr chunk = NativeMtmdMethods.InputChunksGet(chunksPtr, i);
+                var chunkType = NativeMtmdMethods.InputChunkGetType(chunk);
+
+                if (chunkType == NativeMtmdMethods.MtmdInputChunkType.Text)
+                {
+                    IntPtr textTokensPtr = NativeMtmdMethods.InputChunkGetTokensText(chunk, out nuint nTokens);
+                    if (nTokens > 0)
+                    {
+                        int[] tokenArray = new int[nTokens];
+                        Marshal.Copy(textTokensPtr, tokenArray, 0, (int)nTokens);
+                        segments.Add(new PromptSegment(tokenArray, null));
+                    }
+                }
+                else if (chunkType == NativeMtmdMethods.MtmdInputChunkType.Image)
+                {
+                    ExtractedVisionData visionData = ExtractInferenceData(contextHandle, visionBatchPtr, chunk);
+                    segments.Add(new PromptSegment(null, visionData));
+                }
+            }
+            return segments;
+        }
+
+        public void FreeVisionResources(IntPtr visionBatchPtr, IntPtr chunksPtr, IntPtr bitmapPtr, IntPtr rawRgbPtr)
+        {
+            if (visionBatchPtr != IntPtr.Zero) NativeMtmdMethods.BatchFree(visionBatchPtr);
+            if (chunksPtr != IntPtr.Zero) NativeMtmdMethods.InputChunksFree(chunksPtr);
+            if (bitmapPtr != IntPtr.Zero) NativeMtmdMethods.BitmapFree(bitmapPtr);
+            if (rawRgbPtr != IntPtr.Zero) Marshal.FreeHGlobal(rawRgbPtr);
         }
     }
 }

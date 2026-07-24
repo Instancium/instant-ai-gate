@@ -1,4 +1,5 @@
-﻿using InstantAIGate.Infrastructure.Inference.layers;
+﻿using InstantAIGate.Infrastructure.Inference;
+using InstantAIGate.Infrastructure.Inference.layers;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging.Abstractions;
 using System;

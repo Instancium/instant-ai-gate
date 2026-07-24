@@ -1,221 +1,150 @@
 ﻿using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace InstantAIGate.Infrastructure.Inference
+namespace InstantAIGate.Infrastructure.Inference.Facades
 {
-    /// <summary>
-    /// Provides a memory-safe boundary for evaluating tokens and embeddings through the LLaMA engine.
-    /// Manages pinned memory allocations for LlamaBatch structures and strictly handles native errors.
-    /// </summary>
     public sealed class LlamaEngineFacade
     {
         private readonly ILogger<LlamaEngineFacade> _logger;
+        private readonly int _modelEmbdSize;
 
-        public LlamaEngineFacade(ILogger<LlamaEngineFacade> logger)
+        public LlamaEngineFacade(IntPtr modelHandle, ILogger<LlamaEngineFacade> logger)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _modelEmbdSize = NativeLlamaMethods.LlamaModelNEmbd(modelHandle);
+            if (_modelEmbdSize <= 0)
+            {
+                throw new InvalidOperationException("Failed to retrieve model embedding size.");
+            }
         }
 
-        /// <summary>
-        /// Evaluates a batch of standard text tokens safely by pinning managed memory arrays.
-        /// </summary>
-        /// <param name="contextHandle">The active LLaMA inference context.</param>
-        /// <param name="tokens">Array of text tokens to evaluate.</param>
-        /// <param name="startPosition">The sequence position to start decoding from.</param>
-        /// <returns>The number of tokens successfully evaluated.</returns>
-        /// <exception cref="InvalidOperationException">Thrown if native decoding fails.</exception>
-        public int DecodeTextBatchSafe(IntPtr contextHandle, int[] tokens, int startPosition)
+        public IntPtr CreateConfiguredSamplerChain(float temperature)
         {
-            if (contextHandle == IntPtr.Zero) throw new ArgumentException("Context handle cannot be zero.", nameof(contextHandle));
+            var samplerParams = NativeLlamaMethods.LlamaSamplerChainDefaultParams();
+            IntPtr chain = NativeLlamaMethods.LlamaSamplerChainInit(samplerParams);
+
+            IntPtr repetitionSampler = NativeLlamaMethods.LlamaSamplerInitPenalties(64, 1.1f, 0.1f, 0.1f);
+            if (repetitionSampler != IntPtr.Zero)
+            {
+                NativeLlamaMethods.LlamaSamplerChainAdd(chain, repetitionSampler);
+            }
+
+            NativeLlamaMethods.LlamaSamplerChainAdd(chain, NativeLlamaMethods.LlamaSamplerInitTopK(40));
+            NativeLlamaMethods.LlamaSamplerChainAdd(chain, NativeLlamaMethods.LlamaSamplerInitTopP(0.95f, 1));
+            NativeLlamaMethods.LlamaSamplerChainAdd(chain, NativeLlamaMethods.LlamaSamplerInitTemp(temperature));
+
+            uint seed = (uint)Random.Shared.Next();
+            NativeLlamaMethods.LlamaSamplerChainAdd(chain, NativeLlamaMethods.LlamaSamplerInitDist(seed));
+
+            return chain;
+        }
+
+        public void FreeSamplerChain(IntPtr chain)
+        {
+            if (chain != IntPtr.Zero)
+            {
+                NativeLlamaMethods.LlamaSamplerFree(chain);
+            }
+        }
+
+        public int GetEosToken(IntPtr vocab) => NativeLlamaMethods.LlamaVocabEos(vocab);
+
+        public int SampleNextTokenSafe(IntPtr samplerChain, IntPtr ctx, int currentPosition) =>
+            NativeLlamaMethods.LlamaSamplerSample(samplerChain, ctx, currentPosition - 1);
+
+        public void AcceptTokenSafe(IntPtr samplerChain, int token) =>
+            NativeLlamaMethods.LlamaSamplerAccept(samplerChain, token);
+
+        public string TokenToPieceSafe(IntPtr vocab, int token)
+        {
+            byte[] buffer = new byte[256];
+            int length = NativeLlamaMethods.LlamaTokenToPiece(vocab, token, buffer, buffer.Length, 0, false);
+            return length > 0 ? Encoding.UTF8.GetString(buffer, 0, length) : string.Empty;
+        }
+
+        public void DecodePromptSegmentsSafe(IntPtr ctx, List<PromptSegment> segments, ref int currentSequencePosition)
+        {
+            foreach (var segment in segments)
+            {
+                if (segment.TextTokens != null)
+                {
+                    currentSequencePosition += DecodeTextBatchSafe(ctx, segment.TextTokens, currentSequencePosition);
+                }
+                else if (segment.VisionData != null)
+                {
+                    currentSequencePosition += DecodeVisionBatchSafe(ctx, segment.VisionData, currentSequencePosition);
+                }
+            }
+        }
+
+        public unsafe int DecodeTextBatchSafe(IntPtr ctx, int[] tokens, int startPosition)
+        {
+            if (ctx == IntPtr.Zero) throw new ArgumentException("Context handle cannot be zero.", nameof(ctx));
             if (tokens == null || tokens.Length == 0) return 0;
 
-            int batchSize = tokens.Length;
-            int[] pos = new int[batchSize];
-            int[] nSeqId = new int[batchSize];
-            sbyte[] logits = new sbyte[batchSize];
-
-            for (int i = 0; i < batchSize; i++)
-            {
-                pos[i] = startPosition + i;
-                nSeqId[i] = 1;
-                logits[i] = (sbyte)((i == batchSize - 1) ? 1 : 0);
-            }
-
-            int seqIdValue = 0;
-            GCHandle hSeqIdValue = GCHandle.Alloc(seqIdValue, GCHandleType.Pinned);
-            IntPtr ptrSeqIdValue = hSeqIdValue.AddrOfPinnedObject();
-
-            IntPtr[] seqIdPtrs = new IntPtr[batchSize];
-            for (int i = 0; i < batchSize; i++)
-            {
-                seqIdPtrs[i] = ptrSeqIdValue;
-            }
-
-            GCHandle hTokens = GCHandle.Alloc(tokens, GCHandleType.Pinned);
-            GCHandle hPos = GCHandle.Alloc(pos, GCHandleType.Pinned);
-            GCHandle hNSeqId = GCHandle.Alloc(nSeqId, GCHandleType.Pinned);
-            GCHandle hLogits = GCHandle.Alloc(logits, GCHandleType.Pinned);
-            GCHandle hSeqIds = GCHandle.Alloc(seqIdPtrs, GCHandleType.Pinned);
-
+            NativeLlamaMethods.LlamaBatch batch = NativeLlamaMethods.LlamaBatchInit(tokens.Length, 0, 1);
             try
             {
-                var batch = new NativeLlamaMethods.LlamaBatch
-                {
-                    NTokens = batchSize,
-                    Token = hTokens.AddrOfPinnedObject(),
-                    Embd = IntPtr.Zero,
-                    Pos = hPos.AddrOfPinnedObject(),
-                    NSeqId = hNSeqId.AddrOfPinnedObject(),
-                    SeqId = hSeqIds.AddrOfPinnedObject(),
-                    Logits = hLogits.AddrOfPinnedObject()
-                };
+                int* tokenPtr = (int*)batch.Token;
+                int* posPtr = (int*)batch.Pos;
+                int* nSeqIdPtr = (int*)batch.NSeqId;
+                int** seqIdPtr = (int**)batch.SeqId;
+                byte* logitsPtr = (byte*)batch.Logits;
 
-                int result = NativeLlamaMethods.LlamaDecode(contextHandle, batch);
-                if (result != 0)
+                for (int i = 0; i < tokens.Length; i++)
                 {
-                    _logger.LogError("LlamaDecode failed for text batch with code: {Code}. Tokens count: {Count}", result, batchSize);
-                    throw new InvalidOperationException($"Native text decoding failed with code {result}.");
+                    tokenPtr[i] = tokens[i];
+                    posPtr[i] = startPosition + i;
+                    nSeqIdPtr[i] = 1;
+                    seqIdPtr[i][0] = 0;
+                    logitsPtr[i] = 0;
                 }
+                logitsPtr[tokens.Length - 1] = 1;
+                batch.NTokens = tokens.Length;
 
-                return batchSize;
+                int result = NativeLlamaMethods.LlamaDecode(ctx, batch);
+                if (result != 0) throw new InvalidOperationException($"Text batch decode failed with code: {result}.");
+                return tokens.Length;
             }
-            finally
-            {
-                hTokens.Free();
-                hPos.Free();
-                hNSeqId.Free();
-                hLogits.Free();
-                hSeqIds.Free();
-                hSeqIdValue.Free();
-            }
+            finally { NativeLlamaMethods.LlamaBatchFree(batch); }
         }
 
-        /// <summary>
-        /// Evaluates a batch of visual embeddings generated by the Vision Engine.
-        /// Bypasses the text token array and feeds raw vectors directly into the computational graph.
-        /// </summary>
-        /// <param name="contextHandle">The active LLaMA inference context.</param>
-        /// <param name="visionData">The extracted embeddings and positional data from libmtmd.</param>
-        /// <param name="startPosition">The sequence position to start decoding from.</param>
-        /// <returns>The number of embeddings successfully evaluated.</returns>
-        /// <exception cref="InvalidOperationException">Thrown if native decoding fails.</exception>
-        public int DecodeVisionBatchSafe(IntPtr contextHandle, ExtractedVisionData visionData, int startPosition)
+        public unsafe int DecodeVisionBatchSafe(IntPtr ctx, ExtractedVisionData visionData, int startPosition)
         {
-            if (contextHandle == IntPtr.Zero) throw new ArgumentException("Context handle cannot be zero.", nameof(contextHandle));
-            if (visionData == null || visionData.EmbeddingsPtr == IntPtr.Zero) throw new ArgumentException("Invalid vision data.", nameof(visionData));
+            if (ctx == IntPtr.Zero) throw new ArgumentException("Context handle cannot be zero.", nameof(ctx));
+            if (visionData.EmbeddingsPtr == IntPtr.Zero) throw new ArgumentException("Embeddings pointer cannot be zero.", nameof(visionData));
+            if (visionData.TokenCount <= 0) return 0;
 
-            int batchSize = visionData.TokenCount;
-            if (batchSize <= 0) return 0;
-
-            int[] pos = new int[batchSize];
-            int[] nSeqId = new int[batchSize];
-            sbyte[] logits = new sbyte[batchSize];
-
-            for (int i = 0; i < batchSize; i++)
-            {
-                // Aligning M-RoPE temporal sequence to the linear textual sequence
-                pos[i] = startPosition + i;
-                nSeqId[i] = 1;
-                logits[i] = (sbyte)((i == batchSize - 1) ? 1 : 0);
-            }
-
-            int seqIdValue = 0;
-            GCHandle hSeqIdValue = GCHandle.Alloc(seqIdValue, GCHandleType.Pinned);
-            IntPtr ptrSeqIdValue = hSeqIdValue.AddrOfPinnedObject();
-
-            IntPtr[] seqIdPtrs = new IntPtr[batchSize];
-            for (int i = 0; i < batchSize; i++)
-            {
-                seqIdPtrs[i] = ptrSeqIdValue;
-            }
-
-            GCHandle hPos = GCHandle.Alloc(pos, GCHandleType.Pinned);
-            GCHandle hNSeqId = GCHandle.Alloc(nSeqId, GCHandleType.Pinned);
-            GCHandle hLogits = GCHandle.Alloc(logits, GCHandleType.Pinned);
-            GCHandle hSeqIds = GCHandle.Alloc(seqIdPtrs, GCHandleType.Pinned);
-
+            NativeLlamaMethods.LlamaBatch batch = NativeLlamaMethods.LlamaBatchInit(visionData.TokenCount, _modelEmbdSize, 1);
             try
             {
-                var batch = new NativeLlamaMethods.LlamaBatch
-                {
-                    NTokens = batchSize,
-                    Token = IntPtr.Zero, // Must be zero when using embeddings
-                    Embd = visionData.EmbeddingsPtr,
-                    Pos = hPos.AddrOfPinnedObject(),
-                    NSeqId = hNSeqId.AddrOfPinnedObject(),
-                    SeqId = hSeqIds.AddrOfPinnedObject(),
-                    Logits = hLogits.AddrOfPinnedObject()
-                };
+                long embdBytes = (long)visionData.TokenCount * _modelEmbdSize * sizeof(float);
+                Buffer.MemoryCopy((void*)visionData.EmbeddingsPtr, (void*)batch.Embd, embdBytes, embdBytes);
 
-                int result = NativeLlamaMethods.LlamaDecode(contextHandle, batch);
-                if (result != 0)
+                int* posPtr = (int*)batch.Pos;
+                for (int i = 0; i < visionData.TokenCount; i++) posPtr[i] = (int)visionData.Positions[i].T;
+
+                int* nSeqIdPtr = (int*)batch.NSeqId;
+                int** seqIdPtr = (int**)batch.SeqId;
+                for (int i = 0; i < visionData.TokenCount; i++)
                 {
-                    _logger.LogError("LlamaDecode failed for vision embeddings with code: {Code}. Embeddings count: {Count}", result, batchSize);
-                    throw new InvalidOperationException($"Native vision decoding failed with code {result}.");
+                    nSeqIdPtr[i] = 1;
+                    seqIdPtr[i][0] = 0;
                 }
 
-                return batchSize;
+                byte* logitsPtr = (byte*)batch.Logits;
+                for (int i = 0; i < visionData.TokenCount; i++) logitsPtr[i] = 0;
+
+                batch.NTokens = visionData.TokenCount;
+                int result = NativeLlamaMethods.LlamaDecode(ctx, batch);
+                if (result != 0) throw new InvalidOperationException($"Vision batch decode failed with code: {result}.");
+                return visionData.TokenCount;
             }
-            finally
-            {
-                hPos.Free();
-                hNSeqId.Free();
-                hLogits.Free();
-                hSeqIds.Free();
-                hSeqIdValue.Free();
-            }
-        }
-
-        /// <summary>
-        /// Samples the next most probable token from the model's output logits.
-        /// </summary>
-        public int SampleTokenSafe(IntPtr samplerChain, IntPtr contextHandle, int logitIndex)
-        {
-            if (samplerChain == IntPtr.Zero) throw new ArgumentException("Sampler chain cannot be zero.", nameof(samplerChain));
-            return NativeLlamaMethods.LlamaSamplerSample(samplerChain, contextHandle, logitIndex);
-        }
-
-        /// <summary>
-        /// Accepts the sampled token to update internal sampler states (e.g., repetition penalties).
-        /// </summary>
-        public void AcceptTokenSafe(IntPtr samplerChain, int token)
-        {
-            if (samplerChain != IntPtr.Zero)
-            {
-                NativeLlamaMethods.LlamaSamplerAccept(samplerChain, token);
-            }
-        }
-
-        private readonly Decoder _utf8Decoder = Encoding.UTF8.GetDecoder();
-        private readonly byte[] _byteBuffer = new byte[256];
-        private readonly char[] _charBuffer = new char[512];
-
-        /// <summary>
-        /// Safely converts a token into text using a persistent UTF-8 decoder to handle multi-byte characters.
-        /// </summary>
-        public string TokenToTextSafe(IntPtr vocab, int token)
-        {
-            if (vocab == IntPtr.Zero) return string.Empty;
-
-            int size = NativeLlamaMethods.LlamaTokenToPiece(vocab, token, _byteBuffer, _byteBuffer.Length, 0, true);
-
-            if (size > _byteBuffer.Length)
-            {
-                // Dynamic resize if token piece is exceptionally large
-                byte[] largerBuffer = new byte[size];
-                size = NativeLlamaMethods.LlamaTokenToPiece(vocab, token, largerBuffer, largerBuffer.Length, 0, true);
-
-                int chars = _utf8Decoder.GetChars(largerBuffer, 0, size, _charBuffer, 0, flush: false);
-                return chars > 0 ? new string(_charBuffer, 0, chars) : string.Empty;
-            }
-
-            if (size <= 0) return string.Empty;
-
-            int charsDecoded = _utf8Decoder.GetChars(_byteBuffer, 0, size, _charBuffer, 0, flush: false);
-            return charsDecoded > 0 ? new string(_charBuffer, 0, charsDecoded) : string.Empty;
+            finally { NativeLlamaMethods.LlamaBatchFree(batch); }
         }
     }
 }

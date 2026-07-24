@@ -177,6 +177,15 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         [DllImport("llama", CallingConvention = CallingConvention.Cdecl, EntryPoint = "llama_sampler_free")]
         public static extern void LlamaSamplerFree(IntPtr smpl);
 
+        [DllImport("llama", CallingConvention = CallingConvention.Cdecl, EntryPoint = "llama_batch_init")]
+        public static extern LlamaBatch LlamaBatchInit(int nTokens, int embd, int nSeqMax);
+
+        [DllImport("llama", CallingConvention = CallingConvention.Cdecl, EntryPoint = "llama_batch_free")]
+        public static extern void LlamaBatchFree(LlamaBatch batch);
+
+        [DllImport("llama", CallingConvention = CallingConvention.Cdecl, EntryPoint = "llama_n_embd")]
+        public static extern int LlamaNEmbd(IntPtr model);
+
         [StructLayout(LayoutKind.Sequential)]
         public struct LlamaModelParams
         {
