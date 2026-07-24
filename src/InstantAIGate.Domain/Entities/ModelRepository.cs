@@ -1,3 +1,4 @@
+// src/InstantAIGate.Domain/Entities/ModelRepository.cs
 namespace InstantAIGate.Domain.Entities
 {
     /// <summary>
@@ -6,7 +7,7 @@ namespace InstantAIGate.Domain.Entities
     public record ModelRepository
     {
         /// <summary>
-        /// Provider name (for example, "HuggingFace" or "ModelScope").
+        /// Provider name.
         /// </summary>
         public string ProviderName { get; init; } = string.Empty;
 

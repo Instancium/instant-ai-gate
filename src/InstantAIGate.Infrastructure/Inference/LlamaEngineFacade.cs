@@ -1,13 +1,19 @@
-﻿using InstantAIGate.Infrastructure.Inference.Native;
+﻿// src/InstantAIGate.Infrastructure/Inference/Facades/LlamaEngineFacade.cs
+using InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Application.Interfaces.Inference.InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
 
 namespace InstantAIGate.Infrastructure.Inference.Facades
 {
-    public sealed class LlamaEngineFacade
+    public sealed class LlamaEngineFacade : IInferenceBackend
     {
         private readonly ILogger<LlamaEngineFacade> _logger;
         private readonly int _modelEmbdSize;
@@ -20,6 +26,11 @@ namespace InstantAIGate.Infrastructure.Inference.Facades
             {
                 throw new InvalidOperationException("Failed to retrieve model embedding size.");
             }
+        }
+
+        public Task ProcessInferenceAsync(string requestId, int[] tokens, ChannelWriter<int> writer, CancellationToken ct = default)
+        {
+            return Task.CompletedTask;
         }
 
         public IntPtr CreateConfiguredSamplerChain(float temperature)

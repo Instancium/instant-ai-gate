@@ -1,5 +1,10 @@
-﻿using InstantAIGate.Application.Dtos.Inference;
+﻿// src/InstantAIGate.Application/Interfaces/Inference/IModelManager.cs
+using InstantAIGate.Application.Dtos.Inference;
 using InstantAIGate.Domain.Dtos.Config;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace InstantAIGate.Application.Interfaces.Inference
 {
@@ -17,7 +22,6 @@ namespace InstantAIGate.Application.Interfaces.Inference
         /// <param name="ct">The token to monitor for cancellation requests.</param>
         Task LoadModelAsync(ModelSettings config, CancellationToken ct = default);
 
-
         Task SwapModelAsync(ModelSettings newConfig, CancellationToken ct = default);
 
         /// <summary>
@@ -27,7 +31,6 @@ namespace InstantAIGate.Application.Interfaces.Inference
         /// <param name="modelPath">The unique identifier or physical storage path of the model to be evicted.</param>
         /// <param name="ct">The token to monitor for cancellation requests.</param>
         Task UnloadModelAsync(string modelPath, CancellationToken ct = default);
-
 
         /// <summary>
         /// Gets the configuration of the currently active model, if any.
@@ -47,6 +50,5 @@ namespace InstantAIGate.Application.Interfaces.Inference
 
         IEnumerable<ModelRegistryStatus> GetActiveModelsStatus();
         IEnumerable<NativeModelDetails> GetNativeDetails();
-
     }
 }

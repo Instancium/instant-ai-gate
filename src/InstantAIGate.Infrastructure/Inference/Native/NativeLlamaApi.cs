@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿// src/InstantAIGate.Infrastructure/Native/NativeLlamaApi.cs
+using Microsoft.Extensions.Logging;
 using System;
 using System.Runtime.InteropServices;
 
@@ -126,8 +127,6 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         public IntPtr GetMemory(IntPtr context) => NativeLlamaMethods.LlamaGetMemory(context);
         public void ClearMemory(IntPtr memory, bool clear) => NativeLlamaMethods.LlamaMemoryClear(memory, clear);
 
-        // === Batch & Decode ===
-
         public int Decode(IntPtr context, int batchSize, IntPtr tokenPtr, IntPtr posPtr, IntPtr nSeqIdPtr, IntPtr seqIdPtr, IntPtr logitsPtr)
         {
             if (context == IntPtr.Zero) throw new ArgumentException("Context cannot be zero.", nameof(context));
@@ -177,8 +176,6 @@ namespace InstantAIGate.Infrastructure.Inference.Native
             return result;
         }
 
-        // === Vocab & Embeddings ===
-
         public IntPtr ModelGetVocab(IntPtr model) => NativeLlamaMethods.LlamaModelGetVocab(model);
         public int ModelNEmbd(IntPtr model) => NativeLlamaMethods.LlamaModelNEmbd(model);
         public int VocabEos(IntPtr vocab) => NativeLlamaMethods.LlamaVocabEos(vocab);
@@ -194,8 +191,6 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         {
             return NativeLlamaMethods.LlamaTokenToPiece(vocab, token, buffer, bufferSize, lstrip, special);
         }
-
-        // === Samplers ===
 
         public NativeSamplerChainParams SamplerChainDefaultParams()
         {

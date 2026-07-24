@@ -1,5 +1,9 @@
+// src/InstantAIGate.Domain/Entities/ModelManifest.cs
 using InstantAIGate.Domain.Enums;
 using InstantAIGate.Domain.ValueObjects;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace InstantAIGate.Domain.Entities
 {
@@ -9,7 +13,7 @@ namespace InstantAIGate.Domain.Entities
     public record ModelManifest
     {
         /// <summary>
-        /// Logical repository identifier used across the system (for example, "Qwen/Qwen3-VL-4B-Instruct-GGUF").
+        /// Logical repository identifier used across the system (for example, "provider/model-architecture-version").
         /// </summary>
         public string RepoId { get; init; }
 
