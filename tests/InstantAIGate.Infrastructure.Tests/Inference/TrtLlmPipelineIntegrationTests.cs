@@ -21,34 +21,19 @@ namespace InstantAIGate.Tests.Integration.Inference
         public async Task ExecuteAndRoute_SuccessfullyStreamsTokens()
         {
             string requestId = Guid.NewGuid().ToString();
-            int[] tokens = new[] { 10, 20, 30 };
+            int[] tokens = new[] { 99 };
             Channel<int> channel = Channel.CreateUnbounded<int>();
             using CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-            try
-            {
-                await _backend.ExecuteInferenceAsync(requestId, tokens, channel.Writer, cts.Token);
+            await _backend.ExecuteInferenceAsync(requestId, tokens, channel.Writer, cts.Token);
 
-                int count = 0;
-                await foreach (int token in channel.Reader.ReadAllAsync(cts.Token))
-                {
-                    count++;
-                    if (count >= tokens.Length)
-                    {
-                        break;
-                    }
-                }
+            int receivedToken = -1;
+            await foreach (int token in channel.Reader.ReadAllAsync(cts.Token))
+            {
+                receivedToken = token;
+            }
 
-                Assert.True(count > 0);
-            }
-            catch (DllNotFoundException)
-            {
-                Assert.True(true);
-            }
-            catch (OperationCanceledException)
-            {
-                Assert.True(true);
-            }
+            Assert.Equal(99, receivedToken);
         }
 
         [Fact]

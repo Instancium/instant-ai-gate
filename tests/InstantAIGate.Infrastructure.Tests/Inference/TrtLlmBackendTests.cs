@@ -25,18 +25,10 @@ namespace InstantAIGate.Infrastructure.Tests.Inference
             Channel<int> channel = Channel.CreateUnbounded<int>();
             using CancellationTokenSource cts = new CancellationTokenSource();
 
-            try
-            {
-                await _backend.ExecuteInferenceAsync(requestId, Array.Empty<int>(), channel.Writer, cts.Token);
+            await _backend.ExecuteInferenceAsync(requestId, Array.Empty<int>(), channel.Writer, cts.Token);
 
-                ConcurrentDictionary<string, ChannelWriter<int>> dictionary = GetActiveRequests(_backend);
-                Assert.True(dictionary.ContainsKey(requestId));
-            }
-            catch (DllNotFoundException)
-            {
-                ConcurrentDictionary<string, ChannelWriter<int>> dictionary = GetActiveRequests(_backend);
-                Assert.False(dictionary.ContainsKey(requestId));
-            }
+            ConcurrentDictionary<string, ChannelWriter<int>> dictionary = GetActiveRequests(_backend);
+            Assert.True(dictionary.ContainsKey(requestId));
         }
 
         [Fact]
@@ -46,20 +38,12 @@ namespace InstantAIGate.Infrastructure.Tests.Inference
             Channel<int> channel = Channel.CreateUnbounded<int>();
             using CancellationTokenSource cts = new CancellationTokenSource();
 
-            try
-            {
-                await _backend.ExecuteInferenceAsync(requestId, Array.Empty<int>(), channel.Writer, cts.Token);
+            await _backend.ExecuteInferenceAsync(requestId, Array.Empty<int>(), channel.Writer, cts.Token);
 
-                cts.Cancel();
+            cts.Cancel();
 
-                ConcurrentDictionary<string, ChannelWriter<int>> dictionary = GetActiveRequests(_backend);
-                Assert.False(dictionary.ContainsKey(requestId));
-            }
-            catch (DllNotFoundException)
-            {
-                ConcurrentDictionary<string, ChannelWriter<int>> dictionary = GetActiveRequests(_backend);
-                Assert.False(dictionary.ContainsKey(requestId));
-            }
+            ConcurrentDictionary<string, ChannelWriter<int>> dictionary = GetActiveRequests(_backend);
+            Assert.False(dictionary.ContainsKey(requestId));
         }
 
         [Fact]
