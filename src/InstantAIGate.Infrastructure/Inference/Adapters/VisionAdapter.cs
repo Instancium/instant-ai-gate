@@ -1,5 +1,4 @@
-﻿using InstantAIGate.Infrastructure.Inference.Facades;
-using InstantAIGate.Infrastructure.Inference.layers;
+﻿using InstantAIGate.Infrastructure.Inference.layers;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System;

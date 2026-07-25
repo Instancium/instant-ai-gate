@@ -1,6 +1,5 @@
 ﻿// src/InstantAIGate.Infrastructure/Inference/Facades/LlamaEngineFacade.cs
 using InstantAIGate.Application.Interfaces.Inference;
-using InstantAIGate.Application.Interfaces.Inference.InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 using System;
@@ -11,7 +10,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 
-namespace InstantAIGate.Infrastructure.Inference.Facades
+namespace InstantAIGate.Infrastructure.Inference
 {
     public sealed class LlamaEngineFacade : IInferenceBackend
     {
@@ -28,7 +27,7 @@ namespace InstantAIGate.Infrastructure.Inference.Facades
             }
         }
 
-        public Task ProcessInferenceAsync(string requestId, int[] tokens, ChannelWriter<int> writer, CancellationToken ct = default)
+        public Task ExecuteInferenceAsync(string requestId, int[] tokens, ChannelWriter<int> writer, CancellationToken ct = default)
         {
             return Task.CompletedTask;
         }
