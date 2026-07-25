@@ -1,7 +1,10 @@
-﻿using InstantAIGate.Application.Interfaces.Inference;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Channels;
+using System.Threading.Tasks;
+using InstantAIGate.Application.Interfaces.Inference;
 
 namespace InstantAIGate.Infrastructure.Inference
 {
@@ -19,14 +22,13 @@ namespace InstantAIGate.Infrastructure.Inference
         private readonly Task _routerTask;
         private readonly CancellationTokenSource _cancellationTokenSource;
         private readonly ConcurrentDictionary<string, ChannelWriter<int>> _activeRequests;
+        private bool _disposed;
 
         public TrtLlmBackend()
         {
             _activeRequests = new ConcurrentDictionary<string, ChannelWriter<int>>();
             _cancellationTokenSource = new CancellationTokenSource();
 
-            // Technical documentation: Isolate the blocking C-API calls in a dedicated long-running background thread 
-            // to prevent thread-pool starvation and ensure high throughput for token gathering.
             _routerTask = Task.Factory.StartNew(
                 () => RouteResponsesAsync(_cancellationTokenSource.Token),
                 _cancellationTokenSource.Token,
@@ -38,12 +40,21 @@ namespace InstantAIGate.Infrastructure.Inference
         {
             _activeRequests.TryAdd(requestId, responseWriter);
 
-            NativeBridge.c_EnqueueTask(requestId, tokens, tokens.Length);
-
             cancellationToken.Register(() =>
             {
                 _activeRequests.TryRemove(requestId, out _);
             });
+
+            try
+            {
+                NativeBridge.c_EnqueueTask(requestId, tokens, tokens.Length);
+            }
+            catch (Exception ex)
+            {
+                _activeRequests.TryRemove(requestId, out _);
+                responseWriter.TryComplete(ex);
+                throw;
+            }
 
             return Task.CompletedTask;
         }
@@ -52,37 +63,48 @@ namespace InstantAIGate.Infrastructure.Inference
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                int status = NativeBridge.c_AwaitResponses(out IntPtr requestIdPtr, out IntPtr tokenPtr, out int tokenCount);
-
-                if (status == 1 && requestIdPtr != IntPtr.Zero && tokenPtr != IntPtr.Zero)
+                try
                 {
-                    string requestId = Marshal.PtrToStringAnsi(requestIdPtr) ?? string.Empty;
+                    int status = NativeBridge.c_AwaitResponses(out IntPtr requestIdPtr, out IntPtr tokenPtr, out int tokenCount);
 
-                    if (_activeRequests.TryGetValue(requestId, out ChannelWriter<int> writer))
+                    if (status == 1 && requestIdPtr != IntPtr.Zero && tokenPtr != IntPtr.Zero)
                     {
-                        int[] tokens = new int[tokenCount];
-                        Marshal.Copy(tokenPtr, tokens, 0, tokenCount);
+                        string requestId = Marshal.PtrToStringAnsi(requestIdPtr) ?? string.Empty;
 
-                        foreach (int token in tokens)
+                        if (_activeRequests.TryGetValue(requestId, out ChannelWriter<int> writer))
                         {
-                            await writer.WriteAsync(token, cancellationToken);
+                            int[] tokens = new int[tokenCount];
+                            Marshal.Copy(tokenPtr, tokens, 0, tokenCount);
+
+                            foreach (int token in tokens)
+                            {
+                                await writer.WriteAsync(token, cancellationToken);
+                            }
                         }
                     }
+                    else
+                    {
+                        await Task.Delay(1, cancellationToken);
+                    }
                 }
-                else
+                catch (DllNotFoundException)
                 {
-                    await Task.Delay(1, cancellationToken);
+                    await Task.Delay(1000, cancellationToken);
                 }
             }
         }
 
         public void Dispose()
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             _cancellationTokenSource.Cancel();
             _routerTask.Wait();
             _cancellationTokenSource.Dispose();
+            _disposed = true;
         }
     }
-
-
 }
