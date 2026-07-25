@@ -11,22 +11,18 @@
 		<Version>1.0.9</Version>
 		<AssemblyVersion>1.0.9</AssemblyVersion>
 		<FileVersion>1.0.9</FileVersion>
-
 		<Title>InstantAIGate</Title>
 		<Product>InstantAIGate Middleware</Product>
 		<Description>Standardized. Secure. Instant Deployment. Lightweight middleware providing a self-hosted, monitored foundation for local AI applications. Fully OpenAI-compatible API on native .NET 10.</Description>
-
 		<Copyright>Copyright © 2026 Instancium™ (https://instancium.com). All rights reserved.</Copyright>
-
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-
 		<PackageTags>AI;LLM;Middleware;OpenAI-API;LocalAI;On-Premise;DotNet10</PackageTags>
 		<RepositoryType>git</RepositoryType>
 		<RepositoryUrl>https://github.com/Instancium/instant-ai-gate</RepositoryUrl>
 		<PackageProjectUrl>https://instancium.com</PackageProjectUrl>
 	</PropertyGroup>
-	
+
 	<ItemGroup>
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
@@ -36,5 +32,33 @@
 	<ItemGroup>
 		<ProjectReference Include="..\InstantAIGate.Infrastructure\InstantAIGate.Infrastructure.csproj" />
 	</ItemGroup>
+
+	<!-- Configuration for the compiled native library path -->
+	<PropertyGroup>
+		<NativeBridgeDllPath>$(MSBuildThisFileDirectory)..\InstantAIGate.Bridge\build\bin\Release\InstantAIGate.Bridge.dll</NativeBridgeDllPath>
+	</PropertyGroup>
+
+	<!-- Copy target executed before the build process (BeforeBuild) -->
+	<Target Name="CopyNativeBridgeDll" BeforeTargets="Build">
+		<Message Importance="High" Text="Looking for the native library at: $(NativeBridgeDllPath)" />
+		<Copy SourceFiles="$(NativeBridgeDllPath)"
+			  DestinationFolder="$(OutDir)"
+			  SkipUnchangedFiles="true"
+			  Condition="Exists('$(NativeBridgeDllPath)')" />
+		<Warning Text="WARNING: Native library InstantAIGate.Bridge.dll was not found. Please ensure the CMake project is built."
+				 Condition="!Exists('$(NativeBridgeDllPath)')" />
+	</Target>
+
+	<Target Name="DebugNativePath" BeforeTargets="Build">
+		<Message Importance="High" Text="[DEBUG] MSBuild is looking EXACTLY here: $([System.IO.Path]::GetFullPath('$(NativeBridgeDllPath)'))" />
+	</Target>
+	
+	<!-- Optional: Copy during the publish process -->
+	<Target Name="CopyNativeBridgeDllPublish" BeforeTargets="Publish">
+		<Copy SourceFiles="$(NativeBridgeDllPath)"
+			  DestinationFolder="$(PublishDir)"
+			  SkipUnchangedFiles="true"
+			  Condition="Exists('$(NativeBridgeDllPath)')" />
+	</Target>
 
 </Project>
