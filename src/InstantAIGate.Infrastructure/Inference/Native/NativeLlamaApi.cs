@@ -9,6 +9,7 @@ namespace InstantAIGate.Infrastructure.Inference.Native
     /// Provides memory safety assertions, batch bounds checking, and strict error handling.
     /// Acts as an isolation layer for ChatAdapter, EmbeddingAdapter, and ModelProvider.
     /// </summary>
+    [Obsolete]
     public sealed class NativeLlamaApi
     {
         private NativeLlamaMethods.GgmlLogCallback? _nativeCallback;

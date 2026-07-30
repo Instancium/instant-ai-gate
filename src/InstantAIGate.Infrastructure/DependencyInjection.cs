@@ -42,7 +42,8 @@ namespace InstantAIGate.Infrastructure
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling
             services.AddSingleton<ModelManager>();
             services.AddSingleton<IModelManager>(sp => sp.GetRequiredService<ModelManager>());
-
+            // 2. Infrastructure Layer (Facade)
+            services.AddTransient<ILlamaEngineFacade, LlamaEngineFacade>();
             services.AddTransient<IChatAdapter, ChatAdapter>();
 
             services.AddTransient<IEmbeddingAdapter, EmbeddingAdapter>();
