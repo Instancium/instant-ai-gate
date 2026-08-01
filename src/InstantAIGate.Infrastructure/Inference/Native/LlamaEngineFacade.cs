@@ -1,12 +1,11 @@
 ﻿using InstantAIGate.Application.Interfaces.Inference;
-using InstantAIGate.Infrastructure.Inference.Native;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 
-namespace InstantAIGate.Infrastructure.Inference
+namespace InstantAIGate.Infrastructure.Inference.Native
 {
     public class InferenceSettings
     {

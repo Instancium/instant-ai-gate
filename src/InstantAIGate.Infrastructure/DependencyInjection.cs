@@ -45,7 +45,7 @@ namespace InstantAIGate.Infrastructure
             // 2. Infrastructure Layer (Facade)
             services.AddTransient<ILlamaEngineFacade, LlamaEngineFacade>();
             services.AddTransient<IChatAdapter, ChatAdapter>();
-
+            services.AddTransient<IEmbeddingEngineFacade, EmbeddingEngineFacade>();
             services.AddTransient<IEmbeddingAdapter, EmbeddingAdapter>();
 
             // --- Remote Storage and File Management Services ---
