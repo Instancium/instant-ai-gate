@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Infrastructure.Inference.Facades;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 

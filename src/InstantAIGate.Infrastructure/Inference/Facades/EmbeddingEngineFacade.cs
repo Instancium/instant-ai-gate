@@ -1,13 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
 
-namespace InstantAIGate.Infrastructure.Inference.Native
+namespace InstantAIGate.Infrastructure.Inference.Facades
 {
     public class EmbeddingEngineFacade : IEmbeddingEngineFacade
     {

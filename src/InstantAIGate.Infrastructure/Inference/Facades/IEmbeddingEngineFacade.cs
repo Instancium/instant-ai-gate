@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace InstantAIGate.Infrastructure.Inference.Native
+namespace InstantAIGate.Infrastructure.Inference.Facades
 {
     public interface IEmbeddingEngineFacade
     {

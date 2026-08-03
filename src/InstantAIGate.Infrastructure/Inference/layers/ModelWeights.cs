@@ -1,5 +1,5 @@
 ﻿using InstantAIGate.Application.Interfaces.Inference;
-using InstantAIGate.Infrastructure.Inference.Native;
+using InstantAIGate.Infrastructure.Inference.Facades;
 
 namespace InstantAIGate.Infrastructure.Inference.layers
 {
@@ -13,13 +13,13 @@ namespace InstantAIGate.Infrastructure.Inference.layers
 
         private readonly bool _isOwned;
         private readonly Action? _onRelease;
-        private readonly NativeLlamaApi _nativeApi;
+        private readonly IBackendFacade _backendFacade;
 
-        public ModelWeights(IntPtr handle, bool isOwned, NativeLlamaApi nativeApi, Action? onRelease = null)
+        public ModelWeights(IntPtr handle, bool isOwned, IBackendFacade backendFacade, Action? onRelease = null)
         {
             Handle = handle;
             _isOwned = isOwned;
-            _nativeApi = nativeApi;
+            _backendFacade = backendFacade;
             _onRelease = onRelease;
         }
 
@@ -28,7 +28,7 @@ namespace InstantAIGate.Infrastructure.Inference.layers
             if (Handle != IntPtr.Zero)
             {
                 _onRelease?.Invoke();
-                if (_isOwned) _nativeApi.FreeModel(Handle);
+                if (_isOwned) _backendFacade.FreeModel(Handle);
                 Handle = IntPtr.Zero;
             }
         }

@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using InstantAIGate.Application.Dtos.Requests;
 using InstantAIGate.Application.Interfaces.Inference;
-using InstantAIGate.Infrastructure.Inference.Native;
+using InstantAIGate.Infrastructure.Inference.Facades;
 using Microsoft.Extensions.Logging;
 
 namespace InstantAIGate.Infrastructure.Inference.Adapters

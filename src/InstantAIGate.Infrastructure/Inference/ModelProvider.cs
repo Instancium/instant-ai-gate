@@ -1,6 +1,7 @@
 ﻿using InstantAIGate.Application.Dtos.Inference;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Domain.Dtos.Config;
+using InstantAIGate.Infrastructure.Inference.Facades;
 using InstantAIGate.Infrastructure.Inference.layers;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
@@ -22,8 +23,8 @@ namespace InstantAIGate.Infrastructure.Inference
     public class ModelProvider : IDisposable
     {
         private readonly ILogger<ModelProvider> _logger;
-        private readonly NativeLlamaApi _nativeApi;
-        private readonly VisionEngineFacade _visionApi;
+        private readonly IBackendFacade _backendFacade;
+        private readonly IVisionFacade _visionFasade;
 
         private readonly ConcurrentDictionary<string, IntPtr> _modelCache = new();
         private readonly ConcurrentDictionary<string, VisionContext> _visionCache = new();
@@ -38,11 +39,11 @@ namespace InstantAIGate.Infrastructure.Inference
         private static bool _isStderrRedirected = false;
         private static readonly object _stderrLock = new();
 
-        public ModelProvider(ILogger<ModelProvider> logger, NativeLlamaApi nativeApi, VisionEngineFacade visionApi)
+        public ModelProvider(ILogger<ModelProvider> logger, IBackendFacade backendFacade, IVisionFacade visionFasade)
         {
             _logger = logger;
-            _nativeApi = nativeApi;
-            _visionApi = visionApi;
+            _backendFacade = backendFacade;
+            _visionFasade = visionFasade;
             _staticLogger = logger;
 
             RedirectStderr();
@@ -72,7 +73,7 @@ namespace InstantAIGate.Infrastructure.Inference
             if (_logCallback == null)
             {
                 _logCallback = LlamaLogHandler;
-                _nativeApi.SetLogCallback(_logCallback);
+                _backendFacade.SetLogCallback(_logCallback);
             }
         }
 
@@ -192,14 +193,14 @@ namespace InstantAIGate.Infrastructure.Inference
                     if (!_isBackendInitialized)
                     {
                         _logger.LogInformation("Initializing llama.cpp backends...");
-                        _nativeApi.LoadAllBackends();
-                        _nativeApi.BackendInit();
+                        _backendFacade.LoadAllBackends();
+                        _backendFacade.BackendInit();
                         _isBackendInitialized = true;
                         SetupLlamaLogging();
 
                         try
                         {
-                            bool gpuSupport = _nativeApi.SupportsGpuOffload();
+                            bool gpuSupport = _backendFacade.SupportsGpuOffload();
                             _logger.LogInformation("GPU offload support: {Support}", gpuSupport ? "YES" : "NO");
                         }
                         catch (Exception ex)
@@ -217,7 +218,7 @@ namespace InstantAIGate.Infrastructure.Inference
                     "Loading model '{RepoId}' | GPU Layers: {Layers} | Main GPU: {Gpu} | Size: {Size} MB | Resolved Path: {Path}",
                     repoId, config.GpuLayerCount, config.MainGPU, sizeMb, config.ModelPath);
 
-                IntPtr modelHandle = _nativeApi.LoadModel(
+                IntPtr modelHandle = _backendFacade.LoadModel(
                     path: config.ModelPath,
                     gpuLayers: config.GpuLayerCount,
                     mainGpu: config.MainGPU,
@@ -237,14 +238,14 @@ namespace InstantAIGate.Infrastructure.Inference
                     {
                         try
                         {
-                            var visionContext = _visionApi.InitializeVision(config.ProjectorPath!, modelHandle);
+                            var visionContext = _visionFasade.InitializeContext(config.ProjectorPath!, modelHandle);
                             _visionCache.TryAdd(repoId, visionContext);
                             _logger.LogInformation("Vision projector loaded and bound to '{RepoId}'", repoId);
                         }
                         catch (Exception ex)
                         {
                             _logger.LogError(ex, "Failed to load vision projector for '{RepoId}'. Unloading base model.", repoId);
-                            _nativeApi.FreeModel(modelHandle);
+                            _backendFacade.FreeModel(modelHandle);
                             _modelCache.TryRemove(repoId, out _);
                             _configCache.TryRemove(repoId, out _);
                             throw;
@@ -253,7 +254,7 @@ namespace InstantAIGate.Infrastructure.Inference
                 }
                 else
                 {
-                    _nativeApi.FreeModel(modelHandle);
+                    _backendFacade.FreeModel(modelHandle);
                 }
             }
             finally
@@ -271,7 +272,7 @@ namespace InstantAIGate.Infrastructure.Inference
 
             if (_pools.TryGetValue(repoId, out var pool) && pool.TryTake(out IntPtr ctxPtr))
             {
-                _nativeApi.ClearMemory(_nativeApi.GetMemory(ctxPtr), true);
+                _backendFacade.ClearMemory(_backendFacade.GetMemory(ctxPtr), true);
                 textContext = new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
             }
             else
@@ -282,7 +283,7 @@ namespace InstantAIGate.Infrastructure.Inference
                 {
                     if (_pools.TryGetValue(repoId, out pool) && pool.TryTake(out ctxPtr))
                     {
-                        _nativeApi.ClearMemory(_nativeApi.GetMemory(ctxPtr), true);
+                        _backendFacade.ClearMemory(_backendFacade.GetMemory(ctxPtr), true);
                         textContext = new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr.Handle));
                     }
                     else if (_modelCache.TryGetValue(repoId, out IntPtr modelPtr) &&
@@ -303,7 +304,7 @@ namespace InstantAIGate.Infrastructure.Inference
                             "flash={Flash}, embeddings={Emb}, kv_quant={KvQuant}, offload_kqv={Kqv}",
                             repoId, nCtx, nBatch, flashAttn, config.Embeddings, config.KvCacheQuantization, offloadKqv);
 
-                        IntPtr newCtxPtr = _nativeApi.CreateContext(
+                        IntPtr newCtxPtr = _backendFacade.CreateContext(
                             modelPtr,
                             nCtx,
                             nBatch,
@@ -354,17 +355,17 @@ namespace InstantAIGate.Infrastructure.Inference
                 if (!_modelCache.ContainsKey(repoId))
                 {
                     _logger.LogInformation("Model '{RepoId}' is no longer active. Freeing orphaned context.", repoId);
-                    _nativeApi.FreeContext(ctxPtr);
+                    _backendFacade.FreeContext(ctxPtr);
                     return;
                 }
 
-                _nativeApi.ClearMemory(_nativeApi.GetMemory(ctxPtr), true);
+                _backendFacade.ClearMemory(_backendFacade.GetMemory(ctxPtr), true);
                 _pools.GetOrAdd(repoId, _ => new ConcurrentBag<IntPtr>()).Add(ctxPtr);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to pool context for '{RepoId}'. Freeing memory natively.", repoId);
-                _nativeApi.FreeContext(ctxPtr);
+                _backendFacade.FreeContext(ctxPtr);
             }
         }
 
@@ -373,7 +374,7 @@ namespace InstantAIGate.Infrastructure.Inference
             if (!_modelCache.TryGetValue(repoId, out IntPtr modelPtr))
                 throw new KeyNotFoundException($"Weights for '{repoId}' missing.");
 
-            return Task.FromResult(new ModelWeights(modelPtr, isOwned: false, _nativeApi));
+            return Task.FromResult(new ModelWeights(modelPtr, isOwned: false, _backendFacade));
         }
 
         public void UnloadModel(string repoId)
@@ -382,7 +383,7 @@ namespace InstantAIGate.Infrastructure.Inference
             {
                 while (pool.TryTake(out IntPtr ctxPtr))
                 {
-                    _nativeApi.FreeContext(ctxPtr);
+                    _backendFacade.FreeContext(ctxPtr);
                 }
             }
 
@@ -393,7 +394,7 @@ namespace InstantAIGate.Infrastructure.Inference
 
             if (_modelCache.TryRemove(repoId, out IntPtr modelPtr))
             {
-                _nativeApi.FreeModel(modelPtr);
+                _backendFacade.FreeModel(modelPtr);
             }
 
             _configCache.TryRemove(repoId, out _);
@@ -434,10 +435,10 @@ namespace InstantAIGate.Infrastructure.Inference
 
             foreach (var p in _pools.Values)
                 while (p.TryTake(out IntPtr ctxPtr))
-                    _nativeApi.FreeContext(ctxPtr);
+                    _backendFacade.FreeContext(ctxPtr);
 
             foreach (var modelPtr in _modelCache.Values)
-                _nativeApi.FreeModel(modelPtr);
+                _backendFacade.FreeModel(modelPtr);
 
             _pools.Clear();
             _modelCache.Clear();
@@ -449,7 +450,7 @@ namespace InstantAIGate.Infrastructure.Inference
             {
                 if (_isBackendInitialized)
                 {
-                    _nativeApi.BackendFree();
+                    _backendFacade.BackendFree();
                     _isBackendInitialized = false;
                 }
             }

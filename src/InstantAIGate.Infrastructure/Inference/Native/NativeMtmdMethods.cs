@@ -345,5 +345,28 @@ namespace InstantAIGate.Infrastructure.Inference.Native
         /// </summary>
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mtmd_image_tokens_get_decoder_pos")]
         public static extern MtmdDecoderPos ImageTokensGetDecoderPos(IntPtr imageTokens, int pos0, nuint i);
+
+
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MtmdHelperBitmapWrapper
+        {
+            public IntPtr Bitmap;
+            public IntPtr VideoCtx;
+        }
+
+        [DllImport(LibName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mtmd_helper_bitmap_init_from_file", CharSet = CharSet.Ansi)]
+        public static extern MtmdHelperBitmapWrapper HelperBitmapInitFromFile(
+            IntPtr ctx,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string fname,
+            [MarshalAs(UnmanagedType.I1)] bool placeholder);
+
+        [DllImport(LibName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mtmd_helper_bitmap_init_from_buf")]
+        public static extern MtmdHelperBitmapWrapper HelperBitmapInitFromBuf(
+            IntPtr ctx,
+            IntPtr buf,
+            nuint len,
+            [MarshalAs(UnmanagedType.I1)] bool placeholder);
+
     }
 }
