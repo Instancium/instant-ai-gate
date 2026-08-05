@@ -1,4 +1,4 @@
-namespace InstantAIGate.Infrastructure.Storage
+namespace InstantAIGate.Application.ModelManagement.Conteracts
 {
     public interface IFileStorageService
     {
@@ -8,5 +8,6 @@ namespace InstantAIGate.Infrastructure.Storage
         string GetTempPath(string destinationPath);
         void DeleteIfExists(string path);
         void MoveFileAtomic(string sourcePath, string destinationPath);
+        void MoveDirectoryAtomic(string sourceDirectoryPath, string destinationDirectoryPath);
     }
 }

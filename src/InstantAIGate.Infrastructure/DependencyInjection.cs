@@ -2,12 +2,16 @@
 using InstantAIGate.Application.Interfaces.Catalog;
 using InstantAIGate.Application.Interfaces.Inference;
 using InstantAIGate.Application.Interfaces.Storage;
+using InstantAIGate.Application.ModelManagement;
+using InstantAIGate.Application.ModelManagement.Conteracts;
+using InstantAIGate.Domain.Entities;
 using InstantAIGate.Infrastructure.Catalog;
 using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Adapters;
 using InstantAIGate.Infrastructure.Inference.Drivers;
 using InstantAIGate.Infrastructure.Inference.Facades;
 using InstantAIGate.Infrastructure.Inference.Native;
+using InstantAIGate.Infrastructure.ModelManagement;
 using InstantAIGate.Infrastructure.NvmlNative;
 using InstantAIGate.Infrastructure.Storage;
 using InstantAIGate.Infrastructure.Telemetry;
@@ -61,6 +65,18 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<IDriverStateProvider, DriverStateProvider>();
             services.AddHostedService<DriverInitializationHostedService>();
             services.AddSingleton<ITelemetryService, TelemetryService>();
+
+            // --- ModelManagement
+            services.AddSingleton<IModelConfigurationService, ModelConfigurationService>();
+            services.AddSingleton<IModelCatalog, SupportedModelsDictionary>();
+            services.AddSingleton<IFileStorageService, FileStorageService>();
+
+            services.AddHttpClient<IModelManifestResolver, HuggingFaceResolver>();
+            services.AddHttpClient<IModelSynchronizer, ModelSynchronizer>();
+
+            services.AddScoped<IModelDownloadOrchestrator, ModelDownloadOrchestrator>();
+        
+
 
             return services;
         }

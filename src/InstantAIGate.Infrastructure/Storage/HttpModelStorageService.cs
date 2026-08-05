@@ -1,5 +1,6 @@
 ﻿using InstantAIGate.Application.Dtos.Streaming;
 using InstantAIGate.Application.Interfaces.Storage;
+using InstantAIGate.Application.ModelManagement.Conteracts;
 using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
 
