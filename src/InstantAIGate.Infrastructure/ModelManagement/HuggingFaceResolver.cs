@@ -1,6 +1,7 @@
 ﻿using InstantAIGate.Application.Interfaces;
 using InstantAIGate.Application.ModelManagement.Conteracts;
 using InstantAIGate.Domain.Entities;
+using InstantAIGate.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Net.Http.Headers;
@@ -20,10 +21,10 @@ namespace InstantAIGate.Infrastructure.ModelManagement
             _configService = configService;
         }
 
-        public async Task<IEnumerable<ModelFile>> ResolveManifestAsync(SupportedModelDefinition definition, CancellationToken cancellationToken)
+        public async Task<IEnumerable<ModelFile>> ResolveManifestAsync(SupportedModelDefinition definition, ModelVariant variant, CancellationToken cancellationToken)
         {
             var files = new List<ModelFile>();
-            await TraverseDirectoryAsync(definition, definition.TargetDirectoryPath, files, cancellationToken);
+            await TraverseDirectoryAsync(definition, variant.TargetDirectoryPath, files, cancellationToken);
             return files;
         }
 
@@ -33,7 +34,7 @@ namespace InstantAIGate.Infrastructure.ModelManagement
             var requestUrl = $"https://huggingface.co/api/models/{definition.RepoId}/tree/main/{currentPath}";
             using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
 
-            if (definition.Tier == Domain.Enums.ModelTier.APIUsing && !string.IsNullOrEmpty(token))
+            if (definition.Tier == ModelTier.APIUsing && !string.IsNullOrEmpty(token))
             {
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             }
@@ -49,17 +50,17 @@ namespace InstantAIGate.Infrastructure.ModelManagement
 
             foreach (var item in items)
             {
-                if (item.Type == "directory")
+                if (item.type == "directory")
                 {
-                    await TraverseDirectoryAsync(definition, item.Path, files, cancellationToken);
+                    await TraverseDirectoryAsync(definition, item.path, files, cancellationToken);
                 }
-                else if (item.Type == "file")
+                else if (item.type == "file")
                 {
                     files.Add(new ModelFile
                     {
-                        RelativePath = item.Path,
-                        Url = $"https://huggingface.co/{definition.RepoId}/resolve/main/{item.Path}",
-                        SizeBytes = item.Size
+                        RelativePath = item.path,
+                        Url = $"https://huggingface.co/{definition.RepoId}/resolve/main/{item.path}",
+                        SizeBytes = item.size
                     });
                 }
             }

@@ -76,7 +76,7 @@ namespace InstantAIGate.Infrastructure.ModelManagement
         {
             if (!Directory.Exists(sourceDirectoryPath))
             {
-                throw new DirectoryNotFoundException($"The source directory does not exist or could not be found: {sourceDirectoryPath}");
+                throw new DirectoryNotFoundException($"The source directory does not exist: {sourceDirectoryPath}");
             }
 
             if (Directory.Exists(destinationDirectoryPath))

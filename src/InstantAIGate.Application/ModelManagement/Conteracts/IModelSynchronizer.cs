@@ -7,6 +7,6 @@ namespace InstantAIGate.Application.ModelManagement.Conteracts
 {
     public interface IModelSynchronizer
     {
-        IAsyncEnumerable<AggregateDownloadProgress> SynchronizeModelAsync(SupportedModelDefinition definition, CancellationToken cancellationToken);
+        IAsyncEnumerable<AggregateDownloadProgress> SynchronizeModelAsync(SupportedModelDefinition definition, ModelVariant variant, CancellationToken cancellationToken);
     }
 }

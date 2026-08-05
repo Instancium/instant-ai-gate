@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using InstantAIGate.Application.Interfaces;
+using InstantAIGate.Application.ModelManagement.Conteracts;
 using Microsoft.Extensions.Configuration;
 
 namespace InstantAIGate.Infrastructure.ModelManagement

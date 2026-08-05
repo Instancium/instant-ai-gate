@@ -6,6 +6,6 @@ namespace InstantAIGate.Application.ModelManagement.Conteracts
 {
     public interface IModelDownloadOrchestrator
     {
-        IAsyncEnumerable<AggregateDownloadProgress> ExecuteDownloadAsync(string repoId, CancellationToken cancellationToken);
+        IAsyncEnumerable<AggregateDownloadProgress> ExecuteDownloadAsync(string repoId, string variantId, CancellationToken cancellationToken);
     }
 }

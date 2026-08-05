@@ -21,15 +21,17 @@ namespace InstantAIGate.Infrastructure.ModelManagement
 
         public async IAsyncEnumerable<AggregateDownloadProgress> SynchronizeModelAsync(
             SupportedModelDefinition definition,
+            ModelVariant variant,
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
-            var filesEnumerable = await _resolver.ResolveManifestAsync(definition, cancellationToken);
+            var filesEnumerable = await _resolver.ResolveManifestAsync(definition, variant, cancellationToken);
             var modelFiles = filesEnumerable.ToList();
 
             long totalModelSizeBytes = modelFiles.Sum(f => f.SizeBytes);
             long totalDownloadedBytes = 0;
 
-            string targetDirectory = Path.Combine(_baseModelsDirectory, definition.RepoId.Replace("/", "_"));
+            string safeRepoName = definition.RepoId.Replace("/", "_");
+            string targetDirectory = Path.Combine(_baseModelsDirectory, safeRepoName, variant.VariantId);
             string tempDirectory = _storageService.GetTempPath(targetDirectory);
 
             _storageService.EnsureDirectoryExists(tempDirectory);

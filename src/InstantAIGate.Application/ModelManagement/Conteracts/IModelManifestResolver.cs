@@ -7,6 +7,6 @@ namespace InstantAIGate.Application.ModelManagement.Conteracts
 {
     public interface IModelManifestResolver
     {
-        Task<IEnumerable<ModelFile>> ResolveManifestAsync(SupportedModelDefinition definition, CancellationToken cancellationToken);
+        Task<IEnumerable<ModelFile>> ResolveManifestAsync(SupportedModelDefinition definition, ModelVariant variant, CancellationToken cancellationToken);
     }
 }

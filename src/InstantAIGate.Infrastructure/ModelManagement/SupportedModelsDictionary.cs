@@ -7,16 +7,28 @@ namespace InstantAIGate.Infrastructure.ModelManagement
 {
     public class SupportedModelsDictionary : IModelCatalog
     {
-        public static readonly IReadOnlyDictionary<string, SupportedModelDefinition> Models = new Dictionary<string, SupportedModelDefinition>
+        private static readonly IReadOnlyDictionary<string, SupportedModelDefinition> Models = new Dictionary<string, SupportedModelDefinition>
         {
             {
-                "onnx-community/Llama-3-8B-Instruct",
+                "Qwen/Qwen3-VL-4B-Instruct-ONNX",
                 new SupportedModelDefinition
                 {
-                    RepoId = "onnx-community/Llama-3-8B-Instruct",
-                    TargetDirectoryPath = "onnx/cuda-int4",
+                    RepoId = "Qwen/Qwen3-VL-4B-Instruct-ONNX",
                     SourceProvider = ModelSourceProvider.HuggingFace,
-                    Tier = ModelTier.Direct
+                    Tier = ModelTier.Direct,
+                    Variants = new List<ModelVariant>
+                    {
+                        new ModelVariant
+                        {
+                            VariantId = "cuda",
+                            TargetDirectoryPath = "onnxruntime/cuda/cuda-int4-rtn-block-32"
+                        },
+                        new ModelVariant
+                        {
+                            VariantId = "cpu",
+                            TargetDirectoryPath = "onnxruntime/cpu_and_mobile/cpu-int4-rtn-block-32"
+                        }
+                    }
                 }
             }
         };

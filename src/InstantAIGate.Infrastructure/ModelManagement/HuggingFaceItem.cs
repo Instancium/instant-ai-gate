@@ -6,8 +6,8 @@ namespace InstantAIGate.Infrastructure.ModelManagement
 {
     public class HuggingFaceItem
     {
-        public string Type { get; set; } = string.Empty;
-        public string Path { get; set; } = string.Empty;
-        public long Size { get; set; }
+        public string type { get; set; } = string.Empty;
+        public string path { get; set; } = string.Empty;
+        public long size { get; set; }
     }
 }

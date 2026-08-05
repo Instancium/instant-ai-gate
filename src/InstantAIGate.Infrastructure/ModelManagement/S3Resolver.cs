@@ -1,6 +1,7 @@
 ﻿using InstantAIGate.Application.Interfaces;
 using InstantAIGate.Application.ModelManagement.Conteracts;
 using InstantAIGate.Domain.Entities;
+using InstantAIGate.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Net.Http.Headers;
@@ -20,16 +21,16 @@ namespace InstantAIGate.Infrastructure.ModelManagement
             _configService = configService;
         }
 
-        public async Task<IEnumerable<ModelFile>> ResolveManifestAsync(SupportedModelDefinition definition, CancellationToken cancellationToken)
+        public async Task<IEnumerable<ModelFile>> ResolveManifestAsync(SupportedModelDefinition definition, ModelVariant variant, CancellationToken cancellationToken)
         {
             var endpoint = _configService.GetProviderConfig("S3Private", "Endpoint");
             var bucket = _configService.GetProviderConfig("S3Private", "Bucket");
             var authHeader = _configService.GetProviderConfig("S3Private", "ApiToken");
 
-            var url = $"{endpoint}/{bucket}?list-type=2&prefix={definition.TargetDirectoryPath}";
+            var url = $"{endpoint}/{bucket}?list-type=2&prefix={variant.TargetDirectoryPath}";
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
-            if (definition.Tier == Domain.Enums.ModelTier.APIUsing && !string.IsNullOrEmpty(authHeader))
+            if (definition.Tier == ModelTier.APIUsing && !string.IsNullOrEmpty(authHeader))
             {
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authHeader);
             }

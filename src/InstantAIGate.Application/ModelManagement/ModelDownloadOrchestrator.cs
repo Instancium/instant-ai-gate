@@ -25,6 +25,7 @@ namespace InstantAIGate.Application.ModelManagement
 
         public async IAsyncEnumerable<AggregateDownloadProgress> ExecuteDownloadAsync(
             string repoId,
+            string variantId,
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             var activeModels = _configService.GetActiveModelRepoIds();
@@ -39,7 +40,13 @@ namespace InstantAIGate.Application.ModelManagement
                 throw new KeyNotFoundException("Requested model is not present in the authorized whitelist catalog.");
             }
 
-            var progressStream = _synchronizer.SynchronizeModelAsync(modelDefinition, cancellationToken);
+            var variant = modelDefinition.Variants.FirstOrDefault(v => v.VariantId.Equals(variantId, StringComparison.OrdinalIgnoreCase));
+            if (variant == null)
+            {
+                throw new KeyNotFoundException($"Variant '{variantId}' is not defined for model '{repoId}'.");
+            }
+
+            var progressStream = _synchronizer.SynchronizeModelAsync(modelDefinition, variant, cancellationToken);
 
             await foreach (var progress in progressStream.WithCancellation(cancellationToken))
             {
