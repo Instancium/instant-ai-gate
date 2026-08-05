@@ -50,17 +50,17 @@ namespace InstantAIGate.Infrastructure.ModelManagement
 
             foreach (var item in items)
             {
-                if (item.type == "directory")
+                if (item.Type == "directory")
                 {
-                    await TraverseDirectoryAsync(definition, item.path, files, cancellationToken);
+                    await TraverseDirectoryAsync(definition, item.Path, files, cancellationToken);
                 }
-                else if (item.type == "file")
+                else if (item.Type == "file")
                 {
                     files.Add(new ModelFile
                     {
-                        RelativePath = item.path,
-                        Url = $"https://huggingface.co/{definition.RepoId}/resolve/main/{item.path}",
-                        SizeBytes = item.size
+                        RelativePath = item.Path,
+                        Url = $"https://huggingface.co/{definition.RepoId}/resolve/main/{item.Path}",
+                        SizeBytes = item.Size
                     });
                 }
             }
