@@ -50,8 +50,4 @@
 		<ProjectReference Include="..\InstantAIGate.Application\InstantAIGate.Application.csproj" />
 	</ItemGroup>
 
-	<ItemGroup>
-	  <Folder Include="Services\" />
-	</ItemGroup>
-
 </Project>

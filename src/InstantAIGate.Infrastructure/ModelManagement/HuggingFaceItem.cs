@@ -1,13 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using System.Text.Json.Serialization;
 
 namespace InstantAIGate.Infrastructure.ModelManagement
 {
     public class HuggingFaceItem
     {
-        public string type { get; set; } = string.Empty;
-        public string path { get; set; } = string.Empty;
-        public long size { get; set; }
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = string.Empty;
+
+        [JsonPropertyName("path")]
+        public string Path { get; set; } = string.Empty;
+
+        [JsonPropertyName("size")]
+        public long Size { get; set; }
     }
 }
