@@ -6,6 +6,7 @@ using InstantAIGate.Infrastructure.Catalog;
 using InstantAIGate.Infrastructure.Inference;
 using InstantAIGate.Infrastructure.Inference.Adapters;
 using InstantAIGate.Infrastructure.Inference.Drivers;
+using InstantAIGate.Infrastructure.Inference.Facades;
 using InstantAIGate.Infrastructure.Inference.Native;
 using InstantAIGate.Infrastructure.NvmlNative;
 using InstantAIGate.Infrastructure.Storage;
@@ -31,8 +32,8 @@ namespace InstantAIGate.Infrastructure
             services.AddSingleton<IModelRegistry, InMemoryModelRegistry>();
 
             // Holds raw native model weight references and manages low-level context recycling pools
-            services.AddSingleton<NativeLlamaApi>();
-            services.AddSingleton<NativeVisionApi>();
+            services.AddSingleton<IBackendFacade, BackendFacade>();
+            services.AddSingleton<IVisionFacade, VisionEngineFacade>();
             services.AddSingleton<ModelProvider>();
 
             // --- Single-Model Queue Architecture ---
@@ -42,9 +43,10 @@ namespace InstantAIGate.Infrastructure
             // Manages physical VRAM/RAM slot assignments, handles explicit unloading, and drives user concurrency throttling
             services.AddSingleton<ModelManager>();
             services.AddSingleton<IModelManager>(sp => sp.GetRequiredService<ModelManager>());
-
+            // 2. Infrastructure Layer (Facade)
+            services.AddTransient<ILlamaEngineFacade, LlamaEngineFacade>();
             services.AddTransient<IChatAdapter, ChatAdapter>();
-
+            services.AddTransient<IEmbeddingEngineFacade, EmbeddingEngineFacade>();
             services.AddTransient<IEmbeddingAdapter, EmbeddingAdapter>();
 
             // --- Remote Storage and File Management Services ---
