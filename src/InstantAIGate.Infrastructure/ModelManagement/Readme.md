@@ -1,6 +1,4 @@
-﻿Got it. Here is the English version of the README.md and the configuration example.
-
-# InstantAIGate.Infrastructure.ModelManagement
+﻿# InstantAIGate.Infrastructure.ModelManagement
 
 This infrastructure module is responsible for secure path resolution, downloading, and synchronizing AI model files from external storages (HuggingFace, S3). The module implements a strict whitelisting model and supports smart download resumption.
 
