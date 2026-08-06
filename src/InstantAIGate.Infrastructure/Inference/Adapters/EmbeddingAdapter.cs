@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Domain.Dtos.Config;
 using InstantAIGate.Infrastructure.Inference.Facades;
 using InstantAIGate.Infrastructure.Inference.Native;
 using Microsoft.Extensions.Logging;
@@ -32,7 +33,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
                 return Array.Empty<float[]>();
             }
 
-            var settings = _modelManager.GetActiveSettings();
+            var settings = new ModelSettings(); //_modelManager.GetActiveSettings();
             if (settings == null)
             {
                 throw new InvalidOperationException("No active model is currently loaded in the system.");

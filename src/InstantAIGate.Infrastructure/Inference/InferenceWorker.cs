@@ -46,7 +46,7 @@ namespace InstantAIGate.Infrastructure.Inference
                     }
 
                     var context = await _modelManager.AcquireContextAsync(request.RepoId, stoppingToken);
-                    request.CompletionSource.TrySetResult(context);
+                    request.CompletionSource.TrySetResult(null);
                 }
                 catch (OperationCanceledException)
                 {

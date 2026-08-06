@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using InstantAIGate.Application.Dtos.Requests;
 using InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Domain.Dtos.Config;
 using InstantAIGate.Infrastructure.Inference.Facades;
 using Microsoft.Extensions.Logging;
 
@@ -43,7 +44,7 @@ namespace InstantAIGate.Infrastructure.Inference.Adapters
             ChatRequest request,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
-            var modelSettings = _modelManager.GetActiveSettings();
+            var modelSettings = new ModelSettings(); //_modelManager.GetActiveSettings();
             if (modelSettings == null)
             {
                 throw new InvalidOperationException("No active model is currently loaded in the system.");
