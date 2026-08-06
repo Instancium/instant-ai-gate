@@ -5,8 +5,14 @@ using InstantAIGate.Application.Dtos.Inference;
 using InstantAIGate.Domain.Dtos.Config;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System;
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace InstantAIGate.Admin.Pages
 {
@@ -25,6 +31,9 @@ namespace InstantAIGate.Admin.Pages
 
         [BindProperty]
         public ModelSettings ModelSettings { get; set; } = new();
+
+        [BindProperty]
+        public string VariantId { get; set; } = string.Empty;
 
         public AIModelsModel(
             IHttpClientFactory httpClientFactory,
@@ -45,7 +54,6 @@ namespace InstantAIGate.Admin.Pages
             return Page();
         }
 
-        // --- NEW SECURE HANDLER FOR TICKETS ---
         public async Task<IActionResult> OnPostGetStreamTicketAsync()
         {
             try
@@ -54,8 +62,6 @@ namespace InstantAIGate.Admin.Pages
                 var url = $"{_apiOptions.Value.BaseUrl}/api/admin/fetch/stream-ticket";
 
                 var request = new HttpRequestMessage(HttpMethod.Post, url);
-
-                // SECURE: Attach the API key here on the server. The browser never sees it.
                 request.Headers.Add("X-Api-Key", _gatewayConfig.AdminKey);
 
                 var response = await client.SendAsync(request);
@@ -75,16 +81,15 @@ namespace InstantAIGate.Admin.Pages
                 return new StatusCodeResult(500);
             }
         }
-        // --------------------------------------
 
-        public async Task<IActionResult> OnPostStartDownloadAsync([FromQuery] string repoId)
+        public async Task<IActionResult> OnPostStartDownloadAsync([FromQuery] string repoId, [FromQuery] string variantId)
         {
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var url = $"{_apiOptions.Value.BaseUrl}/api/admin/fetch/start?repoId={Uri.EscapeDataString(repoId)}";
+                var url = $"{_apiOptions.Value.BaseUrl}/api/admin/fetch/start?repoId={Uri.EscapeDataString(repoId)}&variantId={Uri.EscapeDataString(variantId)}";
 
-                _logger.LogInformation("Requesting background asset acquisition for: {RepoId}", repoId);
+                _logger.LogInformation("Requesting background asset acquisition for: {RepoId}, Variant: {VariantId}", repoId, variantId);
                 var response = await client.PostAsync(url, null);
 
                 if (!response.IsSuccessStatusCode)
@@ -101,14 +106,15 @@ namespace InstantAIGate.Admin.Pages
             return RedirectToPage();
         }
 
-        public async Task<IActionResult> OnPostCancelDownloadAsync([FromQuery] string repoId)
+        public async Task<IActionResult> OnPostCancelDownloadAsync([FromQuery] string repoId, [FromQuery] string variantId)
         {
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var url = $"{_apiOptions.Value.BaseUrl}/api/admin/fetch/cancel?repoId={Uri.EscapeDataString(repoId)}";
+                string fetchKey = $"{repoId}::{variantId}";
+                var url = $"{_apiOptions.Value.BaseUrl}/api/admin/fetch/cancel?fetchKey={Uri.EscapeDataString(fetchKey)}";
 
-                _logger.LogInformation("Sending structural kill handle packet for: {RepoId}", repoId);
+                _logger.LogInformation("Sending structural kill handle packet for: {FetchKey}", fetchKey);
                 await client.PostAsync(url, null);
             }
             catch (Exception ex)
@@ -121,11 +127,11 @@ namespace InstantAIGate.Admin.Pages
 
         public async Task<IActionResult> OnPostLoadAsync()
         {
-            _logger.LogInformation("Processing model deployment request. Target path: {RepoId}", ModelSettings.RepoId);
+            _logger.LogInformation("Processing model deployment request. Target path: {RepoId}, Variant: {VariantId}", ModelSettings.RepoId, VariantId);
 
-            if (!ModelState.IsValid)
+            if (string.IsNullOrWhiteSpace(ModelSettings.RepoId) || string.IsNullOrWhiteSpace(VariantId))
             {
-                _logger.LogWarning("Invalid model configuration state submitted.");
+                _logger.LogWarning("Invalid model configuration state submitted. RepoId or VariantId missing.");
                 await LoadModelsDataAsync();
                 return Page();
             }
@@ -135,22 +141,15 @@ namespace InstantAIGate.Admin.Pages
                 var client = _httpClientFactory.CreateClient();
                 var url = $"{_apiOptions.Value.BaseUrl}/api/admin/models/load";
 
-                ModelSettings requestBody = new()
+                var requestBody = new
                 {
                     RepoId = ModelSettings.RepoId,
-                    ContextSize = ModelSettings.ContextSize,
-                    GpuLayerCount = ModelSettings.GpuLayerCount,
-                    FlashAttention = ModelSettings.FlashAttention,
+                    VariantId = VariantId,
                     Threads = ModelSettings.Threads > 0 ? ModelSettings.Threads : 4,
-                    MaxContexts = ModelSettings.MaxContexts > 0 ? ModelSettings.MaxContexts : 2,
-                    BatchSize = ModelSettings.BatchSize,
-                    Embeddings = ModelSettings.Embeddings,
-                    KvCacheQuantization = ModelSettings.KvCacheQuantization,
-                    MainGPU = ModelSettings.MainGPU,
-                    UseMemoryLock = ModelSettings.UseMemoryLock
+                    MaxContexts = ModelSettings.MaxContexts > 0 ? ModelSettings.MaxContexts : 2
                 };
 
-                _logger.LogInformation("Sending structural load request for model: {RepoId}", ModelSettings.RepoId);
+                _logger.LogInformation("Sending structural load request for ONNX model: {RepoId} ({VariantId})", ModelSettings.RepoId, VariantId);
                 var response = await client.PostAsJsonAsync(url, requestBody);
 
                 if (response.IsSuccessStatusCode)
@@ -180,13 +179,13 @@ namespace InstantAIGate.Admin.Pages
                 var client = _httpClientFactory.CreateClient();
                 var url = $"{_apiOptions.Value.BaseUrl}/api/admin/models/unload";
 
-                _logger.LogInformation("Requesting VRAM/RAM release for model: {RepoId}", repoId);
+                _logger.LogInformation("Requesting RAM release for model: {RepoId}", repoId);
 
                 var response = await client.PostAsJsonAsync(url, new { RepoId = repoId });
 
                 if (response.IsSuccessStatusCode)
                 {
-                    _logger.LogInformation("VRAM successfully cleared for model: {RepoId}", repoId);
+                    _logger.LogInformation("RAM successfully cleared for model: {RepoId}", repoId);
                     return RedirectToPage();
                 }
 

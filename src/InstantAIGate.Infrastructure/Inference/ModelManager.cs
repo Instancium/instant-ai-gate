@@ -1,12 +1,15 @@
-﻿using InstantAIGate.Domain.Dtos.Config;
+﻿using InstantAIGate.Application.Dtos.Inference;
+using InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Domain.Dtos.Config;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace InstantAIGate.Infrastructure.Inference
 {
-    public sealed class ModelManager : IDisposable
+    public sealed class ModelManager : IModelManager, IDisposable
     {
         private readonly ModelProvider _modelProvider;
         private readonly ILogger<ModelManager> _logger;
@@ -73,7 +76,7 @@ namespace InstantAIGate.Infrastructure.Inference
             _logger.LogInformation("Hot-Swap to '{RepoId}' completed successfully.", newConfig.RepoId);
         }
 
-        public Task<OnnxInferenceContext> AcquireContextAsync(string repoId, CancellationToken ct = default)
+        public Task<IInferenceContext> AcquireContextAsync(string repoId, CancellationToken ct = default)
         {
             if (_activeConfig == null || _activeConfig.RepoId != repoId || _isDraining)
             {
@@ -86,7 +89,7 @@ namespace InstantAIGate.Infrastructure.Inference
             {
                 var (model, tokenizer) = _modelProvider.GetNativeResources(repoId);
 
-                var context = new OnnxInferenceContext(model, tokenizer, () =>
+                IInferenceContext context = new OnnxInferenceContext(model, tokenizer, () =>
                 {
                     Interlocked.Decrement(ref _activeLeases);
                 });
@@ -125,6 +128,52 @@ namespace InstantAIGate.Infrastructure.Inference
             {
                 _globalLock.Release();
             }
+        }
+
+        public ModelSettings? GetActiveSettings()
+        {
+            return _activeConfig;
+        }
+
+        public IEnumerable<string> GetActiveModels()
+        {
+            return _activeConfig != null ? new[] { _activeConfig.RepoId } : Array.Empty<string>();
+        }
+
+        public InferenceMetrics GetMetrics()
+        {
+            int currentLeases = Volatile.Read(ref _activeLeases);
+            return new InferenceMetrics(currentLeases, 0);
+        }
+
+        public IEnumerable<ModelRegistryStatus> GetActiveModelsStatus()
+        {
+            if (_activeConfig == null) yield break;
+
+            yield return new ModelRegistryStatus(
+                _activeConfig.RepoId,
+                true,
+                Volatile.Read(ref _activeLeases),
+                _activeConfig.MaxContexts,
+                _activeConfig.GpuLayerCount,
+                _activeConfig.Type
+            );
+        }
+
+        public IEnumerable<NativeModelDetails> GetNativeDetails()
+        {
+            if (_activeConfig == null) yield break;
+
+            yield return new NativeModelDetails
+            {
+                RepoId = _activeConfig.RepoId,
+                ContextSize = _activeConfig.ContextSize,
+                GpuLayers = _activeConfig.GpuLayerCount,
+                Threads = _activeConfig.Threads,
+                FlashAttention = _activeConfig.FlashAttention,
+                IdleContextsCount = 0,
+                Backend = "onnxruntime-genai"
+            };
         }
 
         public void Dispose()

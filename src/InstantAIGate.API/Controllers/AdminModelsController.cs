@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 namespace InstantAIGate.API.Controllers
 {
     /// <summary>
-    /// Расширенная модель запроса, включающая VariantId для загрузки конкретной сборки (CPU/CUDA).
+    /// Extended request model containing VariantId to load a specific architecture build (e.g., CPU/CUDA).
     /// </summary>
     public class LoadModelRequest : ModelSettings
     {
@@ -44,10 +44,10 @@ namespace InstantAIGate.API.Controllers
         [HttpGet]
         public IActionResult GetAllModels()
         {
-            // ПРИМЕЧАНИЕ: Тебе нужно будет добавить метод GetAllModels() в IModelCatalog
+            // Temporary stub returning an empty array to satisfy the UI deserializer.
+            // TODO: Replace with actual catalog call when implemented:
             // var models = _catalog.GetAllModels(); 
-            // Пока возвращаем заглушку, чтобы код компилировался
-            return Ok(new { message = "Method needs implementation of _catalog.GetAllModels()" });
+            return Ok(Array.Empty<object>());
         }
 
         [HttpGet("active/telemetry")]
@@ -65,7 +65,7 @@ namespace InstantAIGate.API.Controllers
                 return BadRequest("Invalid request payload. Both 'repoId' and 'variantId' parameters are strictly required.");
             }
 
-            // 1. Проверка в новом белом списке
+            // 1. Check against the new catalog whitelist
             var modelDefinition = _catalog.GetModel(req.RepoId);
             if (modelDefinition == null)
             {
@@ -78,7 +78,7 @@ namespace InstantAIGate.API.Controllers
                 return NotFound($"Variant '{req.VariantId}' is not defined for model '{req.RepoId}'.");
             }
 
-            // 2. Проверка скачан ли вариант (по новой структуре папок)
+            // 2. Verify if the variant is downloaded to the directory structure
             string safeRepoName = req.RepoId.Replace("/", "_");
             string targetDirectory = Path.Combine(_baseModelsDirectory, safeRepoName, req.VariantId);
 
@@ -87,12 +87,12 @@ namespace InstantAIGate.API.Controllers
                 return StatusCode(409, new { error = "ModelNotDownloaded", message = $"The model variant '{req.VariantId}' is not downloaded to disk." });
             }
 
-            // 3. Формирование конфигурации для ModelManager
+            // 3. Formulate configuration for ModelManager
             int computingThreads = req.Threads > 0 ? req.Threads : 4;
             var config = new ModelSettings
             {
                 RepoId = req.RepoId,
-                ModelPath = targetDirectory, // Передаем папку, а не файл
+                ModelPath = targetDirectory, // Pass directory instead of a specific file
                 ContextSize = req.ContextSize,
                 MaxContexts = req.MaxContexts,
                 GpuLayerCount = req.GpuLayerCount,
@@ -107,8 +107,6 @@ namespace InstantAIGate.API.Controllers
 
             try
             {
-                // ВНИМАНИЕ: Здесь _manager.LoadModelAsync попытается вызвать _pathProvider.GetFullModelPathAsync, 
-                // который будет искать .gguf и упадет. Это нужно будет исправить на следующем шаге.
                 await _manager.LoadModelAsync(config, ct);
                 return Ok(new { status = "loaded", repoId = req.RepoId, variantId = req.VariantId, timestamp = DateTimeOffset.UtcNow });
             }

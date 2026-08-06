@@ -1,9 +1,11 @@
-﻿using Microsoft.ML.OnnxRuntimeGenAI;
+﻿using InstantAIGate.Application.Interfaces.Inference;
+using InstantAIGate.Infrastructure.Inference.layers;
+using Microsoft.ML.OnnxRuntimeGenAI;
 using System;
 
 namespace InstantAIGate.Infrastructure.Inference
 {
-    public sealed class OnnxInferenceContext : IDisposable
+    public sealed class OnnxInferenceContext : IInferenceContext
     {
         public Model ActiveModel { get; }
         public Tokenizer ActiveTokenizer { get; }
