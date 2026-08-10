@@ -2,12 +2,8 @@
   <Folder Name="/Solution Items/">
     <File Path="Directory.Build.props" />
   </Folder>
-  <Project Path="src/InstantAIGate.Admin/InstantAIGate.Admin.csproj" Id="95007af3-724e-4468-b831-d44452fab33e" />
-  <Project Path="src/InstantAiGate.API/InstantAIGate.API.csproj" />
   <Project Path="src/InstantAIGate.Application/InstantAIGate.Application.csproj" Id="b8e58004-b9da-4032-ad28-84513e5655a7" />
+  <Project Path="src/InstantAIGate.Cli/InstantAIGate.Cli.csproj" Id="5cb11ac0-3652-4c36-a1f9-f092373a5982" />
   <Project Path="src/InstantAIGate.Domain/InstantAIGate.Domain.csproj" Id="73d8afef-55e1-4aff-92f5-2797da46bae4" />
   <Project Path="src/InstantAIGate.Infrastructure/InstantAIGate.Infrastructure.csproj" Id="5f77d78c-d18f-446b-b371-590a0b882228" />
-  <Project Path="src/Runtimes/InstantAIGate.Runtimes.Linux/InstantAIGate.Runtimes.Linux.csproj" />
-  <Project Path="src/Runtimes/InstantAIGate.Runtimes.Windows/InstantAIGate.Runtimes.Windows.csproj" />
-  <Project Path="tests/InstantAIGate.API.Tests/InstantAIGate.API.Tests.csproj" />
 </Solution>
