@@ -8,11 +8,13 @@ public static class Program
 {
     public static async Task Main(string[] args)
     {
-        string modelDirectory = @"C:\models\Qwen3-VL-4B-Instruct-ONNX\onnxruntime\cpu_and_mobile\cpu-int4-rtn-block-32";
-        string testImagePath = @"C:\models\test.jpg";
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        Console.InputEncoding = System.Text.Encoding.UTF8;
 
-        // ВАЖНО: передаем ТОЛЬКО чистый текст. Адаптер сам вставит теги и JSON-обертку!
-        string prompt = "Please describe what you see in this image in detail.";
+        string modelDirectory = @"C:\models\Qwen3-VL-4B-Instruct-ONNX\onnxruntime\cuda\cuda-int4-rtn-block-32";
+        string testImagePath = @"C:\models\test-1.jpeg";
+
+        string prompt = "Please describe what you see in this image in short info. Repaeat audio file to text.";
 
         Console.WriteLine("Instantiating adapter...");
         using var adapter = new MultiModalAdapter();
@@ -20,7 +22,7 @@ public static class Program
         try
         {
             Console.WriteLine($"Initializing model from: {modelDirectory}");
-            adapter.Initialize(modelDirectory, "cpu");
+            adapter.Initialize(modelDirectory, "cuda");
             Console.WriteLine("Initialization successful. Model loaded into memory.");
 
             var images = new List<string> { testImagePath };
@@ -42,7 +44,7 @@ public static class Program
                 prompt,
                 images,
                 audios,
-                maxLength: 1024,
+                maxLength: 8192,
                 cancellationToken: cancellationTokenSource.Token
             );
 

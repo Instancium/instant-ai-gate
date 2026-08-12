@@ -1,22 +1,16 @@
 ﻿using InstantAIGate.Application.Adapters;
 using Microsoft.ML.OnnxRuntimeGenAI;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Infrastructure.Adapters
 {
     public class MultiModalAdapter : IGenAiAdapter
     {
-        private Model _model;
-        private Tokenizer _tokenizer;
-        private MultiModalProcessor _processor;
-        private string _chatTemplate;
+        private Model? _model;
+        private Tokenizer? _tokenizer;
+        private MultiModalProcessor? _processor;
+        private string? _chatTemplate;
 
         private bool _isLoaded;
         private readonly object _lockObject = new object();
@@ -36,6 +30,11 @@ namespace InstantAIGate.Infrastructure.Adapters
                 if (!string.Equals(executionProvider, "cpu", StringComparison.OrdinalIgnoreCase))
                 {
                     config.AppendProvider(executionProvider);
+
+                    if (string.Equals(executionProvider, "dml", StringComparison.OrdinalIgnoreCase))
+                    {
+                        config.Overlay("{\"past_present_share_buffer\": true}");
+                    }
                 }
 
                 _model = new Model(config);
@@ -54,23 +53,31 @@ namespace InstantAIGate.Infrastructure.Adapters
 
         public async IAsyncEnumerable<string> GenerateStreamAsync(
             string prompt,
-            IReadOnlyList<string> imagePaths,
-            IReadOnlyList<string> audioPaths,
+            IReadOnlyList<string>? imagePaths,
+            IReadOnlyList<string>? audioPaths,
             int maxLength,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            if (!_isLoaded)
+            if (!_isLoaded || _model == null || _tokenizer == null || _processor == null)
             {
                 throw new InvalidOperationException("Adapter is not initialized. Call Initialize() first.");
             }
 
-            Images images = null;
-            Audios audios = null;
-            NamedTensors inputTensors = null;
+            var model = _model;
+            var tokenizer = _tokenizer;
+            var processor = _processor;
+
+            Images? images = null;
+            Audios? audios = null;
+            NamedTensors? inputTensors = null;
 
             try
             {
-                using var generatorParams = new GeneratorParams(_model);
+                using var generatorParams = new GeneratorParams(model);
+                generatorParams.SetSearchOption("max_length", 2048);
+                generatorParams.SetSearchOption("repetition_penalty", 1.15f);
+                generatorParams.SetSearchOption("temperature", 0.7f);
+                generatorParams.SetSearchOption("top_p", 0.9f);
                 generatorParams.SetSearchOption("max_length", maxLength);
 
                 int numImages = 0;
@@ -87,7 +94,7 @@ namespace InstantAIGate.Infrastructure.Adapters
                     numAudios = audioPaths.Count;
                 }
 
-                string contentWithMediaTags = InjectMediaTags(_model.GetModelType(), prompt, numImages, numAudios);
+                string contentWithMediaTags = InjectMediaTags(model.GetModelType(), prompt, numImages, numAudios);
 
                 var messagesArray = new[]
                 {
@@ -98,18 +105,18 @@ namespace InstantAIGate.Infrastructure.Adapters
                 string templateString = string.IsNullOrEmpty(_chatTemplate) ? string.Empty : _chatTemplate;
                 string toolsString = string.Empty;
 
-                string finalPrompt = _tokenizer.ApplyChatTemplate(
+                string finalPrompt = tokenizer.ApplyChatTemplate(
                     templateString,
                     messagesJson,
                     toolsString,
                     true);
 
-                using var generator = new Generator(_model, generatorParams);
+                using var generator = new Generator(model, generatorParams);
 
-                inputTensors = _processor.ProcessImagesAndAudios(finalPrompt, images, audios);
+                inputTensors = processor.ProcessImagesAndAudios(finalPrompt, images, audios);
                 generator.SetInputs(inputTensors);
 
-                using var tokenizerStream = _tokenizer.CreateStream();
+                using var tokenizerStream = tokenizer.CreateStream();
 
                 while (!generator.IsDone())
                 {
