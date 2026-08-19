@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\InstantAIGate.Infrastructure\InstantAIGate.Infrastructure.csproj" />
   </ItemGroup>
 
