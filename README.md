@@ -2,12 +2,6 @@
   <img src="media/ig-logo.png" alt="InstantAIGate logo" height="180" />
 </p>
 
----
-
-Вот отличный перевод для вашего репозитория. Он звучит профессионально, технически грамотно и идеально подходит для международного сообщества разработчиков.
-
----
-
 # 🚀 InstantAIGate: Enterprise AI Ecosystem
 
 > **Manifesto: Product Evolution (From Monolith to Ecosystem)**
