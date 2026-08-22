@@ -4,10 +4,7 @@ using InstantAIGate.Core.DTOs.Common;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Spectre.Console;
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
+
 
 namespace InstantAIGate.Cli
 {
@@ -78,16 +75,40 @@ namespace InstantAIGate.Cli
                 IChatAdapter? activeAdapter = null;
                 ModelManifest? activeManifest = null;
                 List<ChatMessage> chatHistory = new();
-                List<MessagePart> nextMessageParts = new(); // Holds images attached before sending text
+                List<MessagePart> nextMessageParts = new();
+       
+                string historyFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cli_history.txt");
+
+                if (File.Exists(historyFilePath))
+                {
+                    var savedHistory = File.ReadAllLines(historyFilePath);
+                    ReadLine.AddHistory(savedHistory);
+                }
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    string input = AnsiConsole.Ask<string>("[cyan]User:[/] ");
+                    AnsiConsole.Markup("[cyan]🧑 User:[/] ");
+                    string input = ReadLine.Read("");
 
                     if (string.IsNullOrWhiteSpace(input))
                     {
                         continue;
                     }
+
+        
+                    ReadLine.AddHistory(input);
+
+                    try
+                    {
+                        var currentHistory = ReadLine.GetHistory();
+                        if (currentHistory.Count > 100)
+                        {
+              
+                            currentHistory = currentHistory.GetRange(currentHistory.Count - 100, 100);
+                        }
+                        File.WriteAllLines(historyFilePath, currentHistory);
+                    }
+                    catch {  }
 
                     // --- COMMAND HANDLING ---
                     if (input.StartsWith('/'))
@@ -112,6 +133,16 @@ namespace InstantAIGate.Cli
                         {
                             chatHistory.Clear();
                             nextMessageParts.Clear();
+
+                            AnsiConsole.Clear();
+
+                            AnsiConsole.Write(
+                                new FigletText("InstantAIGate")
+                                    .LeftJustified()
+                                    .Color(Color.Blue));
+                            AnsiConsole.MarkupLine($"[green]Successfully loaded {models.Count} model configurations.[/]");
+                            AnsiConsole.MarkupLine("Type [yellow]/help[/] for commands.\n");
+
                             AnsiConsole.MarkupLine("[green]Chat history cleared.[/]");
                         }
                         else if (command == "/image")
@@ -134,13 +165,11 @@ namespace InstantAIGate.Cli
                                 continue;
                             }
 
-                            // Clean up previous model to free VRAM
                             activeAdapter?.Dispose();
                             activeAdapter = null;
                             activeManifest = targetModel;
                             chatHistory.Clear();
 
-                            // Eager loading: Load the model into VRAM immediately using a nice spinner
                             try
                             {
                                 await AnsiConsole.Status()
@@ -184,15 +213,14 @@ namespace InstantAIGate.Cli
                         Model = activeManifest.Id,
                         Messages = chatHistory,
                         MaxTokens = 1024,
-                        Temperature = 0.1f
+                        Temperature = 0.1f 
                     };
 
-                    AnsiConsole.Markup("[blue]AI:[/] ");
+                    AnsiConsole.Markup("[blue]🤖 AI:[/] \n");
 
                     try
                     {
                         var fullResponse = new System.Text.StringBuilder();
-
 
                         await foreach (var token in activeAdapter.GenerateStreamAsync(chatRequest, cancellationToken))
                         {
