@@ -7,4 +7,5 @@
   <Project Path="src/InstantAIGate.Core/InstantAIGate.Core.csproj" Id="14f41088-5440-460c-a6f2-3991814b9d23" />
   <Project Path="src/InstantAIGate.Domain/InstantAIGate.Domain.csproj" Id="73d8afef-55e1-4aff-92f5-2797da46bae4" />
   <Project Path="src/InstantAIGate.Infrastructure/InstantAIGate.Infrastructure.csproj" Id="5f77d78c-d18f-446b-b371-590a0b882228" />
+  <Project Path="src/InstantAIGate.Runners.Onnx/InstantAIGate.Runners.Onnx.csproj" Id="f6407129-c2fc-4c6a-bfd8-ebf1e24f17ec" />
 </Solution>
