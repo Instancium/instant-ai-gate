@@ -95,7 +95,6 @@ namespace InstantAIGate.Cli
                         continue;
                     }
 
-        
                     ReadLine.AddHistory(input);
 
                     try
@@ -103,7 +102,6 @@ namespace InstantAIGate.Cli
                         var currentHistory = ReadLine.GetHistory();
                         if (currentHistory.Count > 100)
                         {
-              
                             currentHistory = currentHistory.GetRange(currentHistory.Count - 100, 100);
                         }
                         File.WriteAllLines(historyFilePath, currentHistory);
@@ -212,11 +210,11 @@ namespace InstantAIGate.Cli
                     {
                         Model = activeManifest.Id,
                         Messages = chatHistory,
-                        MaxTokens = 1024,
+                        MaxTokens = 8192,
                         Temperature = 0.1f 
                     };
 
-                    AnsiConsole.Markup("[blue]🤖 AI:[/] \n");
+                    AnsiConsole.Markup("[blue]🤖 AI:[/] ");
 
                     try
                     {
