@@ -74,8 +74,8 @@ namespace InstantAIGate.Infrastructure.Adapters
             try
             {
                 using var generatorParams = new GeneratorParams(model);
-                generatorParams.SetSearchOption("max_length", 2048);
-                generatorParams.SetSearchOption("repetition_penalty", 1.0f);
+                generatorParams.SetSearchOption("max_length", 4096);
+                generatorParams.SetSearchOption("repetition_penalty", 1.2f);
                 generatorParams.SetSearchOption("temperature", 0.1f);
                 generatorParams.SetSearchOption("top_p", 0.9f);
                 generatorParams.SetSearchOption("max_length", maxLength);

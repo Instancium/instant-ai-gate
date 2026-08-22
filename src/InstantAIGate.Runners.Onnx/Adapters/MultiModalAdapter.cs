@@ -107,7 +107,7 @@ namespace InstantAIGate.Runners.Onnx.Adapters
                         else if (part is ImageUrlPart imagePart)
                         {
                             numImages++;
-                            string tempPath = await ProcessImageToTempFileAsync(imagePart.ImageUrl.Url, cancellationToken);
+                            string tempPath = await PrepareImagePathAsync(imagePart.ImageUrl.Url, cancellationToken);
                             tempImagePaths.Add(tempPath);
                         }
                     }
@@ -208,41 +208,61 @@ namespace InstantAIGate.Runners.Onnx.Adapters
             return "cpu";
         }
 
-        private async Task<string> ProcessImageToTempFileAsync(string imageUrl, CancellationToken cancellationToken)
+        private async Task<string> PrepareImagePathAsync(string imageUrl, CancellationToken cancellationToken)
         {
-            string tempFilePath = Path.GetTempFileName() + ".png";
-
+        
             if (imageUrl.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
             {
                 var commaIndex = imageUrl.IndexOf(',');
                 if (commaIndex > -1)
                 {
+                  
+                    string header = imageUrl.Substring(0, commaIndex);
+                    string extension = ".png"; 
+                    if (header.Contains("jpeg", StringComparison.OrdinalIgnoreCase) || header.Contains("jpg", StringComparison.OrdinalIgnoreCase))
+                        extension = ".jpg";
+                    else if (header.Contains("webp", StringComparison.OrdinalIgnoreCase))
+                        extension = ".webp";
+
+                    string tempFilePath = Path.ChangeExtension(Path.GetTempFileName(), extension);
                     var base64Data = imageUrl.Substring(commaIndex + 1);
                     byte[] imageBytes = Convert.FromBase64String(base64Data);
                     await File.WriteAllBytesAsync(tempFilePath, imageBytes, cancellationToken);
+                    return tempFilePath;
                 }
             }
-            else if (imageUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+
+            if (imageUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
+                string extension = Path.GetExtension(new Uri(imageUrl).AbsolutePath);
+                if (string.IsNullOrEmpty(extension)) extension = ".png";
+
+                string tempFilePath = Path.ChangeExtension(Path.GetTempFileName(), extension);
                 using var httpClient = new System.Net.Http.HttpClient();
                 byte[] imageBytes = await httpClient.GetByteArrayAsync(imageUrl, cancellationToken);
                 await File.WriteAllBytesAsync(tempFilePath, imageBytes, cancellationToken);
-            }
-            else
-            {
-                throw new NotSupportedException("Unsupported image URL format.");
+                return tempFilePath;
             }
 
-            return tempFilePath;
+     
+            string cleanPath = imageUrl.Trim('"');
+            if (File.Exists(cleanPath))
+            {
+                return cleanPath;
+            }
+
+            throw new FileNotFoundException($"Image file not found or unsupported format: {cleanPath}");
         }
 
         private void CleanupTempFiles(IEnumerable<string> filePaths)
         {
+            string systemTempFolder = Path.GetTempPath();
+
             foreach (var path in filePaths)
             {
                 try
                 {
-                    if (File.Exists(path))
+                    if (File.Exists(path) && path.StartsWith(systemTempFolder, StringComparison.OrdinalIgnoreCase))
                     {
                         File.Delete(path);
                     }
