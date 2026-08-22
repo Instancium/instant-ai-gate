@@ -25,7 +25,7 @@ InstantAIGate.Core/
 │   ├── Chat/                     # Text generation contracts (IInferenceEngine)
 │   └── Flow/                     # RAG and pipeline contracts (IDocumentParser)
 │
-├── Models/                       # DTOs - strictly 'record' types
+├── DTOs/                         # DTOs - strictly 'record' types
 │   ├── Common/                   # Shared models (ErrorResponse)
 │   ├── Chat/                     # Chat structures (ChatRequest, ChatResponse, Message)
 │   └── Flow/                     # Pipeline structures (GraphNode, DocumentChunk)

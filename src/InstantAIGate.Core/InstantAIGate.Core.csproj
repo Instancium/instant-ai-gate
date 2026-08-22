@@ -7,10 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="Interfaces\" />
-    <Folder Include="DTOs\" />
-    <Folder Include="Exceptions\" />
-    <Folder Include="Enums\" />
+    <Folder Include="Abstractions\Common\" />
+    <Folder Include="Enums\Common\" />
   </ItemGroup>
 
 </Project>
