@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  instantaigate:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - models-data:/app/models
+    environment:
+      - Network__Host=0.0.0.0
+      - Network__Port=5000
+      - Network__AllowRemoteAccess=true
+      - Network__RequireAuthentication=true
+    restart: unless-stopped
+
+volumes:
+  models-data:
