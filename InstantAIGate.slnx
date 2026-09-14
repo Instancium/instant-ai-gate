@@ -2,5 +2,11 @@
   <Folder Name="/Solution Items/">
     <File Path="README.md" />
   </Folder>
-  <Folder Name="/src/" />
+  <Folder Name="/src/">
+    <Project Path="src/InstantAIGate.Cli/InstantAIGate.Cli.csproj" />
+    <Project Path="src/InstantAIGate.Core/InstantAIGate.Core.csproj" />
+    <Project Path="src/InstantAIGate.Native/InstantAIGate.Native.csproj" />
+    <Project Path="src/InstantAIGate.Server/InstantAIGate.Server.csproj" />
+    <Project Path="src/InstantAIGate.SSR/InstantAIGate.SSR.csproj" />
+  </Folder>
 </Solution>
