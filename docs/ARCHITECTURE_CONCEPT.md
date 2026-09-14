@@ -1,4 +1,3 @@
-Here is the professional English translation of the text, strictly adhering to the strategic vocabulary, tone of voice, and narrative architecture defined in the Instancium Communication Playbook 3.0.
 
 ***
 
