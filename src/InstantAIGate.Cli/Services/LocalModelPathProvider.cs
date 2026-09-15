@@ -27,6 +27,8 @@ public class LocalModelPathProvider : IModelPathProvider
     /// <summary>
     /// Gets the full file path for the specified model repository.
     /// </summary>
+    /// <param name="repoId">Model repository identifier.</param>
+    /// <returns>Full file path to the model.</returns>
     public Task<string> GetFullModelPathAsync(string repoId)
     {
         string sanitizedId = repoId.Replace('/', '_').Replace('\\', '_');

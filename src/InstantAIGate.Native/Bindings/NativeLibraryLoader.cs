@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: (c) InstantAI Gate Contributors
-// SPDX-License-Identifier: MIT
-
 using System;
 using System.Runtime.InteropServices;
 
@@ -9,7 +6,7 @@ namespace InstantAIGate.Native.Bindings;
 /// <summary>
 /// Handles dynamic loading of native libraries for llama.cpp and mtmd.
 /// </summary>
-internal static class NativeLibraryLoader
+public static class NativeLibraryLoader
 {
     private static readonly object LockObj = new();
     private static bool _isInitialized;

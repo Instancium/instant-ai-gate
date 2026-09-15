@@ -6,8 +6,8 @@ using System.Threading.Tasks;
 using InstantAIGate.Cli.Services;
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Interfaces.Inference;
-using InstantAIGate.Core.Services.Inference;
-using InstantAIGate.Native.Inference;
+using InstantAIGate.Native.Bindings;
+using InstantAIGate.Native.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +21,23 @@ public class Program
     /// </summary>
     public static async Task Main(string[] args)
     {
+
+        try
+        {
+            Console.WriteLine("Loading native libraries...");
+            if (!NativeLibraryLoader.Load())
+            {
+                Console.Error.WriteLine("Failed to load native libraries!");
+                return;
+            }
+            Console.WriteLine("Native libraries loaded successfully.");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Native library loading failed: {ex.Message}");
+            return;
+        }
+
         var services = new ServiceCollection();
         ConfigureServices(services);
 
@@ -50,8 +67,10 @@ public class Program
             await manager.LoadModelAsync(config, CancellationToken.None);
 
             var metrics = manager.GetMetrics();
-            logger.LogInformation("Model loaded. Active leases: {Leases}, Pending: {Pending}",
-                metrics.ActiveLeases, metrics.PendingRequests);
+            logger.LogInformation(
+                "Model loaded. Active leases: {Leases}, Pending: {Pending}",
+                metrics.ActiveLeases,
+                metrics.PendingRequests);
 
             logger.LogInformation("Acquiring context for inference...");
             using var context = await manager.AcquireContextAsync(config.RepoId, CancellationToken.None);
@@ -64,11 +83,17 @@ public class Program
         {
             logger.LogError(ex, "Fatal error during CLI execution.");
         }
+        finally
+        {
+        
+            NativeLibraryLoader.Unload();
+        }
     }
 
     /// <summary>
     /// Configures dependency injection container.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     private static void ConfigureServices(IServiceCollection services)
     {
         services.AddLogging(builder =>
@@ -77,11 +102,10 @@ public class Program
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        services.AddSingleton<IBackendFacade, BackendFacade>();
-        services.AddSingleton<IVisionFacade, VisionFacade>();
+        // Register all core and native inference services
+        services.AddInstantAIGateInference();
+
+        // Register environment-specific path provider
         services.AddSingleton<IModelPathProvider>(new LocalModelPathProvider("./models"));
-        services.AddSingleton<RequestQueue>();
-        services.AddSingleton<ModelProvider>();
-        services.AddSingleton<IModelManager, ModelManager>();
     }
 }

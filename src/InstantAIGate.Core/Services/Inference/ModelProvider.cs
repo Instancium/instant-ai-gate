@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 /// Manages model loading, context pooling, and inference lifecycle.
 /// Uses IBackendFacade for all native operations and IVisionFacade for multimodal support.
 /// </summary>
-public class ModelProvider : IDisposable
+public class ModelProvider : IModelProvider, IDisposable
 {
     private readonly ILogger<ModelProvider> _logger;
     private readonly IBackendFacade _backendFacade;
@@ -372,7 +372,7 @@ public class ModelProvider : IDisposable
         }
     }
 
-    internal Task<ModelWeights> GetWeightsAsync(string repoId, CancellationToken ct = default)
+    public Task<ModelWeights> GetWeightsAsync(string repoId, CancellationToken ct = default)
     {
         if (!_modelCache.TryGetValue(repoId, out IntPtr modelPtr))
             throw new KeyNotFoundException($"Weights for '{repoId}' missing.");
@@ -464,4 +464,6 @@ public class ModelProvider : IDisposable
             }
         }
     }
+
+
 }
