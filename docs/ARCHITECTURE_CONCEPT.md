@@ -15,10 +15,12 @@ It serves as a standardized interface (*Interoperability*) between computational
 2. **Technological Coexistence:** The solution is designed to operate across diverse environments: as a native Windows application, a Windows Service, and an isolated Docker container in a Linux environment.
 3. **Zero-Trust Local with Scalability:** By default, all administrative interfaces (SignalR, management API) are strictly bound to the loopback interface (`127.0.0.1`) to minimize the *Reduced Attack Surface*. However, the architecture provides a configuration mode for server deployment, where access is regulated via authentication and encryption mechanisms, preserving the *Controlled Data Perimeter*.
 4. **Human-Centric Architecture:** The module provides transparent telemetry and management, allowing an engineer or administrator to maintain full control over the model lifecycle and resource consumption.
+5. **Native Performance via P/Invoke:** Direct integration with `llama.cpp` through low-level P/Invoke bindings eliminates HTTP proxy overhead, enabling high-performance Vulkan-accelerated inference with minimal latency.
 
 ## 3. Module Objectives
 * Provide other Instancium solutions with a unified, standardized API (OpenAI-compatible) for working with local LLM/VLM models (GGUF).
 * Ensure native, high-performance operation with multimodal models (e.g., Qwen-VL) through direct calls (P/Invoke) to the `llama.cpp` core, bypassing redundant in-process HTTP proxies.
+* Implement Vulkan backend support for GPU acceleration across Windows and Linux platforms without vendor lock-in (NVIDIA CUDA/AMD ROCm).
 * Implement a built-in mechanism for secure downloading, versioning, and caching of models (SSR library) without dependency on external package managers.
 
 ---
@@ -33,10 +35,18 @@ InstantAIGate.sln
 │   │   ├── Models/                       # Data transfer objects and configuration models
 │   │   └── Services/                     # Core orchestration logic (e.g., ModelOrchestrator)
 │   │
-│   ├── InstantAIGate.Native/             # P/Invoke wrappers for native llama.cpp libraries
-│   │   ├── Bindings/                     # Direct C API mappings (llama.h, mtmd.h)
+│   ├── InstantAIGate.Native/             # P/Invoke wrappers for native llama.cpp libraries (Vulkan backend)
+│   │   ├── Bindings/                     # Direct C API mappings (llama.h, mtmd.h) - Low-level DllImports
+│   │   │   ├── LlamaNative.cs            # Vulkan-ready llama.h function imports
+│   │   │   ├── MtmdNative.cs             # Multimodal mtmd.h function imports
+│   │   │   ├── LlamaTypes.cs             # Structs, enums, constants for llama.cpp
+│   │   │   ├── MtmdTypes.cs              # Structs, enums for multimodal context
+│   │   │   └── NativeLibraryLoader.cs    # Dynamic library loading (win-x64/linux-x64)
 │   │   ├── Core/                         # High-level C# abstractions over native pointers (IDisposable)
-│   │   └── Sampling/                     # Sampler chain management and token processing
+│   │   │   ├── LlamaModel.cs             # Model lifecycle and tokenization wrapper
+│   │   │   ├── LlamaContext.cs           # Inference context and batch processing
+│   │   │   └── MultiModalContext.cs      # Image/audio encoding via mtmd
+│   │   └── Sampling/                     # Sampler chain management and token processing (future)
 │   │
 │   ├── InstantAIGate.SSR/                # Model Service & Telemetry library
 │   │   ├── Downloader/                   # Resumable model downloading with integrity checks (SHA256)
