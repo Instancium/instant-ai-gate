@@ -373,37 +373,6 @@ public struct LlamaSamplerSeqConfig
 }
 
 /// <summary>
-/// Parameters for context initialization.
-/// </summary>
-[StructLayout(LayoutKind.Sequential)]
-public struct LlamaContextParams
-{
-    public uint NCtx;
-    public uint NBatch;
-    public uint NUbatch;
-    public uint NSeqMax;
-    public uint NRsSeq;
-    public uint NOutputsMax;
-    public uint NOutputsMaxPerSeq;
-    public int NThreads;
-    public int NThreadsBatch;
-    public LlamaContextType CtxType;
-    public LlamaPoolingType PoolingType;
-    public LlamaAttentionType AttentionType;
-    public LlamaFlashAttnType FlashAttnType;
-    [MarshalAs(UnmanagedType.I1)]
-    public bool Embeddings;
-    [MarshalAs(UnmanagedType.I1)]
-    public bool OffloadKqv;
-    [MarshalAs(UnmanagedType.I1)]
-    public bool FlashAttn;
-    [MarshalAs(UnmanagedType.I1)]
-    public bool NoPerLayerMutableState;
-    public IntPtr Schedulers;
-    public IntPtr OpOverrides;
-}
-
-/// <summary>
 /// Parameters for sampler chain initialization.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -503,3 +472,110 @@ public sealed class LlamaMemory : SafeHandle
         return true;
     }
 }
+
+
+/// <summary>
+/// GGML data types for KV cache and tensors.
+/// </summary>
+public enum GgmlType
+{
+    F32 = 0,
+    F16 = 1,
+    Q4_0 = 2,
+    Q4_1 = 3,
+    Q5_0 = 6,
+    Q5_1 = 7,
+    Q8_0 = 8,
+    Q8_1 = 9,
+    Q2_K = 10,
+    Q3_K = 11,
+    Q4_K = 12,
+    Q5_K = 13,
+    Q6_K = 14,
+    IQ4_NL = 15,
+    IQ4_XS = 16,
+    IQ3_XXS = 17,
+    IQ3_S = 18,
+    IQ2_S = 19,
+    IQ2_XS = 20,
+    IQ1_S = 21,
+    IQ1_M = 22,
+    BF16 = 23
+}
+
+/// <summary>
+/// Parameters for context initialization.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct LlamaContextParams
+{
+    public uint NCtx;
+    public uint NBatch;
+    public uint NUbatch;
+    public uint NSeqMax;
+    public uint NRsSeq;
+    public uint NOutputsMax;
+    public uint NOutputsMaxPerSeq;
+    public int NThreads;
+    public int NThreadsBatch;
+    public LlamaContextType CtxType;
+    public LlamaPoolingType PoolingType;
+    public LlamaAttentionType AttentionType;
+    public LlamaFlashAttnType FlashAttnType;
+
+    // RoPE parameters (required for struct size alignment with latest llama.h)
+    public float RopeFreqBase;
+    public float RopeFreqScale;
+    public float YarnExtFactor;
+    public float YarnAttnFactor;
+    public float YarnBetaFast;
+    public float YarnBetaSlow;
+    public uint YarnOrigCtx;
+    public float DefragThold;
+
+    public IntPtr CbEval;
+    public IntPtr CbEvalUserData;
+
+    // KV Cache types [EXPERIMENTAL]
+    public GgmlType TypeK;
+    public GgmlType TypeV;
+
+    public IntPtr AbortCallback;
+    public IntPtr AbortCallbackData;
+
+    [MarshalAs(UnmanagedType.I1)]
+    public bool Embeddings;
+    [MarshalAs(UnmanagedType.I1)]
+    public bool OffloadKqv;
+    [MarshalAs(UnmanagedType.I1)]
+    public bool NoPerf;
+    [MarshalAs(UnmanagedType.I1)]
+    public bool OpOffload;
+    [MarshalAs(UnmanagedType.I1)]
+    public bool SwaFull;
+    [MarshalAs(UnmanagedType.I1)]
+    public bool KvUnified;
+
+    public IntPtr Samplers;
+    public nuint NSamplers;
+    public IntPtr CtxOther;
+}
+
+/// <summary>
+/// GGML log levels for native logging.
+/// </summary>
+public enum GgmlLogLevel
+{
+    None = 0,
+    Info = 1,
+    Warn = 2,
+    Error = 3,
+    Debug = 4,
+    Cont = 5,
+}
+
+/// <summary>
+/// Delegate for GGML log callback.
+/// </summary>
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+public delegate void GgmlLogCallback(GgmlLogLevel level, IntPtr text, IntPtr userData);

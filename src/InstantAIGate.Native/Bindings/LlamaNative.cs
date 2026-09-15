@@ -303,6 +303,16 @@ internal static partial class LlamaNative
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr llama_get_memory(IntPtr ctx);
 
+    /// <summary>
+    /// Clears the memory contents.
+    /// </summary>
+    /// <param name="mem">Memory handle returned by llama_get_memory.</param>
+    /// <param name="data">If true, data buffers are also cleared together with the metadata.</param>
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void llama_memory_clear(
+        IntPtr mem,
+        [MarshalAs(UnmanagedType.I1)] bool data);
+
     #endregion
 
     #region Encoding and Decoding
@@ -686,6 +696,23 @@ internal static partial class LlamaNative
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, BestFitMapping = false, ThrowOnUnmappableChar = true)]
     public static extern LlamaLoadMode llama_load_mode_from_str(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string str);
+
+
+    /// <summary>
+    /// Gets the current log callback and user data.
+    /// </summary>
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void llama_log_get(
+        out GgmlLogCallback logCallback,
+        out IntPtr userData);
+
+    /// <summary>
+    /// Sets the log callback for all future logging events.
+    /// </summary>
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void llama_log_set(
+        GgmlLogCallback logCallback,
+        IntPtr userData);
 
     #endregion
 

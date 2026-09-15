@@ -23,11 +23,14 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
+	<ItemGroup>
+	  <ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
+	</ItemGroup>
 
 	<!-- Post-build: Recreate symlinks in the output directory based on the actual files present.
        This ensures the application root has correct symlinks without duplicate .so.* files. -->
 	<Target Name="CreateLinuxSymlinks" AfterTargets="CopyFilesToOutputDirectory" Condition="'$(OS)' != 'Windows_NT'">
-		<Exec Command="bash -c 'cd $(OutDir) &amp;&amp; for f in *.so; do if [ -f &quot;$$f&quot; ] &amp;&amp; [ ! -L &quot;$$f&quot; ]; then base=$${f%.*}; ln -sf &quot;$$f&quot; &quot;$${base}.so.0&quot; 2>/dev/null || true; fi; done'" />
+		<Exec Command="bash -c 'cd $(OutDir) &amp;&amp; for f in *.so; do if [ -f &quot;$$f&quot; ] &amp;&amp; [ ! -L &quot;$$f&quot; ]; then base=$${f%.*}; ln -sf &quot;$$f&quot; &quot;$${base}.so.0&quot; 2&gt;/dev/null || true; fi; done'" />
 	</Target>
 
 </Project>

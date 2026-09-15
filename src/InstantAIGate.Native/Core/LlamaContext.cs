@@ -305,7 +305,7 @@ public sealed class LlamaContext : IDisposable
         if (batch.SeqId != IntPtr.Zero)
         {
             // Free individual seq_id arrays
-            int seqIdSize = sizeof(int);
+            //int seqIdSize = sizeof(int);
             for (int i = 0; i < batch.NTokens; i++)
             {
                 IntPtr seqIdPtr = Marshal.ReadIntPtr(batch.SeqId, i * IntPtr.Size);
