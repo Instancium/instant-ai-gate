@@ -116,7 +116,7 @@ public sealed class MtmdContext : SafeHandle
 /// </summary>
 public sealed class MtmdBitmap : SafeHandle
 {
-    public MtmdBitmap() : base(IntPtr.Zero, true) { }
+    public MtmdBitmap(nint handle) : base(IntPtr.Zero, true) { }
 
     public override bool IsInvalid => handle == IntPtr.Zero;
 
@@ -161,7 +161,7 @@ public sealed class MtmdInputChunk : SafeHandle
 /// </summary>
 public sealed class MtmdInputChunks : SafeHandle
 {
-    public MtmdInputChunks() : base(IntPtr.Zero, true) { }
+    public MtmdInputChunks(nint handle) : base(IntPtr.Zero, true) { }
 
     public override bool IsInvalid => handle == IntPtr.Zero;
 
@@ -176,7 +176,7 @@ public sealed class MtmdInputChunks : SafeHandle
 /// </summary>
 public sealed class MtmdBatch : SafeHandle
 {
-    public MtmdBatch() : base(IntPtr.Zero, true) { }
+    public MtmdBatch(nint handle) : base(IntPtr.Zero, true) { }
 
     public override bool IsInvalid => handle == IntPtr.Zero;
 

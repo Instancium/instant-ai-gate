@@ -36,10 +36,10 @@ public enum LlamaRopeType
 {
     None = -1,
     Norm = 0,
-    Neox = GGML_ROPE_TYPE_NEOX,
-    MRope = GGML_ROPE_TYPE_MROPE,
-    IMRope = GGML_ROPE_TYPE_IMROPE,
-    Vision = GGML_ROPE_TYPE_VISION,
+    Neox = GGML_Rope_Types.GGML_ROPE_TYPE_NEOX,
+    MRope = GGML_Rope_Types.GGML_ROPE_TYPE_MROPE,
+    IMRope = GGML_Rope_Types.GGML_ROPE_TYPE_IMROPE,
+    Vision = GGML_Rope_Types.GGML_ROPE_TYPE_VISION,
 }
 
 internal static class GGML_Rope_Types
