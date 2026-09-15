@@ -1,10 +1,35 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <LangVersion>12.0</LangVersion>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+
+	<!-- Windows: Copy DLLs directly to output root -->
+	<ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+		<None Include="..\..\runtimes\win-x64\*.dll">
+			<Link>%(Filename)%(Extension)</Link>
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<!-- Linux: Copy ONLY base .so files. 
+       This prevents MSBuild from resolving symlinks and creating duplicate physical files. -->
+	<ItemGroup Condition="'$(OS)' != 'Windows_NT'">
+		<None Include="..\..\runtimes\linux-x64\*.so">
+			<Link>%(Filename)%(Extension)</Link>
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<!-- Post-build: Recreate symlinks in the output directory based on the actual files present.
+       This ensures the application root has correct symlinks without duplicate .so.* files. -->
+	<Target Name="CreateLinuxSymlinks" AfterTargets="CopyFilesToOutputDirectory" Condition="'$(OS)' != 'Windows_NT'">
+		<Exec Command="bash -c 'cd $(OutDir) &amp;&amp; for f in *.so; do if [ -f &quot;$$f&quot; ] &amp;&amp; [ ! -L &quot;$$f&quot; ]; then base=$${f%.*}; ln -sf &quot;$$f&quot; &quot;$${base}.so.0&quot; 2>/dev/null || true; fi; done'" />
+	</Target>
 
 </Project>
+
+

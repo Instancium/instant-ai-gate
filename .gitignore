@@ -49,6 +49,7 @@ Thumbs.db
 *.so
 *.dylib
 *.class
+*.gguf
 
 # Temporary files
 *.tmp
