@@ -1,64 +1,118 @@
-```
-# Build artifacts
+# Native/DLL files
+*.dll
+*.so
+*.dylib
+*.exe
+*.obj
+*.lib
+*.a
+*.o
+
+# Build outputs
 bin/
 obj/
 out/
-dist/
 build/
-target/
+dist/
 
 # Dependencies
-packages/
 node_modules/
-.nuget/
-.nuxt/
-
-# IDE files
-.vs/
-.vscode/
-.idea/
-*.userprefs
-*.suo
-*.user
-*.aps
-*.ncb
-*.opendb
-*.opensdf
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+vendor/
 
 # Logs
 *.log
 
-# Environment variables
+# Environment
 .env
 .env.local
 *.env.*
 
-# Compiled files
-*.dll
-*.exe
-*.pdb
-*.so
-*.dylib
-*.class
-*.gguf
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 
 # Temporary files
 *.tmp
 *.temp
 *.bak
-*.cache
 
-# Coverage reports
+# Coverage
+.coverage
 coverage/
 htmlcov/
-.coverage
-```
+
+# Package manager caches
+.npm/
+.yarn/
+.pip/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+
+# Java/Gradle
+target/
+.gradle/
+*.class
+*.jar
+*.war
+
+# C#
+*.user
+*.userosscache
+*.sln.docstates
+
+# Go
+*.exe
+*.test
+*.prof
+go.mod
+go.sum
+
+# Rust
+Cargo.lock
+*.lock
+
+# Julia
+julia-*/
+
+# Zig
+zig-out/
+zig-cache/
+
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
