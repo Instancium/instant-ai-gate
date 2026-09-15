@@ -23,6 +23,7 @@ vendor/
 *.log
 
 # Environment
+.vs/
 .env
 .env.local
 *.env.*
