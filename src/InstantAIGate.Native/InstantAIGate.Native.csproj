@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
@@ -9,7 +9,7 @@
 
 	<!-- Windows: Copy DLLs directly to output root -->
 	<ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-		<None Include="..\..\runtimes\win-x64\*.dll">
+		<None Include="..\..\runtimes\win-x64\*.dll" Visible="false">
 			<Link>%(Filename)%(Extension)</Link>
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
@@ -18,7 +18,7 @@
 	<!-- Linux: Copy ONLY base .so files. 
        This prevents MSBuild from resolving symlinks and creating duplicate physical files. -->
 	<ItemGroup Condition="'$(OS)' != 'Windows_NT'">
-		<None Include="..\..\runtimes\linux-x64\*.so">
+		<None Include="..\..\runtimes\linux-x64\*.so" Visible="false">
 			<Link>%(Filename)%(Extension)</Link>
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
