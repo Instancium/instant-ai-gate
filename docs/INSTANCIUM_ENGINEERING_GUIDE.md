@@ -29,3 +29,7 @@
 - **Format:** Conventional Commits (`type(scope): description`).
 - **Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
 - **Limits:** Subject line strictly under 72 characters. Description must be imperative mood (e.g., "Add", not "Added").
+- **Language:** All commit messages MUST be in English.
+- **Post-Change Protocol:** After completing any code change or documentation update, the developer MUST propose:
+  1. A commit message following the format above
+  2. A bulleted list of all changes made in this commit
