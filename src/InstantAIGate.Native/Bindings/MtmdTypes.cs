@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: (c) InstantAI Gate Contributors
-// SPDX-License-Identifier: MIT
-
 using System;
 using System.Runtime.InteropServices;
 
