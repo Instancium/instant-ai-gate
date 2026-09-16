@@ -1,4 +1,120 @@
-```
-# Documentation files are source content, no build artifacts present
-# No additional ignores needed beyond what's already in .gitignore
-```
+# Native/DLL files
+*.dll
+*.so
+*.dylib
+*.exe
+*.obj
+*.lib
+*.a
+*.o
+
+# Build outputs
+runtimes/*/*.dll
+bin/
+obj/
+out/
+build/
+dist/
+
+# Dependencies
+node_modules/
+vendor/
+
+# Logs
+*.log
+
+# Environment
+.vs/
+.env
+.env.local
+*.env.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Package manager caches
+.npm/
+.yarn/
+.pip/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+
+# Java/Gradle
+target/
+.gradle/
+*.class
+*.jar
+*.war
+
+# C#
+*.user
+*.userosscache
+*.sln.docstates
+
+# Go
+*.exe
+*.test
+*.prof
+go.mod
+go.sum
+
+# Rust
+Cargo.lock
+*.lock
+
+# Julia
+julia-*/
+
+# Zig
+zig-out/
+zig-cache/
+
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
