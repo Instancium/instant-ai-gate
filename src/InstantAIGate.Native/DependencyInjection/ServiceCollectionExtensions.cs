@@ -26,6 +26,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IModelProvider, ModelProvider>();
         services.AddSingleton<IModelManager, ModelManager>();
 
+        // Register the high-level inference engine
+        services.AddSingleton<IInferenceEngine, InferenceEngine>();
+
         // Note: IModelPathProvider is intentionally omitted here. 
         // It should be registered by the hosting application (CLI/Server) 
         // as its implementation depends on the specific environment 

@@ -29,4 +29,12 @@ public record InferenceSettings
     /// Repeat penalty for generation.
     /// </summary>
     public float RepeatPenalty { get; init; } = 1.1f;
+    /// <summary>
+    /// The number of recent tokens to check for repetitions. 
+    /// </summary>
+    public int PenaltyLastN { get; init; } = 64;
+
+    public int BatchSize { get; set; } = 512;
+    public uint? Seed { get; set; }
+
 }

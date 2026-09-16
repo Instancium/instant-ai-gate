@@ -17,6 +17,12 @@ internal static partial class LlamaNative
     #region Backend Management
 
     /// <summary>
+    /// Accepts a token into the sampler to update its internal state.
+    /// </summary>
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void llama_sampler_accept(IntPtr sampler, int token);
+
+    /// <summary>
     /// Initializes the llama backend.
     /// </summary>
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -242,6 +248,32 @@ internal static partial class LlamaNative
     #region Context Management
 
     /// <summary>
+    /// Represents a chat message for template application. 
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct llama_chat_message
+    {
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string role;
+
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string content;
+    }
+
+
+    /// <summary>
+    /// Applies the chat template to the list of messages. 
+    /// </summary>
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int llama_chat_apply_template(
+        [MarshalAs(UnmanagedType.LPStr)] string? tmpl,
+        [In] llama_chat_message[] chat,
+        nuint n_msg,
+        [MarshalAs(UnmanagedType.I1)] bool add_ass,
+        [Out] byte[]? buf,
+        int length);
+
+    /// <summary>
     /// Gets default context parameters.
     /// </summary>
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -457,9 +489,9 @@ internal static partial class LlamaNative
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, BestFitMapping = false, ThrowOnUnmappableChar = true)]
     public static extern int llama_tokenize(
         IntPtr vocab,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string text,
+        byte[] text,
         int textLen,
-        IntPtr tokens,
+        [In, Out] int[] tokens,
         int nTokensMax,
         [MarshalAs(UnmanagedType.I1)] bool addSpecial,
         [MarshalAs(UnmanagedType.I1)] bool parseSpecial);
@@ -471,8 +503,9 @@ internal static partial class LlamaNative
     public static extern int llama_token_to_piece(
         IntPtr vocab,
         int token,
-        IntPtr buf,
+        [In, Out] byte[]? buf,
         int bufSize,
+        int lstrip,
         [MarshalAs(UnmanagedType.I1)] bool special);
 
     /// <summary>
@@ -737,6 +770,36 @@ internal static partial class LlamaNative
     public static extern void llama_perf_context_reset(IntPtr ctx);
 
     #endregion
+
+
+    #region Batch Management
+    /// <summary>
+    /// Allocates a batch of tokens on the heap that can hold a maximum of n_tokens.
+    /// Each token can be assigned up to n_seq_max sequence ids.
+    /// The batch has to be freed with llama_batch_free().
+    /// If embd != 0, llama_batch.embd will be allocated with size of n_tokens * embd * sizeof(float).
+    /// Otherwise, llama_batch.token will be allocated to store n_tokens llama_token.
+    /// The rest of the llama_batch members are allocated with size n_tokens.
+    /// All members are left uninitialized.
+    /// </summary>
+    /// <param name="nTokens">Maximum number of tokens the batch can hold.</param>
+    /// <param name="embd">Embedding size (0 for token-based batch).</param>
+    /// <param name="nSeqMax">Maximum number of sequence ids per token.</param>
+    /// <returns>Initialized llama_batch structure with allocated native memory.</returns>
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern LlamaBatch llama_batch_init(
+        int nTokens,
+        int embd,
+        int nSeqMax);
+
+    /// <summary>
+    /// Frees a batch allocated by llama_batch_init().
+    /// </summary>
+    /// <param name="batch">The batch structure to free.</param>
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void llama_batch_free(LlamaBatch batch);
+    #endregion
+
 }
 
 /// <summary>

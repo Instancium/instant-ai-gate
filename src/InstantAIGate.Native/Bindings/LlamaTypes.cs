@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: (c) InstantAI Gate Contributors
-// SPDX-License-Identifier: MIT
-
 using System;
 using System.Runtime.InteropServices;
 
@@ -505,8 +502,10 @@ public enum GgmlType
 
 /// <summary>
 /// Parameters for context initialization.
+/// Matches llama_context_params from llama.h (v0.4.0+).
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
+/// <summary>
 public struct LlamaContextParams
 {
     public uint NCtx;
@@ -518,12 +517,13 @@ public struct LlamaContextParams
     public uint NOutputsMaxPerSeq;
     public int NThreads;
     public int NThreadsBatch;
+
     public LlamaContextType CtxType;
+    public LlamaRopeScalingType RopeScalingType;
     public LlamaPoolingType PoolingType;
     public LlamaAttentionType AttentionType;
     public LlamaFlashAttnType FlashAttnType;
 
-    // RoPE parameters (required for struct size alignment with latest llama.h)
     public float RopeFreqBase;
     public float RopeFreqScale;
     public float YarnExtFactor;
@@ -536,10 +536,9 @@ public struct LlamaContextParams
     public IntPtr CbEval;
     public IntPtr CbEvalUserData;
 
-    // KV Cache types [EXPERIMENTAL]
     public GgmlType TypeK;
     public GgmlType TypeV;
-
+    
     public IntPtr AbortCallback;
     public IntPtr AbortCallbackData;
 

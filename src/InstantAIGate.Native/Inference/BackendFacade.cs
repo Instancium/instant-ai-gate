@@ -1,10 +1,10 @@
 ﻿namespace InstantAIGate.Native.Inference;
 
+using System;
+using System.Runtime.InteropServices;
 using InstantAIGate.Core.Dtos.Inference.Native;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Native.Bindings;
-using System;
-using System.Runtime.InteropServices;
 
 /// <summary>
 /// Implementation of IBackendFacade mapping abstract Core types to native llama.cpp P/Invoke calls.
@@ -38,7 +38,6 @@ public class BackendFacade : IBackendFacade
     /// <summary>
     /// Checks if GPU offload is supported.
     /// </summary>
-    /// <returns>True if GPU offload is supported.</returns>
     public bool SupportsGpuOffload()
     {
         return LlamaNative.llama_supports_gpu_offload();
@@ -55,39 +54,20 @@ public class BackendFacade : IBackendFacade
         bool useMmap,
         BackendSplitMode splitMode)
     {
-        var nativeSplitMode = splitMode switch
+        var modelParams = LlamaNative.llama_model_default_params();
+        modelParams.NGpuLayers = gpuLayers;
+        modelParams.MainGpu = mainGpu;
+       // modelParams.UseMlock = useMlock;
+        modelParams.LoadMode = useMmap ? LlamaLoadMode.MMap : LlamaLoadMode.None;
+
+        modelParams.SplitMode = splitMode switch
         {
             BackendSplitMode.Layer => LlamaSplitMode.Layer,
             BackendSplitMode.Row => LlamaSplitMode.Row,
             _ => LlamaSplitMode.None
         };
 
-
-        var modelParams = new LlamaModelParams
-        {
-            NGpuLayers = gpuLayers,
-            MainGpu = mainGpu,
-            SplitMode = nativeSplitMode,
-            LoadMode = useMlock ? LlamaLoadMode.MLock : (useMmap ? LlamaLoadMode.MMap : LlamaLoadMode.None),
-            LazyMode = LlamaLazyMode.Auto,
-            Devices = IntPtr.Zero,
-            TensorBuftOverrides = IntPtr.Zero,
-            TensorSplit = IntPtr.Zero,
-            ProgressCallback = IntPtr.Zero,
-            ProgressCallbackUserData = IntPtr.Zero,
-            KvOverrides = IntPtr.Zero,
-            VocabOnly = false,
-            CheckTensors = false,
-            UseExtraBufts = false,
-            NoHost = false,
-            NoAlloc = false,
-            LoadMtp = false
-        };
-
- 
-        var pathLen = (nuint)System.Text.Encoding.UTF8.GetByteCount(path);
-
-        return LlamaNative.llama_model_load_from_file(path, in modelParams, pathLen);
+        return LlamaNative.llama_model_load_from_file(path, in modelParams, (nuint)path.Length);
     }
 
     /// <summary>
@@ -103,38 +83,36 @@ public class BackendFacade : IBackendFacade
         BackendKvCacheType kvType,
         bool offloadKqv)
     {
-        var params_ = LlamaNative.llama_context_default_params();
+        var ctxParams = LlamaNative.llama_context_default_params();
+        ctxParams.NCtx = nCtx;
+        ctxParams.NBatch = nBatch;
+        ctxParams.NUbatch = nBatch;
+        ctxParams.NThreads = nThreads;
+        ctxParams.NThreadsBatch = nThreads;
+        ctxParams.Embeddings = embeddings;
+        ctxParams.OffloadKqv = offloadKqv;
 
-        params_.NCtx = nCtx;
-        params_.NBatch = nBatch;
-        params_.NUbatch = nBatch; // Usually n_ubatch == n_batch for standard inference
-        params_.NThreads = nThreads;
-        params_.NThreadsBatch = nThreads;
-        params_.Embeddings = embeddings;
-        params_.OffloadKqv = offloadKqv;
-
-        params_.FlashAttnType = flashAttn switch
+        ctxParams.FlashAttnType = flashAttn switch
         {
             BackendFlashAttentionType.Enabled => LlamaFlashAttnType.Enabled,
             BackendFlashAttentionType.Disabled => LlamaFlashAttnType.Disabled,
             _ => LlamaFlashAttnType.Auto
         };
 
-        // Map abstract KV cache type to native GGML type
         var ggmlType = kvType switch
         {
             BackendKvCacheType.Q8_0 => GgmlType.Q8_0,
-            BackendKvCacheType.Q5_K => GgmlType.Q5_K,
             BackendKvCacheType.Q4_K => GgmlType.Q4_K,
-            BackendKvCacheType.Q4_0 => GgmlType.Q4_0,
+            BackendKvCacheType.Q5_K => GgmlType.Q5_K,
             BackendKvCacheType.F32 => GgmlType.F32,
-            _ => GgmlType.F16 // Default fallback
+            BackendKvCacheType.Q4_0 => GgmlType.Q4_0,
+            _ => GgmlType.F16
         };
 
-        params_.TypeK = ggmlType;
-        params_.TypeV = ggmlType;
+        ctxParams.TypeK = ggmlType;
+        ctxParams.TypeV = ggmlType;
 
-        return LlamaNative.llama_init_from_model(modelPtr, in params_);
+        return LlamaNative.llama_init_from_model(modelPtr, in ctxParams);
     }
 
     /// <summary>
@@ -160,7 +138,7 @@ public class BackendFacade : IBackendFacade
     }
 
     /// <summary>
-    /// Gets the memory context for clearing.
+    /// Gets the memory handle from context.
     /// </summary>
     public IntPtr GetMemory(IntPtr ctxPtr)
     {
@@ -168,13 +146,13 @@ public class BackendFacade : IBackendFacade
     }
 
     /// <summary>
-    /// Clears the memory context.
+    /// Clears the memory contents.
     /// </summary>
     public void ClearMemory(IntPtr memoryPtr, bool clearKvCache)
     {
-        if (clearKvCache && memoryPtr != IntPtr.Zero)
+        if (memoryPtr != IntPtr.Zero)
         {
-            LlamaNative.llama_memory_clear(memoryPtr, data: true);
+            LlamaNative.llama_memory_clear(memoryPtr, clearKvCache);
         }
     }
 
@@ -183,7 +161,7 @@ public class BackendFacade : IBackendFacade
     /// </summary>
     public void SetLogCallback(BackendLogCallback callback)
     {
-        GgmlLogCallback nativeCallback = (level, text, _) =>
+        LlamaNative.llama_log_set((level, text, _) =>
         {
             var coreLevel = level switch
             {
@@ -194,8 +172,6 @@ public class BackendFacade : IBackendFacade
             };
 
             callback.Invoke(coreLevel, Marshal.PtrToStringUTF8(text) ?? string.Empty);
-        };
-
-        LlamaNative.llama_log_set(nativeCallback, IntPtr.Zero);
+        }, IntPtr.Zero);
     }
 }

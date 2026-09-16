@@ -1,15 +1,17 @@
 ﻿namespace InstantAIGate.Cli;
 
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using InstantAIGate.Cli.Services;
 using InstantAIGate.Core.Dtos.Config;
+using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
-using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.DependencyInjection;
+using InstantAIGate.Native.Inference;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 /// <summary>
 /// Entry point for the InstantAIGate CLI application.
@@ -17,26 +19,31 @@ using Microsoft.Extensions.Logging;
 public class Program
 {
     /// <summary>
-    /// Main execution entry point.
+    /// Формирует правильный ChatML формат напрямую в C#, игнорируя сломанные метаданные модели.
+    /// </summary>
+    public static string BuildChatML(IEnumerable<Core.Dtos.Inference.ChatMessage> messages)
+    {
+        if (messages == null) return string.Empty;
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var msg in messages)
+        {
+            // Оборачиваем каждое сообщение в теги Qwen
+            sb.Append($"<|im_start|>{msg.Role}\n{msg.Content}<|im_end|>\n");
+        }
+
+        // Добавляем маркер того, что теперь очередь ассистента генерировать ответ
+        sb.Append("<|im_start|>assistant\n");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Main execution method.
     /// </summary>
     public static async Task Main(string[] args)
     {
-
-        try
-        {
-            Console.WriteLine("Loading native libraries...");
-            if (!NativeLibraryLoader.Load())
-            {
-                Console.Error.WriteLine("Failed to load native libraries!");
-                return;
-            }
-            Console.WriteLine("Native libraries loaded successfully.");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Native library loading failed: {ex.Message}");
-            return;
-        }
+        Console.OutputEncoding = Encoding.UTF8;
 
         var services = new ServiceCollection();
         ConfigureServices(services);
@@ -44,6 +51,7 @@ public class Program
         using var serviceProvider = services.BuildServiceProvider();
         var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
         var manager = serviceProvider.GetRequiredService<IModelManager>();
+        var engine = serviceProvider.GetRequiredService<IInferenceEngine>();
 
         logger.LogInformation("InstantAIGate CLI started.");
 
@@ -51,49 +59,72 @@ public class Program
         {
             var config = new ModelSettings
             {
-                RepoId = "qwen2.5-7b-instruct-q4_k_m",
-                ContextSize = 2048,
+                RepoId = "Qwen3VL-8B-Instruct-Q4_K_M",
+                ContextSize = 4096,
                 BatchSize = 512,
-                GpuLayerCount = 20,
+                GpuLayerCount = 99,
                 MainGPU = 0,
                 Threads = Environment.ProcessorCount,
                 FlashAttention = true,
-                KvCacheQuantization = "F16",
+                KvCacheQuantization = "Q8",
                 VisionSupport = false,
-                MaxContexts = 2
+                MaxContexts = 2,
+                Embeddings = false,
             };
 
             logger.LogInformation("Loading model: {RepoId}", config.RepoId);
             await manager.LoadModelAsync(config, CancellationToken.None);
+            var messages = new[]
+                {
+                    new ChatMessage("system", "You are a helpful AI assistant."),
+                    new ChatMessage("user", "Hi, What is the capital of France?")
+                };
 
-            var metrics = manager.GetMetrics();
-            logger.LogInformation(
-                "Model loaded. Active leases: {Leases}, Pending: {Pending}",
-                metrics.ActiveLeases,
-                metrics.PendingRequests);
+            //string prompt = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"; 
+            //var prompt = "<|im_start|>What is the capital of France? Answer in one word.<|im_end|>\n<|im_start|>assistant\n";
+            var prompt = BuildChatML(messages);
+            logger.LogInformation("Formatted prompt:\n{Prompt}", prompt);
 
-            logger.LogInformation("Acquiring context for inference...");
-            using var context = await manager.AcquireContextAsync(config.RepoId, CancellationToken.None);
+            var settings = new InferenceSettings
+            {
+                MaxTokens = 250,      // Дадим ей чуть больше места на случай длинных ответов
+                Temperature = 0.7f,   // Понижаем температуру (0.4) для точных ответов без фантазий
+                TopP = 0.9f,
+                TopK = 40,
 
-            logger.LogInformation("Context acquired successfully. Text Handle: {Handle}", context.TextContext.Handle);
-            logger.LogInformation("Press any key to exit and trigger graceful shutdown...");
+                // Идеальный баланс для Qwen:
+                RepeatPenalty = 1.15f, // Чуть-чуть штрафуем повторения, чтобы убить "????"
+                PenaltyLastN = 64,     // Окно памяти в 64 токена (достаточно от зацикливаний)
+            };
+
+            var responseBuilder = new StringBuilder();
+      
+            await foreach (var chunk in engine.StreamGenerationAsync(config.RepoId, prompt, settings, CancellationToken.None))
+            {
+                responseBuilder.Append(chunk);
+                string currentText = responseBuilder.ToString();
+                if (currentText.Contains("<|im_end|>") || currentText.Contains("<|endoftext|>"))
+                    {
+                        break;
+                    }
+                Console.Write(chunk);
+            }
+
+            Console.WriteLine();
+            logger.LogInformation("Generation completed. Total length: {Length} chars.", responseBuilder.Length);
+
+            Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Fatal error during CLI execution.");
         }
-        finally
-        {
-        
-            NativeLibraryLoader.Unload();
-        }
     }
 
     /// <summary>
-    /// Configures dependency injection container.
+    /// Configures dependency injection services.
     /// </summary>
-    /// <param name="services">The service collection to configure.</param>
     private static void ConfigureServices(IServiceCollection services)
     {
         services.AddLogging(builder =>
@@ -102,10 +133,7 @@ public class Program
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
-        // Register all core and native inference services
         services.AddInstantAIGateInference();
-
-        // Register environment-specific path provider
-        services.AddSingleton<IModelPathProvider>(new LocalModelPathProvider("./models"));
+        services.AddSingleton<IModelPathProvider>(new LocalModelPathProvider("C:\\models\\Qwen_Qwen3-VL-8B-Instruct-GGUF"));
     }
 }
