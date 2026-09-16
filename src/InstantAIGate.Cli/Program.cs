@@ -23,6 +23,7 @@ public class Program
     public static async Task Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
+        Console.InputEncoding = Encoding.UTF8;
 
         var services = new ServiceCollection();
         ConfigureServices(services);
@@ -56,8 +57,8 @@ public class Program
 
             var messages = new[]
             {
-                new ChatMessage("system", "You are a helpful AI assistant."),
-                new ChatMessage("user", "Hi, What is the capital of France?")
+                new ChatMessage("system", "You are a helpful AI assistant. Отвечай на русском языке."),
+                new ChatMessage("user", "Hi, What is the capital of France?. Что ты думаешь об этом.")
             };
 
             // Apply native GGUF chat template dynamically
@@ -66,12 +67,10 @@ public class Program
 
             var settings = new InferenceSettings
             {
-                MaxTokens = 250,
+                MaxTokens = 1024,
                 Temperature = 0.7f,
                 TopP = 0.9f,
                 TopK = 40,
-                RepeatPenalty = 1.15f,
-                PenaltyLastN = 64,
             };
 
             var responseBuilder = new StringBuilder();

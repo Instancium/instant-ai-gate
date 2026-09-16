@@ -253,10 +253,10 @@ internal static partial class LlamaNative
     [StructLayout(LayoutKind.Sequential)]
     public struct llama_chat_message
     {
-        [MarshalAs(UnmanagedType.LPStr)]
+        [MarshalAs(UnmanagedType.LPUTF8Str)]
         public string role;
 
-        [MarshalAs(UnmanagedType.LPStr)]
+        [MarshalAs(UnmanagedType.LPUTF8Str)]
         public string content;
     }
 
@@ -266,7 +266,7 @@ internal static partial class LlamaNative
     /// </summary>
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern int llama_chat_apply_template(
-        [MarshalAs(UnmanagedType.LPStr)] string? tmpl,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? tmpl,
         [In] llama_chat_message[] chat,
         nuint n_msg,
         [MarshalAs(UnmanagedType.I1)] bool add_ass,
