@@ -15,15 +15,15 @@ using System.Threading.Tasks;
 /// Core inference engine handling P/Invoke calls to llama.cpp.
 /// Responsible for tokenization, prompt evaluation, and token generation.
 /// </summary>
-public class InferenceEngine : IInferenceEngine, IDisposable
+public class LlamaInference : IInferenceEngine, IDisposable
 {
     private readonly IModelManager _modelManager;
-    private readonly ILogger<InferenceEngine> _logger;
+    private readonly ILogger<LlamaInference> _logger;
     private bool _disposed;
 
-    public InferenceEngine(
+    public LlamaInference(
         IModelManager modelManager,
-        ILogger<InferenceEngine> logger)
+        ILogger<LlamaInference> logger)
     {
         _modelManager = modelManager;
         _logger = logger;
