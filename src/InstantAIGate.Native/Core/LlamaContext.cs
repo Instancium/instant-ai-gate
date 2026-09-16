@@ -1,6 +1,5 @@
-using System;
-using System.Runtime.InteropServices;
 using InstantAIGate.Native.Bindings;
+using System.Runtime.InteropServices;
 
 namespace InstantAIGate.Native.Core;
 
@@ -70,7 +69,7 @@ public sealed class LlamaContext : IDisposable
         }
 
         var @params = parameters ?? LlamaNative.llama_context_default_params();
-        
+
         // Get model handle through reflection or store it in LlamaModel
         // For now, we assume the model has a way to expose its handle
         _handle = LlamaNative.llama_init_from_model(GetModelHandle(), @params);

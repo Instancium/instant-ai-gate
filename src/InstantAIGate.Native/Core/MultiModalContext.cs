@@ -1,6 +1,5 @@
-using System;
-using System.Runtime.InteropServices;
 using InstantAIGate.Native.Bindings;
+using System.Runtime.InteropServices;
 
 namespace InstantAIGate.Native.Core;
 
@@ -251,7 +250,7 @@ public sealed class MultiModalContext : IDisposable
         SupportsVision = MtmdNative.mtmd_support_vision(_handle);
         SupportsAudio = MtmdNative.mtmd_support_audio(_handle);
         AudioSampleRate = MtmdNative.mtmd_get_audio_sample_rate(_handle);
-        
+
         IntPtr markerPtr = MtmdNative.mtmd_get_marker(_handle);
         MediaMarker = markerPtr != IntPtr.Zero ? Marshal.PtrToStringUTF8(markerPtr) : null;
 

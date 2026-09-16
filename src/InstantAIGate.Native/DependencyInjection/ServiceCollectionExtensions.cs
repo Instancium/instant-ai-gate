@@ -1,9 +1,9 @@
 ﻿namespace InstantAIGate.Native.DependencyInjection;
 
-using Microsoft.Extensions.DependencyInjection;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Services.Inference;
 using InstantAIGate.Native.Inference;
+using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Extension methods for registering InstantAIGate inference services.

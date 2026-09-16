@@ -1,4 +1,3 @@
-using System;
 using System.Runtime.InteropServices;
 
 namespace InstantAIGate.Native.Bindings;
@@ -538,7 +537,7 @@ public struct LlamaContextParams
 
     public GgmlType TypeK;
     public GgmlType TypeV;
-    
+
     public IntPtr AbortCallback;
     public IntPtr AbortCallbackData;
 

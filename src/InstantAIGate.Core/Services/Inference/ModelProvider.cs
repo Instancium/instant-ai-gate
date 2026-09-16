@@ -1,16 +1,16 @@
 ﻿namespace InstantAIGate.Core.Services.Inference;
 
-using System.Collections.Concurrent;
-using System.IO;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Inference.Native;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using System.IO;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 /// <summary>
 /// Manages model loading, context pooling, and inference lifecycle.

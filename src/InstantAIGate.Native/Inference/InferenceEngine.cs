@@ -7,7 +7,6 @@ using InstantAIGate.Native.Bindings;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -243,7 +242,7 @@ public class InferenceEngine : IInferenceEngine, IDisposable
             throw new InvalidOperationException("Failed to apply chat template. Metadata might be missing or invalid.");
         }
 
-  
+
         byte[] buffer = new byte[requiredSize + 1];
         int finalSize = LlamaNative.llama_chat_apply_template(
             null, nativeMessages, (nuint)nativeMessages.Length, true, buffer, buffer.Length);

@@ -1,9 +1,9 @@
 ﻿namespace InstantAIGate.Native.Inference;
 
-using System;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Native.Bindings;
+using System;
 
 /// <summary>
 /// Implementation of IVisionFacade wrapping mtmd multimodal bindings.

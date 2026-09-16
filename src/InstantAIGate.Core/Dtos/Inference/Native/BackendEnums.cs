@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.Core.Dtos.Inference.Native
+﻿namespace InstantAIGate.Core.Dtos.Inference.Native
 {
     /// <summary>
     /// Flash attention mode.

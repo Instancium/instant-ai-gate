@@ -1,6 +1,4 @@
-﻿using InstantAIGate.Core.Dtos.Inference.Native;
-
-namespace InstantAIGate.Core.Dtos.Config;
+﻿namespace InstantAIGate.Core.Dtos.Config;
 
 /// <summary>
 /// Configuration for model loading and inference parameters.

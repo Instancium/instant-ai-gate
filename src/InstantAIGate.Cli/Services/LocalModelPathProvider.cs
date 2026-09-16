@@ -1,8 +1,8 @@
 ﻿namespace InstantAIGate.Cli.Services;
 
+using InstantAIGate.Core.Interfaces.Inference;
 using System.IO;
 using System.Threading.Tasks;
-using InstantAIGate.Core.Interfaces.Inference;
 
 /// <summary>
 /// Resolves model paths from a local directory structure.

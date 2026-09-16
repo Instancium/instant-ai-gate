@@ -1,10 +1,10 @@
 ﻿namespace InstantAIGate.Native.Inference;
 
-using System;
-using System.Runtime.InteropServices;
 using InstantAIGate.Core.Dtos.Inference.Native;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Native.Bindings;
+using System;
+using System.Runtime.InteropServices;
 
 /// <summary>
 /// Implementation of IBackendFacade mapping abstract Core types to native llama.cpp P/Invoke calls.
@@ -57,7 +57,7 @@ public class BackendFacade : IBackendFacade
         var modelParams = LlamaNative.llama_model_default_params();
         modelParams.NGpuLayers = gpuLayers;
         modelParams.MainGpu = mainGpu;
-       // modelParams.UseMlock = useMlock;
+        // modelParams.UseMlock = useMlock;
         modelParams.LoadMode = useMmap ? LlamaLoadMode.MMap : LlamaLoadMode.None;
 
         modelParams.SplitMode = splitMode switch

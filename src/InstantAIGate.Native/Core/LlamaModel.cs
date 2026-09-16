@@ -1,6 +1,5 @@
-using System;
-using System.Runtime.InteropServices;
 using InstantAIGate.Native.Bindings;
+using System.Runtime.InteropServices;
 
 namespace InstantAIGate.Native.Core;
 
