@@ -1,6 +1,7 @@
 ﻿namespace InstantAIGate.Core.Interfaces.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
+using InstantAIGate.Core.Dtos.Inference;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -29,5 +30,5 @@ public interface IInferenceEngine
     IAsyncEnumerable<string> StreamGenerationAsync(string modelId, string prompt, InferenceSettings settings, CancellationToken ct = default);
 
 
-
+    Task<string> ApplyChatTemplateAsync(string modelId, IEnumerable<ChatMessage> messages, CancellationToken ct = default);
 }

@@ -1,11 +1,13 @@
 ﻿namespace InstantAIGate.Native.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
+using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Native.Bindings;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -215,6 +217,38 @@ public class InferenceEngine : IInferenceEngine, IDisposable
         {
             LlamaNative.llama_sampler_free(sampler);
         }
+    }
+
+
+    public async Task<string> ApplyChatTemplateAsync(string modelId, IEnumerable<ChatMessage> messages, CancellationToken ct = default)
+    {
+        var msgList = messages.ToList();
+        var nativeMessages = new LlamaNative.llama_chat_message[msgList.Count];
+
+
+        for (int i = 0; i < msgList.Count; i++)
+        {
+            nativeMessages[i] = new LlamaNative.llama_chat_message
+            {
+                role = msgList[i].Role,
+                content = msgList[i].Content
+            };
+        }
+
+        int requiredSize = LlamaNative.llama_chat_apply_template(
+            null, nativeMessages, (nuint)nativeMessages.Length, true, null, 0);
+
+        if (requiredSize < 0)
+        {
+            throw new InvalidOperationException("Failed to apply chat template. Metadata might be missing or invalid.");
+        }
+
+  
+        byte[] buffer = new byte[requiredSize + 1];
+        int finalSize = LlamaNative.llama_chat_apply_template(
+            null, nativeMessages, (nuint)nativeMessages.Length, true, buffer, buffer.Length);
+
+        return Encoding.UTF8.GetString(buffer, 0, finalSize);
     }
 
     public void Dispose()

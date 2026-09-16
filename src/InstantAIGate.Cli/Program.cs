@@ -5,7 +5,6 @@ using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Native.DependencyInjection;
-using InstantAIGate.Native.Inference;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
@@ -18,26 +17,6 @@ using System.Threading.Tasks;
 /// </summary>
 public class Program
 {
-    /// <summary>
-    /// Формирует правильный ChatML формат напрямую в C#, игнорируя сломанные метаданные модели.
-    /// </summary>
-    public static string BuildChatML(IEnumerable<Core.Dtos.Inference.ChatMessage> messages)
-    {
-        if (messages == null) return string.Empty;
-
-        var sb = new System.Text.StringBuilder();
-        foreach (var msg in messages)
-        {
-            // Оборачиваем каждое сообщение в теги Qwen
-            sb.Append($"<|im_start|>{msg.Role}\n{msg.Content}<|im_end|>\n");
-        }
-
-        // Добавляем маркер того, что теперь очередь ассистента генерировать ответ
-        sb.Append("<|im_start|>assistant\n");
-
-        return sb.ToString();
-    }
-
     /// <summary>
     /// Main execution method.
     /// </summary>
@@ -74,39 +53,40 @@ public class Program
 
             logger.LogInformation("Loading model: {RepoId}", config.RepoId);
             await manager.LoadModelAsync(config, CancellationToken.None);
-            var messages = new[]
-                {
-                    new ChatMessage("system", "You are a helpful AI assistant."),
-                    new ChatMessage("user", "Hi, What is the capital of France?")
-                };
 
-            //string prompt = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"; 
-            //var prompt = "<|im_start|>What is the capital of France? Answer in one word.<|im_end|>\n<|im_start|>assistant\n";
-            var prompt = BuildChatML(messages);
+            var messages = new[]
+            {
+                new ChatMessage("system", "You are a helpful AI assistant."),
+                new ChatMessage("user", "Hi, What is the capital of France?")
+            };
+
+            // Apply native GGUF chat template dynamically
+            var prompt = await engine.ApplyChatTemplateAsync(config.RepoId, messages, CancellationToken.None);
             logger.LogInformation("Formatted prompt:\n{Prompt}", prompt);
 
             var settings = new InferenceSettings
             {
-                MaxTokens = 250,      // Дадим ей чуть больше места на случай длинных ответов
-                Temperature = 0.7f,   // Понижаем температуру (0.4) для точных ответов без фантазий
+                MaxTokens = 250,
+                Temperature = 0.7f,
                 TopP = 0.9f,
                 TopK = 40,
-
-                // Идеальный баланс для Qwen:
-                RepeatPenalty = 1.15f, // Чуть-чуть штрафуем повторения, чтобы убить "????"
-                PenaltyLastN = 64,     // Окно памяти в 64 токена (достаточно от зацикливаний)
+                RepeatPenalty = 1.15f,
+                PenaltyLastN = 64,
             };
 
             var responseBuilder = new StringBuilder();
-      
+
             await foreach (var chunk in engine.StreamGenerationAsync(config.RepoId, prompt, settings, CancellationToken.None))
             {
                 responseBuilder.Append(chunk);
                 string currentText = responseBuilder.ToString();
+
+                // Keep stop tokens to gracefully halt generation when the model finishes its answer
                 if (currentText.Contains("<|im_end|>") || currentText.Contains("<|endoftext|>"))
-                    {
-                        break;
-                    }
+                {
+                    break;
+                }
+
                 Console.Write(chunk);
             }
 
