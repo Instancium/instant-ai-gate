@@ -57,8 +57,8 @@ public class Program
 
             var messages = new[]
             {
-                new ChatMessage("system", "You are a helpful AI assistant. Отвечай на русском языке."),
-                new ChatMessage("user", "Hi, What is the capital of France?. Что ты думаешь об этом.")
+                new ChatMessage("system", "You are a helpful AI assistant."),
+                new ChatMessage("user", "Hi, What is the capital of France?.")
             };
 
             // Apply native GGUF chat template dynamically
