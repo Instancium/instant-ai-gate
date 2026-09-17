@@ -12,14 +12,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-/// <summary>
-/// Entry point for the InstantAIGate CLI application.
-/// </summary>
 public class Program
 {
-    /// <summary>
-    /// Main execution method.
-    /// </summary>
     public static async Task Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
@@ -47,7 +41,7 @@ public class Program
                 Threads = Environment.ProcessorCount,
                 FlashAttention = true,
                 KvCacheQuantization = "Q8",
-                VisionSupport = false,
+                VisionSupport = true,
                 MaxContexts = 2,
                 Embeddings = false,
             };
@@ -55,13 +49,15 @@ public class Program
             logger.LogInformation("Loading model: {RepoId}", config.RepoId);
             await manager.LoadModelAsync(config, CancellationToken.None);
 
+
+            var imagePaths = new[] { "C:\\models\\test-1.jpeg" };
+
             var messages = new[]
             {
                 new ChatMessage("system", "You are a helpful AI assistant."),
-                new ChatMessage("user", "Hi, What is the capital of France?.")
+                new ChatMessage("user", "<__media__>\nDescribe in detail what is depicted in this picture.")
             };
 
-            // Apply native GGUF chat template dynamically
             var prompt = await engine.ApplyChatTemplateAsync(config.RepoId, messages, CancellationToken.None);
             logger.LogInformation("Formatted prompt:\n{Prompt}", prompt);
 
@@ -75,12 +71,12 @@ public class Program
 
             var responseBuilder = new StringBuilder();
 
-            await foreach (var chunk in engine.StreamGenerationAsync(config.RepoId, prompt, settings, CancellationToken.None))
+      
+            await foreach (var chunk in engine.StreamGenerationAsync(config.RepoId, prompt, imagePaths, settings, CancellationToken.None))
             {
                 responseBuilder.Append(chunk);
                 string currentText = responseBuilder.ToString();
 
-                // Keep stop tokens to gracefully halt generation when the model finishes its answer
                 if (currentText.Contains("<|im_end|>") || currentText.Contains("<|endoftext|>"))
                 {
                     break;
@@ -101,9 +97,6 @@ public class Program
         }
     }
 
-    /// <summary>
-    /// Configures dependency injection services.
-    /// </summary>
     private static void ConfigureServices(IServiceCollection services)
     {
         services.AddLogging(builder =>

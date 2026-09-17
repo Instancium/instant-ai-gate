@@ -198,7 +198,7 @@ internal static partial class LlamaNative
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, BestFitMapping = false, ThrowOnUnmappableChar = true)]
     public static extern IntPtr llama_model_chat_template(
         IntPtr model,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? name);
 
     /// <summary>
     /// Gets total number of model parameters.

@@ -7,6 +7,7 @@ using InstantAIGate.Native.Bindings;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -221,9 +222,16 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
     public async Task<string> ApplyChatTemplateAsync(string modelId, IEnumerable<ChatMessage> messages, CancellationToken ct = default)
     {
+        using var model = await _modelManager.AcquireModelAsync(modelId, ct);
+
+        // Retrieve the default template pointer (passing null expects the default template)
+        IntPtr tmplPtr = LlamaNative.llama_model_chat_template(model.Handle, null);
+
+        // Convert the unmanaged UTF-8 string pointer to a managed string
+        string tmpl = tmplPtr != IntPtr.Zero ? Marshal.PtrToStringUTF8(tmplPtr)! : "chatml";
+
         var msgList = messages.ToList();
         var nativeMessages = new LlamaNative.llama_chat_message[msgList.Count];
-
 
         for (int i = 0; i < msgList.Count; i++)
         {
@@ -234,21 +242,269 @@ public class LlamaInference : IInferenceEngine, IDisposable
             };
         }
 
+        // Pass the managed string to the template function
         int requiredSize = LlamaNative.llama_chat_apply_template(
-            null, nativeMessages, (nuint)nativeMessages.Length, true, null, 0);
+            tmpl, nativeMessages, (nuint)nativeMessages.Length, true, null, 0);
 
         if (requiredSize < 0)
         {
             throw new InvalidOperationException("Failed to apply chat template. Metadata might be missing or invalid.");
         }
 
-
         byte[] buffer = new byte[requiredSize + 1];
         int finalSize = LlamaNative.llama_chat_apply_template(
-            null, nativeMessages, (nuint)nativeMessages.Length, true, buffer, buffer.Length);
+            tmpl, nativeMessages, (nuint)nativeMessages.Length, true, buffer, buffer.Length);
 
         return Encoding.UTF8.GetString(buffer, 0, finalSize);
     }
+
+
+    public async IAsyncEnumerable<string> StreamGenerationAsync(string modelId, string prompt, IReadOnlyList<string>? imagePaths, InferenceSettings settings, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        using var model = await _modelManager.AcquireModelAsync(modelId, ct);
+        using var context = await _modelManager.AcquireContextAsync(modelId, ct);
+
+        IntPtr vocab = LlamaNative.llama_model_get_vocab(model.Handle);
+        IntPtr ctxHandle = context.TextContext.Handle;
+
+        // Assume your context object exposes MtmdContext. If not loaded, it should be IntPtr.Zero
+        IntPtr mtmdCtxHandle = context.VisionContext?.Handle ?? IntPtr.Zero;
+
+        int currentPos = 0;
+
+        // Phase 1: Prompt Evaluation (Unified)
+        if (mtmdCtxHandle != IntPtr.Zero)
+        {
+            // ---------------------------------------------------------
+            // PATH A: Multimodal Model (MTMD is loaded)
+            // Handles pure text or multiple images automatically
+            // ---------------------------------------------------------
+            var bitmapHandles = new List<MtmdNative.MtmdBitmapHandle>();
+            IntPtr[] bitmapPtrs = Array.Empty<IntPtr>();
+
+            try
+            {
+                if (imagePaths != null && imagePaths.Count > 0)
+                {
+                    var opt = MtmdNative.mtmd_helper_init_opt_default();
+                    bitmapPtrs = new IntPtr[imagePaths.Count];
+
+                    for (int i = 0; i < imagePaths.Count; i++)
+                    {
+                        var bmpWrapper = MtmdNative.mtmd_helper_bitmap_init_from_file(
+                            mtmdCtxHandle, imagePaths[i], false, opt);
+
+                        if (bmpWrapper.Bitmap == IntPtr.Zero)
+                        {
+                            throw new InvalidOperationException($"Failed to load image: {imagePaths[i]}");
+                        }
+
+                        var handle = new MtmdNative.MtmdBitmapHandle(bmpWrapper.Bitmap);
+                        bitmapHandles.Add(handle);
+                        bitmapPtrs[i] = handle.DangerousGetHandle();
+                    }
+                }
+
+                IntPtr rawHandle = MtmdNative.mtmd_input_chunks_init();
+                using var chunksHandle = new MtmdNative.MtmdInputChunksHandle(rawHandle);
+
+                IntPtr textPtr = Marshal.StringToCoTaskMemUTF8(prompt);
+                try
+                {
+                    var inputText = new MtmdInputText
+                    {
+                        Text = textPtr,
+                        TextLen = (UIntPtr)Encoding.UTF8.GetByteCount(prompt),
+                        AddSpecial = true,
+                        ParseSpecial = true
+                    };
+
+                    int tokResult = MtmdNative.mtmd_tokenize(
+                        mtmdCtxHandle, chunksHandle, ref inputText, bitmapPtrs, (UIntPtr)bitmapPtrs.Length);
+
+                    if (tokResult != 0)
+                    {
+                        throw new InvalidOperationException($"mtmd_tokenize failed with code: {tokResult}");
+                    }
+
+                    int evalResult = MtmdNative.mtmd_helper_eval_chunks(
+                        mtmdCtxHandle,
+                        ctxHandle,
+                        chunksHandle,
+                        0,
+                        0,
+                        settings.BatchSize > 0 ? settings.BatchSize : 512,
+                        true,
+                        out currentPos);
+
+                    if (evalResult != 0)
+                    {
+                        throw new InvalidOperationException($"mtmd_helper_eval_chunks failed with code: {evalResult}");
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem(textPtr);
+                }
+            }
+            finally
+            {
+                // Ensure all loaded bitmaps are freed regardless of exceptions
+                foreach (var handle in bitmapHandles)
+                {
+                    handle.Dispose();
+                }
+            }
+        }
+        else
+        {
+            // ---------------------------------------------------------
+            // PATH B: Pure Text Model (No MTMD loaded)
+            // Uses your original highly-optimized unsafe batch logic
+            // ---------------------------------------------------------
+            if (imagePaths != null && imagePaths.Count > 0)
+            {
+                _logger.LogWarning("Images provided, but no multimodal projector (mmproj) is loaded. Images will be ignored.");
+            }
+
+            int[] tokens = await TokenizeDataAsync(modelId, prompt, ct);
+
+            unsafe
+            {
+                int maxBatchSize = settings.BatchSize > 0 ? settings.BatchSize : 512;
+                var batch = LlamaNative.llama_batch_init(maxBatchSize, 0, 1);
+
+                try
+                {
+                    int* tokenPtr = (int*)batch.Token;
+                    int* posPtr = (int*)batch.Pos;
+                    int* nSeqIdPtr = (int*)batch.NSeqId;
+                    int** seqIdPtr = (int**)batch.SeqId;
+                    byte* logitsPtr = (byte*)batch.Logits;
+
+                    for (int i = 0; i < tokens.Length; i += maxBatchSize)
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        int evalBatchSize = Math.Min(tokens.Length - i, maxBatchSize);
+
+                        for (int j = 0; j < evalBatchSize; j++)
+                        {
+                            tokenPtr[j] = tokens[i + j];
+                            posPtr[j] = i + j;
+                            nSeqIdPtr[j] = 1;
+                            seqIdPtr[j][0] = 0;
+                            logitsPtr[j] = (byte)((i + j == tokens.Length - 1) ? 1 : 0);
+                        }
+
+                        batch.NTokens = evalBatchSize;
+
+                        int evalResult = LlamaNative.llama_decode(ctxHandle, batch);
+                        if (evalResult != 0)
+                        {
+                            throw new InvalidOperationException($"Prompt evaluation failed with code: {evalResult}");
+                        }
+                    }
+                    currentPos = tokens.Length;
+                }
+                finally
+                {
+                    LlamaNative.llama_batch_free(batch);
+                }
+            }
+        }
+
+        // Phase 2: Generation Loop
+        // (This remains completely identical for both text and vision models)
+
+        var chainParams = LlamaNative.llama_sampler_chain_default_params();
+        IntPtr sampler = LlamaNative.llama_sampler_chain_init(chainParams);
+
+        try
+        {
+            LlamaNative.llama_sampler_chain_add(sampler, LlamaNative.llama_sampler_init_top_k(settings.TopK > 0 ? settings.TopK : 40));
+            LlamaNative.llama_sampler_chain_add(sampler, LlamaNative.llama_sampler_init_top_p(settings.TopP > 0 ? settings.TopP : 0.9f, 1));
+            LlamaNative.llama_sampler_chain_add(sampler, LlamaNative.llama_sampler_init_temp(settings.Temperature > 0 ? settings.Temperature : 0.7f));
+
+            uint activeSeed = settings.Seed ?? (uint)Random.Shared.Next();
+            LlamaNative.llama_sampler_chain_add(sampler, LlamaNative.llama_sampler_init_dist(activeSeed));
+
+            int eos = LlamaNative.llama_vocab_eos(vocab);
+            int generated = 0;
+
+            var utf8Decoder = Encoding.UTF8.GetDecoder();
+            byte[] pieceBuffer = new byte[256];
+            char[] charBuffer = new char[512];
+
+            while (generated < settings.MaxTokens)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                int logitIndex = (generated == 0) ? -1 : 0;
+                int token = LlamaNative.llama_sampler_sample(sampler, ctxHandle, logitIndex);
+
+                if (token == eos || token < 0 || token == 151645 || token == 151643)
+                {
+                    break;
+                }
+
+                LlamaNative.llama_sampler_accept(sampler, token);
+
+                int pieceSize = LlamaNative.llama_token_to_piece(vocab, token, pieceBuffer, pieceBuffer.Length, 0, true);
+                if (pieceSize < 0)
+                {
+                    pieceBuffer = new byte[-pieceSize];
+                    pieceSize = LlamaNative.llama_token_to_piece(vocab, token, pieceBuffer, pieceBuffer.Length, 0, true);
+                }
+
+                if (pieceSize > 0)
+                {
+                    int charsDecoded = utf8Decoder.GetChars(pieceBuffer, 0, pieceSize, charBuffer, 0, false);
+                    if (charsDecoded > 0)
+                    {
+                        yield return new string(charBuffer, 0, charsDecoded);
+                    }
+                }
+
+                generated++;
+
+                unsafe
+                {
+                    var singleBatch = LlamaNative.llama_batch_init(1, 0, 1);
+                    try
+                    {
+                        ((int*)singleBatch.Token)[0] = token;
+                        ((int*)singleBatch.Pos)[0] = currentPos++;
+                        ((int*)singleBatch.NSeqId)[0] = 1;
+                        ((int**)singleBatch.SeqId)[0][0] = 0;
+                        ((byte*)singleBatch.Logits)[0] = 1;
+                        singleBatch.NTokens = 1;
+
+                        int stepResult = LlamaNative.llama_decode(ctxHandle, singleBatch);
+                        if (stepResult != 0)
+                        {
+                            break;
+                        }
+                    }
+                    finally
+                    {
+                        LlamaNative.llama_batch_free(singleBatch);
+                    }
+                }
+            }
+
+            int finalChars = utf8Decoder.GetChars(pieceBuffer, 0, 0, charBuffer, 0, true);
+            if (finalChars > 0)
+            {
+                yield return new string(charBuffer, 0, finalChars);
+            }
+        }
+        finally
+        {
+            LlamaNative.llama_sampler_free(sampler);
+        }
+    }
+
 
     public void Dispose()
     {

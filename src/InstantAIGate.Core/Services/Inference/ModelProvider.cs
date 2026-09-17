@@ -137,34 +137,65 @@ public class ModelProvider : IModelProvider, IDisposable
         if (config == null || string.IsNullOrWhiteSpace(config.RepoId))
             throw new ArgumentException("Config and RepoId required.", nameof(config));
 
-        var currentFileName = Path.GetFileName(config.ModelPath);
-        if (currentFileName != null &&
-            (currentFileName.Contains("mmproj", StringComparison.OrdinalIgnoreCase) ||
-             currentFileName.Contains("clip", StringComparison.OrdinalIgnoreCase)))
+        // Авто-обнаружение и корректировка путей для мультимодальных моделей
+        if (config.VisionSupport)
         {
+            var currentFileName = Path.GetFileName(config.ModelPath);
             var directory = Path.GetDirectoryName(config.ModelPath);
-            if (!string.IsNullOrEmpty(directory))
+
+            bool isProjector = currentFileName != null &&
+                (currentFileName.Contains("mmproj", StringComparison.OrdinalIgnoreCase) ||
+                 currentFileName.Contains("clip", StringComparison.OrdinalIgnoreCase));
+
+            if (isProjector)
             {
-                var textModel = Directory.GetFiles(directory, "*.gguf")
-                    .FirstOrDefault(f => !f.Contains("mmproj", StringComparison.OrdinalIgnoreCase) &&
-                                          !f.Contains("clip", StringComparison.OrdinalIgnoreCase));
-
-                if (!string.IsNullOrEmpty(textModel))
+                // Сценарий 1: Пользователь по ошибке передал mmproj как основную модель.
+                if (!string.IsNullOrEmpty(directory))
                 {
-                    _logger.LogWarning(
-                        "Auto-corrected config.ModelPath. Switched from projector '{Proj}' to text model '{Text}'",
-                        currentFileName, Path.GetFileName(textModel));
+                    var textModel = Directory.GetFiles(directory, "*.gguf")
+                        .FirstOrDefault(f => !f.Contains("mmproj", StringComparison.OrdinalIgnoreCase) &&
+                                             !f.Contains("clip", StringComparison.OrdinalIgnoreCase));
 
-                    config = config with
+                    if (!string.IsNullOrEmpty(textModel))
                     {
-                        ProjectorPath = config.ModelPath,
-                        ModelPath = textModel
-                    };
+                        _logger.LogWarning(
+                            "Auto-corrected config.ModelPath. Switched from projector '{Proj}' to text model '{Text}'",
+                            currentFileName, Path.GetFileName(textModel));
+
+                        config = config with
+                        {
+                            ProjectorPath = config.ModelPath,
+                            ModelPath = textModel
+                        };
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException(
+                            $"Failed to find a valid text model in {directory}. Only projector found.");
+                    }
                 }
-                else
+            }
+            else if (string.IsNullOrEmpty(config.ProjectorPath))
+            {
+                if (!string.IsNullOrEmpty(directory))
                 {
-                    throw new InvalidOperationException(
-                        $"Failed to find a valid text model in {directory}. Only projector found.");
+                    var projectorModel = Directory.GetFiles(directory, "*.gguf")
+                        .FirstOrDefault(f => f.Contains("mmproj", StringComparison.OrdinalIgnoreCase) ||
+                                             f.Contains("clip", StringComparison.OrdinalIgnoreCase));
+
+                    if (!string.IsNullOrEmpty(projectorModel))
+                    {
+                        _logger.LogInformation("Auto-discovered vision projector: {Proj}", Path.GetFileName(projectorModel));
+
+                        config = config with
+                        {
+                            ProjectorPath = projectorModel
+                        };
+                    }
+                    else
+                    {
+                        throw new FileNotFoundException($"Vision support is enabled, but no projector (mmproj/clip) file was found in {directory}.");
+                    }
                 }
             }
         }

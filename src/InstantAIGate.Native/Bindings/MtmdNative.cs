@@ -5,7 +5,7 @@ namespace InstantAIGate.Native.Bindings;
 /// <summary>
 /// P/Invoke bindings for mtmd.h native functions.
 /// </summary>
-internal static partial class MtmdNative
+public static partial class MtmdNative
 {
     private const string LibraryName = "mtmd";
 
@@ -377,4 +377,87 @@ internal static partial class MtmdNative
     public static extern void mtmd_log_set(IntPtr logCallback, IntPtr userData);
 
     #endregion
+
+
+// 1. Вспомогательные структуры для опций
+[StructLayout(LayoutKind.Sequential)]
+public struct MtmdHelperVideoInitParams
+{
+    public float FpsTarget;
+    public IntPtr FfmpegBinDir;
+    public long TimestampIntervalMs;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct MtmdHelperInitOpt
+{
+    public MtmdHelperVideoInitParams VideoParams;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct MtmdHelperBitmapWrapper
+{
+    public IntPtr Bitmap;
+    public IntPtr VideoCtx;
+}
+
+
+    [DllImport("mtmd", CallingConvention = CallingConvention.Cdecl)]
+    public static extern MtmdHelperInitOpt mtmd_helper_init_opt_default();
+
+    [DllImport("mtmd", CallingConvention = CallingConvention.Cdecl)]
+    public static extern MtmdHelperBitmapWrapper mtmd_helper_bitmap_init_from_file(
+        IntPtr ctx, [MarshalAs(UnmanagedType.LPUTF8Str)] string fname, bool placeholder, MtmdHelperInitOpt opt);
+
+
+    [DllImport("mtmd", CallingConvention = CallingConvention.Cdecl)]
+    public static extern int mtmd_tokenize(
+        IntPtr ctx,
+        MtmdInputChunksHandle output_chunks,
+        ref MtmdInputText text,
+        IntPtr[] bitmaps,
+        UIntPtr n_bitmaps);
+
+    // Главная функция-оркестратор из mtmd-helper.cpp
+    [DllImport("mtmd", CallingConvention = CallingConvention.Cdecl)]
+    public static extern int mtmd_helper_eval_chunks(
+        IntPtr ctx,
+        IntPtr lctx,
+        MtmdInputChunksHandle chunks,
+        int n_past,
+        int seq_id,
+        int n_batch,
+        bool logits_last,
+        out int new_n_past);
+
+
+    public class MtmdBitmapHandle : SafeHandle
+    {
+        public MtmdBitmapHandle() : base(IntPtr.Zero, true) { }
+        public MtmdBitmapHandle(IntPtr handle) : base(IntPtr.Zero, true) { SetHandle(handle); }
+        public override bool IsInvalid => handle == IntPtr.Zero;
+        protected override bool ReleaseHandle()
+        {
+            mtmd_bitmap_free(handle);
+            return true;
+        }
+    }
+
+    public class MtmdInputChunksHandle : SafeHandle
+    {
+        public MtmdInputChunksHandle() : base(IntPtr.Zero, true) { }
+
+        public MtmdInputChunksHandle(IntPtr handle) : base(IntPtr.Zero, true)
+        {
+            SetHandle(handle);
+        }
+
+        public override bool IsInvalid => handle == IntPtr.Zero;
+        protected override bool ReleaseHandle()
+        {
+            mtmd_input_chunks_free(handle);
+            return true;
+        }
+    }
+
 }

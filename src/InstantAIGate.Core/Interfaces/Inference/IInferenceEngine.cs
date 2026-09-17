@@ -2,6 +2,7 @@
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -29,6 +30,7 @@ public interface IInferenceEngine
     /// <returns>The generated text string.</returns>
     IAsyncEnumerable<string> StreamGenerationAsync(string modelId, string prompt, InferenceSettings settings, CancellationToken ct = default);
 
+    IAsyncEnumerable<string> StreamGenerationAsync(string modelId, string prompt, IReadOnlyList<string>? imagePaths, InferenceSettings settings, CancellationToken ct = default);
 
     Task<string> ApplyChatTemplateAsync(string modelId, IEnumerable<ChatMessage> messages, CancellationToken ct = default);
 }
