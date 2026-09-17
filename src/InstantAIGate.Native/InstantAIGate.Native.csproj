@@ -7,32 +7,35 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
-	<!-- Windows: Copy DLLs directly to output root -->
+	<!-- Windows: Copy DLLs directly to output root without linking them to project root in Solution Explorer -->
 	<ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-		<None Include="..\..\runtimes\win-x64\*.dll" Visible="false">
+		<Content Include="runtimes\win-x64\*.dll">
+			<Link>%(Filename)%(Extension)</Link>
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Visible>false</Visible>
+		</Content>
+		<None Update="runtimes\win-x64\*.dll">
+			<Visible>true</Visible>
+		</None>
+	</ItemGroup>
+
+	<!-- Linux: Copy ONLY base .so files.
+	     This prevents MSBuild from resolving symlinks and creating duplicate physical files. -->
+	<ItemGroup Condition="'$(OS)' != 'Windows_NT'">
+		<None Include="runtimes\linux-x64\*.so" Visible="false">
 			<Link>%(Filename)%(Extension)</Link>
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
 
-	<!-- Linux: Copy ONLY base .so files. 
-       This prevents MSBuild from resolving symlinks and creating duplicate physical files. -->
-	<ItemGroup Condition="'$(OS)' != 'Windows_NT'">
-		<None Include="..\..\runtimes\linux-x64\*.so" Visible="false">
-			<Link>%(Filename)%(Extension)</Link>
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-	</ItemGroup>
 	<ItemGroup>
-	  <ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
+		<ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
 	</ItemGroup>
 
 	<!-- Post-build: Recreate symlinks in the output directory based on the actual files present.
-       This ensures the application root has correct symlinks without duplicate .so.* files. -->
+	     This ensures the application root has correct symlinks without duplicate .so.* files. -->
 	<Target Name="CreateLinuxSymlinks" AfterTargets="CopyFilesToOutputDirectory" Condition="'$(OS)' != 'Windows_NT'">
 		<Exec Command="bash -c 'cd $(OutDir) &amp;&amp; for f in *.so; do if [ -f &quot;$$f&quot; ] &amp;&amp; [ ! -L &quot;$$f&quot; ]; then base=$${f%.*}; ln -sf &quot;$$f&quot; &quot;$${base}.so.0&quot; 2&gt;/dev/null || true; fi; done'" />
 	</Target>
 
 </Project>
-
-

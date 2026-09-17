@@ -3,52 +3,6 @@
     <File Path=".gitignore" />
     <File Path="README.md" />
   </Folder>
-  <Folder Name="/runtimes/">
-    <File Path="runtimes/.gitignore" />
-    <File Path="runtimes/README.md" />
-  </Folder>
-  <Folder Name="/runtimes/build/">
-    <File Path="runtimes/build/docker-compose.yml" />
-    <File Path="runtimes/build/Dockerfile" />
-    <File Path="runtimes/build/start.ps1" />
-    <File Path="runtimes/build/start.sh" />
-  </Folder>
-  <Folder Name="/runtimes/linux-x64/">
-    <File Path=".gitkeep" />
-    <File Path="runtimes/linux-x64/libggml-base.so" />
-    <File Path="runtimes/linux-x64/libggml-cpu.so" />
-    <File Path="runtimes/linux-x64/libggml-vulkan.so" />
-    <File Path="runtimes/linux-x64/libggml.so" />
-    <File Path="runtimes/linux-x64/libllama-batched-bench-impl.so" />
-    <File Path="runtimes/linux-x64/libllama-bench-impl.so" />
-    <File Path="runtimes/linux-x64/libllama-cli-impl.so" />
-    <File Path="runtimes/linux-x64/libllama-common.so" />
-    <File Path="runtimes/linux-x64/libllama-completion-impl.so" />
-    <File Path="runtimes/linux-x64/libllama-fit-params-impl.so" />
-    <File Path="runtimes/linux-x64/libllama-perplexity-impl.so" />
-    <File Path="runtimes/linux-x64/libllama-quantize-impl.so" />
-    <File Path="runtimes/linux-x64/libllama-server-impl.so" />
-    <File Path="runtimes/linux-x64/libllama.so" />
-    <File Path="runtimes/linux-x64/libmtmd.so" />
-  </Folder>
-  <Folder Name="/runtimes/win-x64/">
-    <File Path=".gitkeep" />
-    <File Path="runtimes/win-x64/ggml-base.dll" />
-    <File Path="runtimes/win-x64/ggml-cpu.dll" />
-    <File Path="runtimes/win-x64/ggml-vulkan.dll" />
-    <File Path="runtimes/win-x64/ggml.dll" />
-    <File Path="runtimes/win-x64/llama-batched-bench-impl.dll" />
-    <File Path="runtimes/win-x64/llama-bench-impl.dll" />
-    <File Path="runtimes/win-x64/llama-cli-impl.dll" />
-    <File Path="runtimes/win-x64/llama-common.dll" />
-    <File Path="runtimes/win-x64/llama-completion-impl.dll" />
-    <File Path="runtimes/win-x64/llama-fit-params-impl.dll" />
-    <File Path="runtimes/win-x64/llama-perplexity-impl.dll" />
-    <File Path="runtimes/win-x64/llama-quantize-impl.dll" />
-    <File Path="runtimes/win-x64/llama-server-impl.dll" />
-    <File Path="runtimes/win-x64/llama.dll" />
-    <File Path="runtimes/win-x64/mtmd.dll" />
-  </Folder>
   <Folder Name="/src/">
     <Project Path="src/InstantAIGate.Cli/InstantAIGate.Cli.csproj" />
     <Project Path="src/InstantAIGate.Core/InstantAIGate.Core.csproj" />
