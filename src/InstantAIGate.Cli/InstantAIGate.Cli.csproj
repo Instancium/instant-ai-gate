@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.12" />
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,6 +19,12 @@
     <ProjectReference Include="..\InstantAIGate.Native\InstantAIGate.Native.csproj" />
     <ProjectReference Include="..\InstantAIGate.SSR\InstantAIGate.SSR.csproj" />
     <ProjectReference Include="..\InstantAIGate.Server\InstantAIGate.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
