@@ -55,15 +55,15 @@ public class Program
             var messages = new[]
             {
                 new ChatMessage("system", "You are a helpful AI assistant."),
-                new ChatMessage("user", "<__media__>\nDescribe in detail what is depicted in this picture.")
+                new ChatMessage("user", "Describe in detail what is depicted in this picture.")
             };
 
-            var prompt = await engine.ApplyChatTemplateAsync(config.RepoId, messages, CancellationToken.None);
+            var prompt = await engine.ApplyChatTemplateAsync(config.RepoId, messages, imagePaths, CancellationToken.None);
             logger.LogInformation("Formatted prompt:\n{Prompt}", prompt);
 
             var settings = new InferenceSettings
             {
-                MaxTokens = 1024,
+                MaxTokens = 2048,
                 Temperature = 0.7f,
                 TopP = 0.9f,
                 TopK = 40,
@@ -71,17 +71,10 @@ public class Program
 
             var responseBuilder = new StringBuilder();
 
-      
+
             await foreach (var chunk in engine.StreamGenerationAsync(config.RepoId, prompt, imagePaths, settings, CancellationToken.None))
             {
                 responseBuilder.Append(chunk);
-                string currentText = responseBuilder.ToString();
-
-                if (currentText.Contains("<|im_end|>") || currentText.Contains("<|endoftext|>"))
-                {
-                    break;
-                }
-
                 Console.Write(chunk);
             }
 

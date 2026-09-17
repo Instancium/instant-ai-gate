@@ -28,9 +28,7 @@ public interface IInferenceEngine
     /// <param name="settings">Inference configuration parameters.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The generated text string.</returns>
-    IAsyncEnumerable<string> StreamGenerationAsync(string modelId, string prompt, InferenceSettings settings, CancellationToken ct = default);
-
     IAsyncEnumerable<string> StreamGenerationAsync(string modelId, string prompt, IReadOnlyList<string>? imagePaths, InferenceSettings settings, CancellationToken ct = default);
 
-    Task<string> ApplyChatTemplateAsync(string modelId, IEnumerable<ChatMessage> messages, CancellationToken ct = default);
+    Task<string> ApplyChatTemplateAsync(string modelId, IEnumerable<ChatMessage> messages, IReadOnlyList<string>? imagePaths = null, CancellationToken ct = default);
 }
