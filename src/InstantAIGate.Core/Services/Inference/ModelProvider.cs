@@ -370,8 +370,13 @@ public class ModelProvider : IModelProvider, IDisposable
             }
         }
 
-        _visionCache.TryGetValue(repoId, out var visionContext);
-        return new InferenceContext(textContext, visionContext);
+        _visionCache.TryGetValue(repoId, out var masterVisionContext);
+        
+        VisionContext? requestVisionContext = masterVisionContext != null
+            ? new VisionContext(masterVisionContext.Handle, _ => { })
+            : null;
+
+        return new InferenceContext(textContext, requestVisionContext);
     }
 
     private BackendKvCacheType ResolveKvCacheType(string quantization)
