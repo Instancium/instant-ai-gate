@@ -3,6 +3,7 @@
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Services.Inference;
 using InstantAIGate.Native.Inference;
+using InstantAIGate.Native.Logging;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
@@ -33,6 +34,16 @@ public static class ServiceCollectionExtensions
         // It should be registered by the hosting application (CLI/Server) 
         // as its implementation depends on the specific environment 
         // (e.g., local file system, SSR registry, cloud storage).
+
+        // Intercept OS-level stderr before ANY native library is loaded into memory
+        NativeStreamRedirector.Initialize(logMessage =>
+        {
+            // Route the raw unmanaged C++ log into the managed Console.Out stream.
+            // The CLI layer's EngineLogFilter is bound to Console.Out, 
+            // so it will automatically intercept this and respect the /debug toggle!
+            Console.Out.WriteLine($"[ggml/clip] {logMessage}");
+        });
+
 
         return services;
     }

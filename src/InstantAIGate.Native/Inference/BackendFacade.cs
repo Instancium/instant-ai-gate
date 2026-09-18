@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 /// </summary>
 public class BackendFacade : IBackendFacade
 {
+
     /// <summary>
     /// Loads all available native backends.
     /// </summary>
@@ -156,22 +157,35 @@ public class BackendFacade : IBackendFacade
         }
     }
 
+
+    // Keeping the reference to prevent Garbage Collection
+    private GgmlLogCallback? _nativeLogCallback;
+
     /// <summary>
     /// Sets the logging callback for native operations.
     /// </summary>
+
     public void SetLogCallback(BackendLogCallback callback)
     {
-        LlamaNative.llama_log_set((level, text, _) =>
+        _nativeLogCallback = (level, text, _) =>
         {
+            if (text == IntPtr.Zero) return;
+
+            // 'level' is now natively recognized as GgmlLogLevel
             var coreLevel = level switch
             {
                 GgmlLogLevel.Error => BackendLogLevel.Error,
                 GgmlLogLevel.Warn => BackendLogLevel.Warning,
                 GgmlLogLevel.Debug => BackendLogLevel.Debug,
+                GgmlLogLevel.Info => BackendLogLevel.Info,
+                GgmlLogLevel.Cont => BackendLogLevel.Info, // Map continuation to Info
                 _ => BackendLogLevel.Info
             };
 
-            callback.Invoke(coreLevel, Marshal.PtrToStringUTF8(text) ?? string.Empty);
-        }, IntPtr.Zero);
+            string message = Marshal.PtrToStringUTF8(text) ?? string.Empty;
+            callback.Invoke(coreLevel, message);
+        };
+
+        LlamaNative.llama_log_set(_nativeLogCallback, IntPtr.Zero);
     }
 }

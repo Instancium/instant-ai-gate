@@ -77,21 +77,25 @@ public class ModelProvider : IModelProvider, IDisposable
 
     private static void LlamaLogHandler(BackendLogLevel level, string message)
     {
-        if (string.IsNullOrEmpty(message) || _staticLogger == null) return;
+        if (string.IsNullOrWhiteSpace(message) || _staticLogger == null) return;
+
+        // Strip native newlines since ILogger implementations append their own
+        string cleanMessage = message.TrimEnd('\n', '\r');
+        if (string.IsNullOrWhiteSpace(cleanMessage)) return;
 
         switch (level)
         {
             case BackendLogLevel.Error:
-                _staticLogger.LogError("[llama.cpp] {Message}", message);
+                _staticLogger.LogError("[Native] {Message}", cleanMessage);
                 break;
             case BackendLogLevel.Warning:
-                _staticLogger.LogWarning("[llama.cpp] {Message}", message);
+                _staticLogger.LogWarning("[Native] {Message}", cleanMessage);
                 break;
             case BackendLogLevel.Debug:
-                _staticLogger.LogDebug("[llama.cpp] {Message}", message);
+                _staticLogger.LogDebug("[Native] {Message}", cleanMessage);
                 break;
             default:
-                _staticLogger.LogInformation("[llama.cpp] {Message}", message);
+                _staticLogger.LogInformation("[Native] {Message}", cleanMessage);
                 break;
         }
     }
@@ -223,10 +227,13 @@ public class ModelProvider : IModelProvider, IDisposable
                 if (!_isBackendInitialized)
                 {
                     _logger.LogInformation("Initializing llama.cpp backends...");
+
+                    SetupLlamaLogging();
+
                     _backendFacade.LoadAllBackends();
                     _backendFacade.BackendInit();
                     _isBackendInitialized = true;
-                    SetupLlamaLogging();
+                
 
                     try
                     {

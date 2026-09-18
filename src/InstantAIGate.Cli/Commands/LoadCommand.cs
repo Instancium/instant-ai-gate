@@ -44,11 +44,13 @@ public class LoadCommand : IConsoleCommand
 
         try
         {
-            // Removed AnsiConsole.Status().StartAsync to prevent GC context destruction
-            // Executing linearly on the current context, exactly like the original Program.cs
-            AnsiConsole.MarkupLine($"[yellow]Loading {targetModel.Name} into VRAM via Vulkan backend... Please wait.[/]");
-
-            await _modelManager.LoadModelAsync(targetModel.Config, cancellationToken);
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("yellow"))
+                .StartAsync($"Loading {targetModel.Name} into VRAM via Vulkan backend...", async ctx =>
+                {
+                    await _modelManager.LoadModelAsync(targetModel.Config, cancellationToken);
+                });
 
             _session.ActiveModelId = targetModel.Id;
             _session.ActiveModelConfig = targetModel.Config;

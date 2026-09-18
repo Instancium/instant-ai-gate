@@ -1,4 +1,5 @@
 ﻿using InstantAIGate.Cli.Commands;
+using InstantAIGate.Cli.Logging;
 using InstantAIGate.Cli.Services;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Interfaces.Inference;
@@ -28,6 +29,7 @@ public static class Program
 
         // 2. Create the shared debug state
         var debugState = new DebugState();
+        //debugState.IsEnabled = false;
 
         // 3. Apply the filters globally so the Core writes into the Black Hole
         Console.SetOut(new EngineLogFilter(originalOut, debugState));
@@ -46,7 +48,12 @@ public static class Program
             })
             .ConfigureLogging(logging =>
             {
-                logging.ClearProviders(); // Keep ILogger silenced
+                logging.ClearProviders(); // Remove default console logger
+                logging.Services.AddSingleton<ILoggerProvider>(sp =>
+                {
+                    var debugState = sp.GetRequiredService<DebugState>();
+                    return new DebugStateLoggerProvider(debugState);
+                });
             })
             .ConfigureServices((context, services) =>
             {
