@@ -10,7 +10,6 @@ public static class NativeLibraryLoader
     private static readonly object LockObj = new();
     private static bool _isInitialized;
 
-    // Track handles purely for unloading purposes if needed.
     private static IntPtr _llamaHandle;
     private static IntPtr _mtmdHandle;
 
@@ -27,10 +26,9 @@ public static class NativeLibraryLoader
 
             try
             {
-                // Register the custom resolver for this assembly.
-                NativeLibrary.SetDllImportResolver(typeof(NativeLibraryLoader).Assembly, CreateResolver(customRuntimesDirectory));
+                NativeLibrary.SetDllImportResolver(typeof(NativeLibraryLoader).Assembly,
+                    (libName, asm, searchPath) => DllResolver(libName, asm, searchPath, customRuntimesDirectory));
 
-                // Force load to verify the bindings resolve correctly.
                 _llamaHandle = NativeLibrary.Load("llama", typeof(NativeLibraryLoader).Assembly, null);
                 _mtmdHandle = NativeLibrary.Load("mtmd", typeof(NativeLibraryLoader).Assembly, null);
 
@@ -46,7 +44,7 @@ public static class NativeLibraryLoader
             }
             catch (Exception ex)
             {
-                throw new DllNotFoundException($"Failed to load native libraries via DllImportResolver. Platform: {GetPlatformName()}", ex);
+                throw new DllNotFoundException($"Failed to load native libraries. Platform: {GetPlatformName()}", ex);
             }
         }
     }
@@ -55,10 +53,7 @@ public static class NativeLibraryLoader
     {
         lock (LockObj)
         {
-            if (!_isInitialized)
-            {
-                return;
-            }
+            if (!_isInitialized) return;
 
             try
             {
@@ -81,54 +76,39 @@ public static class NativeLibraryLoader
             }
             catch
             {
-                // Swallow unload errors during teardown
+                // Swallow unload exceptions during teardown
             }
         }
     }
 
-    private static DllImportResolver CreateResolver(string? customBasePath)
+    private static IntPtr DllResolver(string libraryName, Assembly assembly, DllImportSearchPath? searchPath, string? customBasePath)
     {
-        return (libraryName, assembly, searchPath) =>
+        if (libraryName != "llama" && libraryName != "mtmd")
         {
-            // Only resolve our specific libraries
-            if (libraryName != "llama" && libraryName != "mtmd")
-            {
-                return IntPtr.Zero;
-            }
-
-            string platform = GetPlatformName();
-            string extension = GetLibraryExtension();
-            string fileName = $"{libraryName}{extension}";
-
-            // Priority 1: User-provided custom path
-            if (!string.IsNullOrEmpty(customBasePath))
-            {
-                string customPath = Path.Combine(customBasePath, fileName);
-                if (File.Exists(customPath) && NativeLibrary.TryLoad(customPath, out IntPtr handle))
-                {
-                    return handle;
-                }
-            }
-
-            // Priority 2: Standard runtimes/{RID}/native layout
-            string appBase = AppDomain.CurrentDomain.BaseDirectory;
-            string runtimesPath = Path.Combine(appBase, "runtimes", platform, "native", fileName);
-
-            if (File.Exists(runtimesPath) && NativeLibrary.TryLoad(runtimesPath, out IntPtr runtimesHandle))
-            {
-                return runtimesHandle;
-            }
-
-            // Priority 3: Root execution directory fallback
-            string rootPath = Path.Combine(appBase, fileName);
-            if (File.Exists(rootPath) && NativeLibrary.TryLoad(rootPath, out IntPtr rootHandle))
-            {
-                return rootHandle;
-            }
-
-            // Let the runtime fall back to standard OS resolution (e.g. PATH/LD_LIBRARY_PATH)
             return IntPtr.Zero;
-        };
+        }
+
+        string extension = GetLibraryExtension();
+        string fileName = $"{libraryName}{extension}";
+
+        if (!string.IsNullOrEmpty(customBasePath))
+        {
+            string customPath = Path.Combine(customBasePath, fileName);
+            if (File.Exists(customPath) && NativeLibrary.TryLoad(customPath, assembly, DllImportSearchPath.UseDllDirectoryForDependencies, out IntPtr customHandle))
+            {
+                return customHandle;
+            }
+        }
+
+        string appBase = AppDomain.CurrentDomain.BaseDirectory;
+        string rootPath = Path.Combine(appBase, fileName);
+
+        if (File.Exists(rootPath) && NativeLibrary.TryLoad(rootPath, out IntPtr rootHandle))
+        {
+            return rootHandle;
+        }
+
+        return IntPtr.Zero;
     }
 
     private static string GetPlatformName()
@@ -160,7 +140,6 @@ public static class NativeLibraryLoader
         }
         catch
         {
-            // Ignore during shutdown
         }
     }
 }

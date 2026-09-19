@@ -6,30 +6,37 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
+	</ItemGroup>
+
 	<ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-		<!-- Ensure Windows dlls are copied during build -->
-		<Content Include="runtimes\win-x64\native\*.dll">
+		<!-- Visible="false" hides the files in Visual Studio, Link flattens them to the output root -->
+		<Content Include="runtimes\win-x64\*.dll" Visible="false">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Link>%(Filename)%(Extension)</Link>
 		</Content>
 	</ItemGroup>
 
 	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">
-		<Content Include="runtimes\linux-x64\native\*.so*">
+		<Content Include="runtimes\linux-x64\*.so*" Visible="false">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Link>%(Filename)%(Extension)</Link>
 		</Content>
 	</ItemGroup>
 
-	<!-- IMPORTANT: Ensure the setup script is always copied to the output directory -->
 	<ItemGroup>
 		<None Include="runtimes\setup-symlinks.sh">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
 
-	<!-- Generate Linux symlinks on Publish (Internal MSBuild Execution) -->
 	<Target Name="CreateLinuxSymlinks" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(PublishDir)' != ''">
-		<!-- Note: We use the inline bash command here as requested in the original spec, 
-         but it achieves the same result as the shell script -->
-		<Exec Command="bash -c 'cd $(PublishDir)/runtimes/linux-x64/native &amp;&amp; for f in *.so.*.*.*; do base=$${f%%.so*}.so; v1=$${base}.0; ln -sf $$f $$v1; ln -sf $$v1 $$base; done'" ContinueOnError="true" />
+		<!-- Execute directly in PublishDir since the files are now flattened to the root -->
+		<Exec Command="bash -c 'cd $(PublishDir) &amp;&amp; for f in *.so.*.*.*; do base=$${f%%.so*}.so; v1=$${base}.0; ln -sf $$f $$v1; ln -sf $$v1 $$base; done'" ContinueOnError="true" />
 	</Target>
 </Project>
