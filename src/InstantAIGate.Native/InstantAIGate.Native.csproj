@@ -1,5 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
@@ -7,35 +6,30 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
-	<!-- Windows: Copy DLLs directly to output root without linking them to project root in Solution Explorer -->
 	<ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-		<Content Include="runtimes\win-x64\*.dll">
-			<Link>%(Filename)%(Extension)</Link>
+		<!-- Ensure Windows dlls are copied during build -->
+		<Content Include="runtimes\win-x64\native\*.dll">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<Visible>false</Visible>
 		</Content>
-		<None Update="runtimes\win-x64\*.dll">
-			<Visible>true</Visible>
-		</None>
 	</ItemGroup>
 
-	<!-- Linux: Copy ONLY base .so files.
-	     This prevents MSBuild from resolving symlinks and creating duplicate physical files. -->
-	<ItemGroup Condition="'$(OS)' != 'Windows_NT'">
-		<None Include="runtimes\linux-x64\*.so" Visible="false">
-			<Link>%(Filename)%(Extension)</Link>
+	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">
+		<Content Include="runtimes\linux-x64\native\*.so*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<!-- IMPORTANT: Ensure the setup script is always copied to the output directory -->
+	<ItemGroup>
+		<None Include="runtimes\setup-symlinks.sh">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
 
-	<ItemGroup>
-		<ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
-	</ItemGroup>
-
-	<!-- Post-build: Recreate symlinks in the output directory based on the actual files present.
-	     This ensures the application root has correct symlinks without duplicate .so.* files. -->
-	<Target Name="CreateLinuxSymlinks" AfterTargets="CopyFilesToOutputDirectory" Condition="'$(OS)' != 'Windows_NT'">
-		<Exec Command="bash -c 'cd $(OutDir) &amp;&amp; for f in *.so; do if [ -f &quot;$$f&quot; ] &amp;&amp; [ ! -L &quot;$$f&quot; ]; then base=$${f%.*}; ln -sf &quot;$$f&quot; &quot;$${base}.so.0&quot; 2&gt;/dev/null || true; fi; done'" />
+	<!-- Generate Linux symlinks on Publish (Internal MSBuild Execution) -->
+	<Target Name="CreateLinuxSymlinks" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(PublishDir)' != ''">
+		<!-- Note: We use the inline bash command here as requested in the original spec, 
+         but it achieves the same result as the shell script -->
+		<Exec Command="bash -c 'cd $(PublishDir)/runtimes/linux-x64/native &amp;&amp; for f in *.so.*.*.*; do base=$${f%%.so*}.so; v1=$${base}.0; ln -sf $$f $$v1; ln -sf $$v1 $$base; done'" ContinueOnError="true" />
 	</Target>
-
 </Project>

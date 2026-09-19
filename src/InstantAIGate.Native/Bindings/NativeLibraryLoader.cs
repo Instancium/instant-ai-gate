@@ -1,30 +1,22 @@
-using System.Runtime.InteropServices;
-
 namespace InstantAIGate.Native.Bindings;
 
-/// <summary>
-/// Handles dynamic loading of native libraries for llama.cpp and mtmd.
-/// </summary>
+using System;
+using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
+
 public static class NativeLibraryLoader
 {
     private static readonly object LockObj = new();
     private static bool _isInitialized;
+
+    // Track handles purely for unloading purposes if needed.
     private static IntPtr _llamaHandle;
     private static IntPtr _mtmdHandle;
 
-    /// <summary>
-    /// Gets a value indicating whether the native library is loaded.
-    /// </summary>
     public static bool IsLoaded { get; private set; }
 
-    /// <summary>
-    /// Loads the native libraries from the specified path or default locations.
-    /// </summary>
-    /// <param name="libraryPath">Optional custom path to the native library directory.</param>
-    /// <returns><see langword="true"/> if libraries were loaded successfully.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when libraries are already loaded.</exception>
-    /// <exception cref="DllNotFoundException">Thrown when native libraries cannot be found.</exception>
-    public static bool Load(string? libraryPath = null)
+    public static bool Load(string? customRuntimesDirectory = null)
     {
         lock (LockObj)
         {
@@ -35,19 +27,12 @@ public static class NativeLibraryLoader
 
             try
             {
-                string platform = GetPlatformName();
-                string extension = GetLibraryExtension();
+                // Register the custom resolver for this assembly.
+                NativeLibrary.SetDllImportResolver(typeof(NativeLibraryLoader).Assembly, CreateResolver(customRuntimesDirectory));
 
-                if (!string.IsNullOrEmpty(libraryPath))
-                {
-                    _llamaHandle = LoadNativeLibrary(Path.Combine(libraryPath, $"llama{extension}"));
-                    _mtmdHandle = LoadNativeLibrary(Path.Combine(libraryPath, $"mtmd{extension}"));
-                }
-                else
-                {
-                    _llamaHandle = LoadNativeLibrary($"llama{extension}");
-                    _mtmdHandle = LoadNativeLibrary($"mtmd{extension}");
-                }
+                // Force load to verify the bindings resolve correctly.
+                _llamaHandle = NativeLibrary.Load("llama", typeof(NativeLibraryLoader).Assembly, null);
+                _mtmdHandle = NativeLibrary.Load("mtmd", typeof(NativeLibraryLoader).Assembly, null);
 
                 IsLoaded = _llamaHandle != IntPtr.Zero && _mtmdHandle != IntPtr.Zero;
                 _isInitialized = true;
@@ -61,14 +46,11 @@ public static class NativeLibraryLoader
             }
             catch (Exception ex)
             {
-                throw new DllNotFoundException($"Failed to load native libraries. Platform: {GetPlatformName()}", ex);
+                throw new DllNotFoundException($"Failed to load native libraries via DllImportResolver. Platform: {GetPlatformName()}", ex);
             }
         }
     }
 
-    /// <summary>
-    /// Unloads the native libraries and frees backend resources.
-    /// </summary>
     public static void Unload()
     {
         lock (LockObj)
@@ -99,41 +81,70 @@ public static class NativeLibraryLoader
             }
             catch
             {
-                // Ignore errors during unload
+                // Swallow unload errors during teardown
             }
         }
     }
 
+    private static DllImportResolver CreateResolver(string? customBasePath)
+    {
+        return (libraryName, assembly, searchPath) =>
+        {
+            // Only resolve our specific libraries
+            if (libraryName != "llama" && libraryName != "mtmd")
+            {
+                return IntPtr.Zero;
+            }
+
+            string platform = GetPlatformName();
+            string extension = GetLibraryExtension();
+            string fileName = $"{libraryName}{extension}";
+
+            // Priority 1: User-provided custom path
+            if (!string.IsNullOrEmpty(customBasePath))
+            {
+                string customPath = Path.Combine(customBasePath, fileName);
+                if (File.Exists(customPath) && NativeLibrary.TryLoad(customPath, out IntPtr handle))
+                {
+                    return handle;
+                }
+            }
+
+            // Priority 2: Standard runtimes/{RID}/native layout
+            string appBase = AppDomain.CurrentDomain.BaseDirectory;
+            string runtimesPath = Path.Combine(appBase, "runtimes", platform, "native", fileName);
+
+            if (File.Exists(runtimesPath) && NativeLibrary.TryLoad(runtimesPath, out IntPtr runtimesHandle))
+            {
+                return runtimesHandle;
+            }
+
+            // Priority 3: Root execution directory fallback
+            string rootPath = Path.Combine(appBase, fileName);
+            if (File.Exists(rootPath) && NativeLibrary.TryLoad(rootPath, out IntPtr rootHandle))
+            {
+                return rootHandle;
+            }
+
+            // Let the runtime fall back to standard OS resolution (e.g. PATH/LD_LIBRARY_PATH)
+            return IntPtr.Zero;
+        };
+    }
+
     private static string GetPlatformName()
     {
-        if (OperatingSystem.IsWindows())
-            return "win-x64";
-        if (OperatingSystem.IsLinux())
-            return "linux-x64";
-        if (OperatingSystem.IsMacOS())
-            return "osx-x64";
+        if (OperatingSystem.IsWindows()) return "win-x64";
+        if (OperatingSystem.IsLinux()) return "linux-x64";
+        if (OperatingSystem.IsMacOS()) return "osx-x64";
         return "unknown";
     }
 
     private static string GetLibraryExtension()
     {
-        if (OperatingSystem.IsWindows())
-            return ".dll";
-        if (OperatingSystem.IsLinux())
-            return ".so";
-        if (OperatingSystem.IsMacOS())
-            return ".dylib";
+        if (OperatingSystem.IsWindows()) return ".dll";
+        if (OperatingSystem.IsLinux()) return ".so";
+        if (OperatingSystem.IsMacOS()) return ".dylib";
         return string.Empty;
-    }
-
-    private static IntPtr LoadNativeLibrary(string path)
-    {
-        if (NativeLibrary.TryLoad(path, out IntPtr handle))
-        {
-            return handle;
-        }
-
-        return IntPtr.Zero;
     }
 
     private static void InitializeBackend()
@@ -149,7 +160,7 @@ public static class NativeLibraryLoader
         }
         catch
         {
-            // Ignore errors during backend free
+            // Ignore during shutdown
         }
     }
 }

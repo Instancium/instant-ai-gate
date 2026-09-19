@@ -1,26 +1,47 @@
-# Define directories to hide entirely
-$hiddenDirectories = @('bin', 'obj', 'wwwroot')
+function Invoke-CustomTree {
+    param(
+        [string]$TargetDirectory = '.',
+        [string[]]$ExcludeDirectories = @('bin', 'obj', 'wwwroot'),
+        [string[]]$ShallowDirectories = @('node_modules', 'logs', 'llama.cpp'),
+        [string]$LinePrefix = ''
+    )
 
-# Define directories to show only by name (hide their contents)
-$shallowDirectories = @('node_modules', 'logs', 'llama.cpp')
+    # Fetch all items and sort directories to appear first
+    $directoryItems = Get-ChildItem -Path $TargetDirectory -ErrorAction SilentlyContinue |
+        Sort-Object -Property @{Expression={$_.PSIsContainer};Descending=$true}, Name
 
-# 1. Hide the entire folder for completely excluded directories
-Get-ChildItem -Recurse -Directory -Include $hiddenDirectories | 
-    ForEach-Object { $_.Attributes = 'Hidden' }
+    $totalItems = $directoryItems.Count
 
-# 2. Hide only the contents of directories where you want to see just the name
-Get-ChildItem -Recurse -Directory -Include $shallowDirectories | 
-    Get-ChildItem -Recurse | 
-    ForEach-Object { $_.Attributes = 'Hidden' }
+    for ($index = 0; $index -lt $totalItems; $index++) {
+        $currentItem = $directoryItems[$index]
+        $isFinalItem = ($index -eq ($totalItems - 1))
 
-# 3. Print the directory tree
-tree /F
+        # ASCII characters for tree branches
+        $branchSymbol = if ($isFinalItem) { "\--- " } else { "+--- " }
+        $childPrefix = if ($isFinalItem) { "     " } else { "|    " }
 
-# 4. Restore attributes for completely hidden folders
-Get-ChildItem -Recurse -Directory -Include $hiddenDirectories -Force | 
-    ForEach-Object { $_.Attributes = 'Normal' }
+        if ($currentItem.PSIsContainer) {
+            # Skip the directory completely if it is in the exclusion list
+            if ($ExcludeDirectories -contains $currentItem.Name) {
+                continue
+            }
 
-# 5. Restore attributes for the contents of partially hidden folders
-Get-ChildItem -Recurse -Directory -Include $shallowDirectories -Force | 
-    Get-ChildItem -Recurse -Force | 
-    ForEach-Object { $_.Attributes = 'Normal' }
+            # Return the directory name to the pipeline
+            "${LinePrefix}${branchSymbol}$($currentItem.Name)"
+
+            # Recurse inside only if it is NOT in the shallow list
+            if ($ShallowDirectories -notcontains $currentItem.Name) {
+                Invoke-CustomTree -TargetDirectory $currentItem.FullName `
+                                  -ExcludeDirectories $ExcludeDirectories `
+                                  -ShallowDirectories $ShallowDirectories `
+                                  -LinePrefix "${LinePrefix}${childPrefix}"
+            }
+        } else {
+            # Return the file name to the pipeline
+            "${LinePrefix}${branchSymbol}$($currentItem.Name)"
+        }
+    }
+}
+
+# Execute the custom tree function and save it directly to a UTF-8 file
+Invoke-CustomTree -TargetDirectory '.' | Out-File -FilePath 'project_structure.txt' -Encoding utf8

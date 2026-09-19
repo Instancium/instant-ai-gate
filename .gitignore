@@ -8,6 +8,26 @@
 *.a
 *.o
 
+# ==============================================================================
+# Native Runtimes & Inference Drivers (InstantAIGate)
+# ==============================================================================
+
+# Ignore EVERYTHING inside the platform-specific runtime directories
+/src/InstantAIGate.Native/runtimes/win-x64/*
+/src/InstantAIGate.Native/runtimes/linux-x64/*
+/src/InstantAIGate.Native/runtimes/osx-x64/*
+
+# But explicitly keep the .gitkeep files so the folder structure remains in Git
+!/src/InstantAIGate.Native/runtimes/win-x64/.gitkeep
+!/src/InstantAIGate.Native/runtimes/linux-x64/.gitkeep
+!/src/InstantAIGate.Native/runtimes/osx-x64/.gitkeep
+
+# Ignore llama.cpp source code clones and build artifacts if built locally
+/src/InstantAIGate.Native/runtimes/llama.cpp/
+/src/InstantAIGate.Native/runtimes/build/CMakeCache.txt
+/src/InstantAIGate.Native/runtimes/build/CMakeFiles/
+/src/InstantAIGate.Native/runtimes/build/Makefile
+
 # Build outputs
 runtimes/*/*.dll
 bin/
