@@ -10,4 +10,7 @@
     <Project Path="src/InstantAIGate.Server/InstantAIGate.Server.csproj" />
     <Project Path="src/InstantAIGate.SSR/InstantAIGate.SSR.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="test/InstantAIGate.Core.Tests/InstantAIGate.Core.Tests.csproj" Id="1abdfb26-4157-486d-ab81-ba85c91b37f7" />
+  </Folder>
 </Solution>
