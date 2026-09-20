@@ -1,37 +1,39 @@
-﻿namespace InstantAIGate.Core.Services.Inference;
+﻿// File: src/InstantAIGate.Core/Services/Inference/ModelProvider.cs
+namespace InstantAIGate.Core.Services.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
-using InstantAIGate.Core.Dtos.Inference.Native;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Interfaces.Native; // <-- New Opaque Handles
 using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-/// <summary>
-/// Manages model loading, context pooling, and inference lifecycle.
-/// Uses IBackendFacade for all native operations and IVisionFacade for multimodal support.
-/// </summary>
 public class ModelProvider : IModelProvider, IDisposable
 {
     private readonly ILogger<ModelProvider> _logger;
     private readonly IBackendFacade _backendFacade;
     private readonly IVisionFacade _visionFacade;
 
-    private readonly ConcurrentDictionary<string, IntPtr> _modelCache = new();
+    // RULE OF OPAQUE HANDLES: IntPtr replaced with Marker Interfaces
+    private readonly ConcurrentDictionary<string, IModelHandle> _modelCache = new();
     private readonly ConcurrentDictionary<string, VisionContext> _visionCache = new();
     private readonly ConcurrentDictionary<string, ModelSettings> _configCache = new();
-    private readonly ConcurrentDictionary<string, ConcurrentBag<IntPtr>> _pools = new();
+    private readonly ConcurrentDictionary<string, ConcurrentBag<IContextHandle>> _pools = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _initLocks = new();
 
     private static bool _isBackendInitialized;
     private static readonly object _backendLock = new();
     private static BackendLogCallback? _logCallback;
     private static ILogger<ModelProvider>? _staticLogger;
+
     private static bool _isStderrRedirected;
     private static readonly object _stderrLock = new();
 
@@ -44,10 +46,11 @@ public class ModelProvider : IModelProvider, IDisposable
         _backendFacade = backendFacade;
         _visionFacade = visionFacade;
         _staticLogger = logger;
+
         RedirectStderr();
     }
 
-    #region Logging
+    #region Logging & Bootstrapping
 
     private void RedirectStderr()
     {
@@ -75,28 +78,20 @@ public class ModelProvider : IModelProvider, IDisposable
         }
     }
 
-    private static void LlamaLogHandler(BackendLogLevel level, string message)
+    private static void LlamaLogHandler(int level, string message)
     {
         if (string.IsNullOrWhiteSpace(message) || _staticLogger == null) return;
 
-        // Strip native newlines since ILogger implementations append their own
         string cleanMessage = message.TrimEnd('\n', '\r');
         if (string.IsNullOrWhiteSpace(cleanMessage)) return;
 
+        // Mapped from native ints to prevent Core from knowing about Native enums
         switch (level)
         {
-            case BackendLogLevel.Error:
-                _staticLogger.LogError("[Native] {Message}", cleanMessage);
-                break;
-            case BackendLogLevel.Warning:
-                _staticLogger.LogWarning("[Native] {Message}", cleanMessage);
-                break;
-            case BackendLogLevel.Debug:
-                _staticLogger.LogDebug("[Native] {Message}", cleanMessage);
-                break;
-            default:
-                _staticLogger.LogInformation("[Native] {Message}", cleanMessage);
-                break;
+            case 3: _staticLogger.LogError("[Native] {Message}", cleanMessage); break; // Error
+            case 2: _staticLogger.LogWarning("[Native] {Message}", cleanMessage); break; // Warn
+            case 4: _staticLogger.LogDebug("[Native] {Message}", cleanMessage); break; // Debug
+            default: _staticLogger.LogInformation("[Native] {Message}", cleanMessage); break; // Info
         }
     }
 
@@ -106,7 +101,6 @@ public class ModelProvider : IModelProvider, IDisposable
         private readonly StringBuilder _buffer = new();
 
         public LlamaStderrLogger(ILogger logger) => _logger = logger;
-
         public override Encoding Encoding => Encoding.UTF8;
 
         public override void Write(char value)
@@ -118,7 +112,6 @@ public class ModelProvider : IModelProvider, IDisposable
         public override void Write(string? value)
         {
             if (value is null) return;
-
             _buffer.Append(value);
             if (value.Contains('\n')) FlushLine();
         }
@@ -131,7 +124,6 @@ public class ModelProvider : IModelProvider, IDisposable
                 _logger.LogWarning("[llama.cpp STDERR] {Message}", line);
         }
     }
-
     #endregion
 
     public bool IsLoaded(string repoId) => _modelCache.ContainsKey(repoId);
@@ -141,154 +133,45 @@ public class ModelProvider : IModelProvider, IDisposable
         if (config == null || string.IsNullOrWhiteSpace(config.RepoId))
             throw new ArgumentException("Config and RepoId required.", nameof(config));
 
-        // Авто-обнаружение и корректировка путей для мультимодальных моделей
-        if (config.VisionSupport)
-        {
-            var currentFileName = Path.GetFileName(config.ModelPath);
-            var directory = Path.GetDirectoryName(config.ModelPath);
-
-            bool isProjector = currentFileName != null &&
-                (currentFileName.Contains("mmproj", StringComparison.OrdinalIgnoreCase) ||
-                 currentFileName.Contains("clip", StringComparison.OrdinalIgnoreCase));
-
-            if (isProjector)
-            {
-                // Сценарий 1: Пользователь по ошибке передал mmproj как основную модель.
-                if (!string.IsNullOrEmpty(directory))
-                {
-                    var textModel = Directory.GetFiles(directory, "*.gguf")
-                        .FirstOrDefault(f => !f.Contains("mmproj", StringComparison.OrdinalIgnoreCase) &&
-                                             !f.Contains("clip", StringComparison.OrdinalIgnoreCase));
-
-                    if (!string.IsNullOrEmpty(textModel))
-                    {
-                        _logger.LogWarning(
-                            "Auto-corrected config.ModelPath. Switched from projector '{Proj}' to text model '{Text}'",
-                            currentFileName, Path.GetFileName(textModel));
-
-                        config = config with
-                        {
-                            ProjectorPath = config.ModelPath,
-                            ModelPath = textModel
-                        };
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException(
-                            $"Failed to find a valid text model in {directory}. Only projector found.");
-                    }
-                }
-            }
-            else if (string.IsNullOrEmpty(config.ProjectorPath))
-            {
-                if (!string.IsNullOrEmpty(directory))
-                {
-                    var projectorModel = Directory.GetFiles(directory, "*.gguf")
-                        .FirstOrDefault(f => f.Contains("mmproj", StringComparison.OrdinalIgnoreCase) ||
-                                             f.Contains("clip", StringComparison.OrdinalIgnoreCase));
-
-                    if (!string.IsNullOrEmpty(projectorModel))
-                    {
-                        _logger.LogInformation("Auto-discovered vision projector: {Proj}", Path.GetFileName(projectorModel));
-
-                        config = config with
-                        {
-                            ProjectorPath = projectorModel
-                        };
-                    }
-                    else
-                    {
-                        throw new FileNotFoundException($"Vision support is enabled, but no projector (mmproj/clip) file was found in {directory}.");
-                    }
-                }
-            }
-        }
+        // NO MORE DIRECTORY SCANNING HERE. The paths are strictly resolved by IModelLocator.
 
         var repoId = config.RepoId;
         var initLock = _initLocks.GetOrAdd(repoId, _ => new SemaphoreSlim(1, 1));
-        await initLock.WaitAsync(ct);
 
+        await initLock.WaitAsync(ct);
         try
         {
             if (_modelCache.ContainsKey(repoId)) return;
-
-            if (!File.Exists(config.ModelPath))
-                throw new FileNotFoundException("Model file not found.", config.ModelPath);
-
-            var fileInfo = new FileInfo(config.ModelPath);
-            long sizeMb = fileInfo.Length / (1024 * 1024);
-
-            if (sizeMb > config.MaxModelFileSizeMb)
-                throw new InvalidOperationException(
-                    $"Model file too large: {sizeMb} MB > limit {config.MaxModelFileSizeMb} MB");
 
             lock (_backendLock)
             {
                 if (!_isBackendInitialized)
                 {
-                    _logger.LogInformation("Initializing llama.cpp backends...");
-
+                    _logger.LogInformation("Initializing backends via Facade...");
                     SetupLlamaLogging();
-
                     _backendFacade.LoadAllBackends();
                     _backendFacade.BackendInit();
                     _isBackendInitialized = true;
-                
-
-                    try
-                    {
-                        bool gpuSupport = _backendFacade.SupportsGpuOffload();
-                        _logger.LogInformation("GPU offload support: {Support}", gpuSupport ? "YES" : "NO");
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to evaluate GPU support.");
-                    }
                 }
             }
 
-            var splitMode = config.GpuLayerCount > 0
-                ? BackendSplitMode.Layer
-                : BackendSplitMode.None;
+            _logger.LogInformation("Delegating Model Load to Native Facade for '{RepoId}'...", repoId);
 
-            _logger.LogInformation(
-                "Loading model '{RepoId}' | GPU Layers: {Layers} | Main GPU: {Gpu} | Size: {Size} MB | Resolved Path: {Path}",
-                repoId, config.GpuLayerCount, config.MainGPU, sizeMb, config.ModelPath);
+            IModelHandle modelHandle = _backendFacade.LoadModel(config);
 
-            IntPtr modelHandle = _backendFacade.LoadModel(
-                path: config.ModelPath,
-                gpuLayers: config.GpuLayerCount,
-                mainGpu: config.MainGPU,
-                useMlock: config.UseMemoryLock,
-                useMmap: !config.UseMemoryLock,
-                splitMode: splitMode);
-
-            if (modelHandle == IntPtr.Zero)
+            if (modelHandle == null)
                 throw new InvalidOperationException($"Native engine returned null handle for '{repoId}'.");
 
             if (_modelCache.TryAdd(repoId, modelHandle))
             {
                 _configCache.TryAdd(repoId, config);
-                _logger.LogInformation(
-                    "Model '{RepoId}' loaded successfully with {Layers} GPU layers",
-                    repoId, config.GpuLayerCount);
+                _logger.LogInformation("Model '{RepoId}' loaded successfully.", repoId);
 
-                if (config.VisionSupport)
+                // Config now definitively has the projector path if VisionSupport is true
+                if (config.VisionSupport && !string.IsNullOrEmpty(config.ProjectorPath))
                 {
-                    try
-                    {
-                        var visionContext = _visionFacade.InitializeContext(config.ProjectorPath!, modelHandle);
-                        _visionCache.TryAdd(repoId, visionContext);
-                        _logger.LogInformation("Vision projector loaded and bound to '{RepoId}'", repoId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to load vision projector for '{RepoId}'. Unloading base model.", repoId);
-                        _backendFacade.FreeModel(modelHandle);
-                        _modelCache.TryRemove(repoId, out _);
-                        _configCache.TryRemove(repoId, out _);
-                        throw;
-                    }
+                    var visionContext = _visionFacade.InitializeContext(config.ProjectorPath, modelHandle);
+                    _visionCache.TryAdd(repoId, visionContext);
                 }
             }
             else
@@ -309,55 +192,31 @@ public class ModelProvider : IModelProvider, IDisposable
 
         ModelContext textContext;
 
-        if (_pools.TryGetValue(repoId, out var pool) && pool.TryTake(out IntPtr ctxPtr))
+        if (_pools.TryGetValue(repoId, out var pool) && pool.TryTake(out IContextHandle? ctxHandle))
         {
-            _backendFacade.ClearMemory(_backendFacade.GetMemory(ctxPtr), true);
-            textContext = new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr));
+            _backendFacade.ClearContextMemory(ctxHandle, true);
+            textContext = new ModelContext(ctxHandle, ptr => ReturnContextToPool(repoId, ptr));
         }
         else
         {
             var initLock = _initLocks.GetOrAdd(repoId, _ => new SemaphoreSlim(1, 1));
             await initLock.WaitAsync(ct);
-
             try
             {
-                if (_pools.TryGetValue(repoId, out pool) && pool.TryTake(out ctxPtr))
+                if (_pools.TryGetValue(repoId, out pool) && pool.TryTake(out ctxHandle))
                 {
-                    _backendFacade.ClearMemory(_backendFacade.GetMemory(ctxPtr), true);
-                    textContext = new ModelContext(ctxPtr, ptr => ReturnContextToPool(repoId, ptr));
+                    _backendFacade.ClearContextMemory(ctxHandle, true);
+                    textContext = new ModelContext(ctxHandle, ptr => ReturnContextToPool(repoId, ptr));
                 }
-                else if (_modelCache.TryGetValue(repoId, out IntPtr modelPtr) &&
-                         _configCache.TryGetValue(repoId, out var config))
+                else if (_modelCache.TryGetValue(repoId, out IModelHandle? modelHandle) && _configCache.TryGetValue(repoId, out var config))
                 {
-                    var flashAttn = config.FlashAttention
-                        ? BackendFlashAttentionType.Enabled
-                        : BackendFlashAttentionType.Disabled;
+                    // Core no longer knows about 'flashAttn' enums or 'ggml_type'. It just passes the config.
+                    IContextHandle newCtxHandle = _backendFacade.CreateContext(modelHandle, config);
 
-                    var kvType = ResolveKvCacheType(config.KvCacheQuantization);
-                    bool offloadKqv = config.GpuLayerCount > 0;
-                    uint nCtx = config.ContextSize > 0 ? (uint)config.ContextSize : 2048;
-                    uint nBatch = config.BatchSize > 0 ? (uint)config.BatchSize : 512;
-                    int nThreads = config.Threads > 0 ? config.Threads : Environment.ProcessorCount;
-
-                    _logger.LogDebug(
-                        "Creating context for '{RepoId}': n_ctx={Ctx}, batch={Batch}, " +
-                        "flash={Flash}, embeddings={Emb}, kv_quant={KvQuant}, offload_kqv={Kqv}",
-                        repoId, nCtx, nBatch, flashAttn, config.Embeddings, config.KvCacheQuantization, offloadKqv);
-
-                    IntPtr newCtxPtr = _backendFacade.CreateContext(
-                        modelPtr,
-                        nCtx,
-                        nBatch,
-                        nThreads,
-                        config.Embeddings,
-                        flashAttn,
-                        kvType,
-                        offloadKqv);
-
-                    if (newCtxPtr == IntPtr.Zero)
+                    if (newCtxHandle == null)
                         throw new InvalidOperationException($"Failed to create context for '{repoId}'.");
 
-                    textContext = new ModelContext(newCtxPtr, ptr => ReturnContextToPool(repoId, ptr));
+                    textContext = new ModelContext(newCtxHandle, ptr => ReturnContextToPool(repoId, ptr));
                 }
                 else
                 {
@@ -371,7 +230,6 @@ public class ModelProvider : IModelProvider, IDisposable
         }
 
         _visionCache.TryGetValue(repoId, out var masterVisionContext);
-        
         VisionContext? requestVisionContext = masterVisionContext != null
             ? new VisionContext(masterVisionContext.Handle, _ => { })
             : null;
@@ -379,57 +237,45 @@ public class ModelProvider : IModelProvider, IDisposable
         return new InferenceContext(textContext, requestVisionContext);
     }
 
-    private BackendKvCacheType ResolveKvCacheType(string quantization)
+    private void ReturnContextToPool(string repoId, IContextHandle ctxHandle)
     {
-        return quantization?.ToUpperInvariant() switch
-        {
-            "Q8_0" or "Q8_K" => BackendKvCacheType.Q8_0,
-            "Q5_K" => BackendKvCacheType.Q5_K,
-            "Q4_K" => BackendKvCacheType.Q4_K,
-            "Q4_0" => BackendKvCacheType.Q4_0,
-            "F32" => BackendKvCacheType.F32,
-            _ => BackendKvCacheType.F16
-        };
-    }
-
-    private void ReturnContextToPool(string repoId, IntPtr ctxPtr)
-    {
-        if (ctxPtr == IntPtr.Zero) return;
+        if (ctxHandle == null) return;
 
         try
         {
             if (!_modelCache.ContainsKey(repoId))
             {
                 _logger.LogInformation("Model '{RepoId}' is no longer active. Freeing orphaned context.", repoId);
-                _backendFacade.FreeContext(ctxPtr);
+                _backendFacade.FreeContext(ctxHandle);
                 return;
             }
 
-            _backendFacade.ClearMemory(_backendFacade.GetMemory(ctxPtr), true);
-            _pools.GetOrAdd(repoId, _ => new ConcurrentBag<IntPtr>()).Add(ctxPtr);
+            _backendFacade.ClearContextMemory(ctxHandle, true);
+            _pools.GetOrAdd(repoId, _ => new ConcurrentBag<IContextHandle>()).Add(ctxHandle);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to pool context for '{RepoId}'. Freeing memory natively.", repoId);
-            _backendFacade.FreeContext(ctxPtr);
+            _logger.LogError(ex, "Failed to pool context for '{RepoId}'. Freeing natively.", repoId);
+            _backendFacade.FreeContext(ctxHandle);
         }
     }
 
     public Task<ModelWeights> GetWeightsAsync(string repoId, CancellationToken ct = default)
     {
-        if (!_modelCache.TryGetValue(repoId, out IntPtr modelPtr))
+        if (!_modelCache.TryGetValue(repoId, out IModelHandle? modelHandle))
             throw new KeyNotFoundException($"Weights for '{repoId}' missing.");
 
-        return Task.FromResult(new ModelWeights(modelPtr, isOwned: false, _backendFacade));
+        // isOwned: false ensures the caller cannot dispose the cached native model
+        return Task.FromResult(new ModelWeights(modelHandle, isOwned: false, _backendFacade));
     }
 
     public void UnloadModel(string repoId)
     {
         if (_pools.TryRemove(repoId, out var pool))
         {
-            while (pool.TryTake(out IntPtr ctxPtr))
+            while (pool.TryTake(out IContextHandle? ctxHandle))
             {
-                _backendFacade.FreeContext(ctxPtr);
+                _backendFacade.FreeContext(ctxHandle);
             }
         }
 
@@ -438,9 +284,9 @@ public class ModelProvider : IModelProvider, IDisposable
             visionCtx.Dispose();
         }
 
-        if (_modelCache.TryRemove(repoId, out IntPtr modelPtr))
+        if (_modelCache.TryRemove(repoId, out IModelHandle? modelHandle))
         {
-            _backendFacade.FreeModel(modelPtr);
+            _backendFacade.FreeModel(modelHandle);
         }
 
         _configCache.TryRemove(repoId, out _);
@@ -453,19 +299,13 @@ public class ModelProvider : IModelProvider, IDisposable
         _pools.TryGetValue(r, out var p);
         _configCache.TryGetValue(r, out var c);
         return new ModelRegistryStatus(
-            r,
-            true,
-            p?.Count ?? 0,
-            c?.MaxContexts ?? 4,
-            c?.GpuLayerCount ?? 0,
-            c?.Type ?? ModelType.Audio);
+            r, true, p?.Count ?? 0, c?.MaxContexts ?? 4, c?.GpuLayerCount ?? 0, c?.Type ?? ModelType.Audio);
     });
 
     public IEnumerable<NativeModelDetails> GetNativeDetails() => _modelCache.Keys.Select(r =>
     {
         _configCache.TryGetValue(r, out var c);
         _pools.TryGetValue(r, out var p);
-
         return new NativeModelDetails
         {
             RepoId = r,
@@ -474,7 +314,7 @@ public class ModelProvider : IModelProvider, IDisposable
             Threads = c?.Threads ?? 4,
             FlashAttention = c?.FlashAttention ?? false,
             IdleContextsCount = p?.Count ?? 0,
-            Backend = "auto"
+            Backend = "abstracted" // Abstraction prevents knowing backend specifically here
         };
     });
 
@@ -482,15 +322,13 @@ public class ModelProvider : IModelProvider, IDisposable
     {
         GC.SuppressFinalize(this);
 
-        foreach (var visionCtx in _visionCache.Values)
-            visionCtx.Dispose();
-
+        foreach (var visionCtx in _visionCache.Values) visionCtx.Dispose();
         foreach (var p in _pools.Values)
-            while (p.TryTake(out IntPtr ctxPtr))
-                _backendFacade.FreeContext(ctxPtr);
+            while (p.TryTake(out IContextHandle? ctxHandle))
+                _backendFacade.FreeContext(ctxHandle);
 
-        foreach (var modelPtr in _modelCache.Values)
-            _backendFacade.FreeModel(modelPtr);
+        foreach (var modelHandle in _modelCache.Values)
+            _backendFacade.FreeModel(modelHandle);
 
         _pools.Clear();
         _modelCache.Clear();
@@ -507,6 +345,4 @@ public class ModelProvider : IModelProvider, IDisposable
             }
         }
     }
-
-
 }

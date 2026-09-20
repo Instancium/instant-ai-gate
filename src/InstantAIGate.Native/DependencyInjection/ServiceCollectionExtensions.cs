@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
         // Register Native Facades (Singletons for stateful native resource management)
         services.AddSingleton<IBackendFacade, BackendFacade>();
         services.AddSingleton<IVisionFacade, VisionFacade>();
+        services.AddSingleton<IModelLocator, LlamaModelLocator>();
 
         // Register Core Services
         services.AddSingleton<RequestQueue>();

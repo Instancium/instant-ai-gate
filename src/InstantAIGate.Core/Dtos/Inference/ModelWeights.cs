@@ -1,6 +1,7 @@
 ﻿namespace InstantAIGate.Core.Dtos.Inference;
 
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Interfaces.Native;
 
 /// <summary>
 /// Provides access to model weights for direct operations.
@@ -8,14 +9,14 @@ using InstantAIGate.Core.Interfaces.Inference;
 public sealed class ModelWeights : IDisposable
 {
     private bool _disposed;
-    private readonly IntPtr _handle;
+    private readonly IModelHandle _handle;
     private readonly bool _isOwned;
     private readonly IBackendFacade? _backendFacade;
 
     /// <summary>
     /// Native model handle.
     /// </summary>
-    public IntPtr Handle => _handle;
+    public IModelHandle Handle => _handle;
 
     /// <summary>
     /// Indicates whether this instance owns the native resource.
@@ -28,7 +29,7 @@ public sealed class ModelWeights : IDisposable
     /// <param name="handle">Native model handle.</param>
     /// <param name="isOwned">Whether this instance owns the resource.</param>
     /// <param name="backendFacade">Backend facade for resource cleanup.</param>
-    public ModelWeights(IntPtr handle, bool isOwned, IBackendFacade? backendFacade = null)
+    public ModelWeights(IModelHandle handle, bool isOwned, IBackendFacade? backendFacade = null)
     {
         _handle = handle;
         _isOwned = isOwned;

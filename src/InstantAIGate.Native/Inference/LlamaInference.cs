@@ -1,21 +1,21 @@
-﻿namespace InstantAIGate.Native.Inference;
+﻿// File: src/InstantAIGate.Native/Inference/LlamaInference.cs
+namespace InstantAIGate.Native.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Native.Bindings;
+using InstantAIGate.Native.Handles; 
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-/// <summary>
-/// Core inference engine handling P/Invoke calls to llama.cpp.
-/// Responsible for tokenization, prompt evaluation, and token generation.
-/// </summary>
 public class LlamaInference : IInferenceEngine, IDisposable
 {
     private readonly IModelManager _modelManager;
@@ -30,6 +30,13 @@ public class LlamaInference : IInferenceEngine, IDisposable
         _logger = logger;
     }
 
+    // HELPER: Safely unbox opaque handles to native pointers
+    private static IntPtr UnwrapModel(ModelWeights weights) =>
+        weights.Handle is LlamaModelHandle mh ? mh.Pointer : throw new InvalidCastException("Invalid model handle.");
+
+    private static IntPtr UnwrapContext(ModelContext ctx) =>
+        ctx.Handle is LlamaContextHandle ch ? ch.Pointer : throw new InvalidCastException("Invalid context handle.");
+
     public async Task<int[]> TokenizeDataAsync(string modelId, string text, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -38,11 +45,12 @@ public class LlamaInference : IInferenceEngine, IDisposable
         }
 
         using var model = await _modelManager.AcquireModelAsync(modelId, ct);
-        IntPtr vocab = LlamaNative.llama_model_get_vocab(model.Handle);
+
+        // Unboxing the interface to get the IntPtr
+        IntPtr nativeModelPtr = UnwrapModel(model);
+        IntPtr vocab = LlamaNative.llama_model_get_vocab(nativeModelPtr);
 
         byte[] textBytes = Encoding.UTF8.GetBytes(text);
-
-        // Allocate buffer with overhead for special tokens
         int[] tokens = new int[textBytes.Length + 64];
 
         int count = LlamaNative.llama_tokenize(vocab, textBytes, textBytes.Length, tokens, tokens.Length, false, true);
@@ -63,8 +71,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
         return result;
     }
 
-    
-
     public async Task<string> ApplyChatTemplateAsync(
         string modelId,
         IEnumerable<ChatMessage> messages,
@@ -72,7 +78,11 @@ public class LlamaInference : IInferenceEngine, IDisposable
         CancellationToken ct = default)
     {
         using var model = await _modelManager.AcquireModelAsync(modelId, ct);
-        IntPtr tmplPtr = LlamaNative.llama_model_chat_template(model.Handle, null);
+
+        // Unboxing at the boundary
+        IntPtr nativeModelPtr = UnwrapModel(model);
+        IntPtr tmplPtr = LlamaNative.llama_model_chat_template(nativeModelPtr, null);
+
         string tmpl = tmplPtr != IntPtr.Zero ? Marshal.PtrToStringUTF8(tmplPtr)! : "chatml";
 
         var msgList = messages.ToList();
@@ -83,7 +93,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
         {
             string content = msgList[i].Content;
 
-           
             if (!mediaInjected && msgList[i].Role == "user" && imagePaths != null && imagePaths.Count > 0)
             {
                 var sb = new StringBuilder();
@@ -121,21 +130,19 @@ public class LlamaInference : IInferenceEngine, IDisposable
         using var model = await _modelManager.AcquireModelAsync(modelId, ct);
         using var context = await _modelManager.AcquireContextAsync(modelId, ct);
 
-        IntPtr vocab = LlamaNative.llama_model_get_vocab(model.Handle);
-        IntPtr ctxHandle = context.TextContext.Handle;
+        // Safely extract all pointers
+        IntPtr nativeModelPtr = UnwrapModel(model);
+        IntPtr ctxHandle = UnwrapContext(context.TextContext);
+        IntPtr vocab = LlamaNative.llama_model_get_vocab(nativeModelPtr);
 
-        // Assume your context object exposes MtmdContext. If not loaded, it should be IntPtr.Zero
-        IntPtr mtmdCtxHandle = context.VisionContext?.Handle ?? IntPtr.Zero;
+        // Pattern matching for Vision handle
+        IntPtr mtmdCtxHandle = context.VisionContext?.Handle is MtmdVisionHandle vh ? vh.Pointer : IntPtr.Zero;
 
         int currentPos = 0;
 
         // Phase 1: Prompt Evaluation (Unified)
         if (mtmdCtxHandle != IntPtr.Zero)
         {
-            // ---------------------------------------------------------
-            // PATH A: Multimodal Model (MTMD is loaded)
-            // Handles pure text or multiple images automatically
-            // ---------------------------------------------------------
             var bitmapHandles = new List<MtmdNative.MtmdBitmapHandle>();
             IntPtr[] bitmapPtrs = Array.Empty<IntPtr>();
 
@@ -206,7 +213,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
             }
             finally
             {
-                // Ensure all loaded bitmaps are freed regardless of exceptions
                 foreach (var handle in bitmapHandles)
                 {
                     handle.Dispose();
@@ -215,10 +221,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
         }
         else
         {
-            // ---------------------------------------------------------
-            // PATH B: Pure Text Model (No MTMD loaded)
-            // Uses your original highly-optimized unsafe batch logic
-            // ---------------------------------------------------------
             if (imagePaths != null && imagePaths.Count > 0)
             {
                 _logger.LogWarning("Images provided, but no multimodal projector (mmproj) is loaded. Images will be ignored.");
@@ -272,8 +274,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
         }
 
         // Phase 2: Generation Loop
-        // (This remains completely identical for both text and vision models)
-
         var chainParams = LlamaNative.llama_sampler_chain_default_params();
         IntPtr sampler = LlamaNative.llama_sampler_chain_init(chainParams);
 
@@ -361,7 +361,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
             LlamaNative.llama_sampler_free(sampler);
         }
     }
-
 
     public void Dispose()
     {

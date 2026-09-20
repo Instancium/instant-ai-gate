@@ -1,6 +1,5 @@
 ﻿using InstantAIGate.Cli.Commands;
 using InstantAIGate.Cli.Logging;
-using InstantAIGate.Cli.Services;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Native.DependencyInjection;
@@ -59,7 +58,7 @@ public static class Program
             {
                 // Register Core Native Inference (Vulkan backend)
                 services.AddInstantAIGateInference();
-                services.AddSingleton<IModelPathProvider>(new LocalModelPathProvider("C:\\models\\Qwen_Qwen3-VL-8B-Instruct-GGUF"));
+                //services.AddSingleton<IModelPathProvider>(new LocalModelPathProvider("C:\\models\\Qwen_Qwen3-VL-8B-Instruct-GGUF"));
 
                 // Register CLI State & Debug State
                 services.AddSingleton<CliSession>();

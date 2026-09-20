@@ -1,4 +1,7 @@
-﻿namespace InstantAIGate.Core.Dtos.Inference;
+﻿// File: src/InstantAIGate.Core/Dtos/Inference/ModelContext.cs
+using InstantAIGate.Core.Interfaces.Native;
+
+namespace InstantAIGate.Core.Dtos.Inference;
 
 /// <summary>
 /// Wrapper for text inference context with automatic pooling support.
@@ -6,20 +9,20 @@
 public sealed class ModelContext : IDisposable
 {
     private bool _disposed;
-    private Action<IntPtr>? _onDispose;
-    private readonly IntPtr _handle;
+    private Action<IContextHandle>? _onDispose;
+    private readonly IContextHandle _handle;
 
     /// <summary>
     /// Native context handle.
     /// </summary>
-    public IntPtr Handle => _handle;
+    public IContextHandle Handle => _handle;
 
     /// <summary>
     /// Initializes a new instance of the model context.
     /// </summary>
     /// <param name="handle">Native context handle.</param>
     /// <param name="onDispose">Callback to execute on disposal.</param>
-    public ModelContext(IntPtr handle, Action<IntPtr> onDispose)
+    public ModelContext(IContextHandle handle, Action<IContextHandle> onDispose)
     {
         _handle = handle;
         _onDispose = onDispose;

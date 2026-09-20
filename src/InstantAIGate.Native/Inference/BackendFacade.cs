@@ -1,191 +1,110 @@
-﻿namespace InstantAIGate.Native.Inference;
+﻿// File: src/InstantAIGate.Native/Inference/BackendFacade.cs
+namespace InstantAIGate.Native.Inference;
 
-using InstantAIGate.Core.Dtos.Inference.Native;
+using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Interfaces.Native;
 using InstantAIGate.Native.Bindings;
+using InstantAIGate.Native.Handles;
 using System;
 using System.Runtime.InteropServices;
 
-/// <summary>
-/// Implementation of IBackendFacade mapping abstract Core types to native llama.cpp P/Invoke calls.
-/// </summary>
 public class BackendFacade : IBackendFacade
 {
+    public void LoadAllBackends() => LlamaNative.llama_backend_init();
+    public void BackendInit() => LlamaNative.llama_backend_init();
+    public void BackendFree() => LlamaNative.llama_backend_free();
+    public bool SupportsGpuOffload() => LlamaNative.llama_supports_gpu_offload();
 
-    /// <summary>
-    /// Loads all available native backends.
-    /// </summary>
-    public void LoadAllBackends()
-    {
-        LlamaNative.llama_backend_init();
-    }
-
-    /// <summary>
-    /// Initializes the backend system.
-    /// </summary>
-    public void BackendInit()
-    {
-        LlamaNative.llama_backend_init();
-    }
-
-    /// <summary>
-    /// Frees all backend resources.
-    /// </summary>
-    public void BackendFree()
-    {
-        LlamaNative.llama_backend_free();
-    }
-
-    /// <summary>
-    /// Checks if GPU offload is supported.
-    /// </summary>
-    public bool SupportsGpuOffload()
-    {
-        return LlamaNative.llama_supports_gpu_offload();
-    }
-
-    /// <summary>
-    /// Loads a model from the specified path.
-    /// </summary>
-    public IntPtr LoadModel(
-        string path,
-        int gpuLayers,
-        int mainGpu,
-        bool useMlock,
-        bool useMmap,
-        BackendSplitMode splitMode)
+    public IModelHandle LoadModel(ModelSettings settings)
     {
         var modelParams = LlamaNative.llama_model_default_params();
-        modelParams.NGpuLayers = gpuLayers;
-        modelParams.MainGpu = mainGpu;
-        // modelParams.UseMlock = useMlock;
-        modelParams.LoadMode = useMmap ? LlamaLoadMode.MMap : LlamaLoadMode.None;
+        modelParams.NGpuLayers = settings.GpuLayerCount;
+        modelParams.MainGpu = settings.MainGPU;
 
-        modelParams.SplitMode = splitMode switch
-        {
-            BackendSplitMode.Layer => LlamaSplitMode.Layer,
-            BackendSplitMode.Row => LlamaSplitMode.Row,
-            _ => LlamaSplitMode.None
-        };
+        // Native mapping logic isolated from Core
+        modelParams.LoadMode = !settings.UseMemoryLock ? LlamaLoadMode.MMap : LlamaLoadMode.None;
+        modelParams.SplitMode = settings.GpuLayerCount > 0 ? LlamaSplitMode.Layer : LlamaSplitMode.None;
 
-        return LlamaNative.llama_model_load_from_file(path, in modelParams, (nuint)path.Length);
+        IntPtr ptr = LlamaNative.llama_model_load_from_file(settings.ModelPath, in modelParams, (nuint)settings.ModelPath.Length);
+
+        return ptr != IntPtr.Zero ? new LlamaModelHandle(ptr) : throw new InvalidOperationException("Failed to load model natively.");
     }
 
-    /// <summary>
-    /// Creates an inference context for the specified model.
-    /// </summary>
-    public IntPtr CreateContext(
-        IntPtr modelPtr,
-        uint nCtx,
-        uint nBatch,
-        int nThreads,
-        bool embeddings,
-        BackendFlashAttentionType flashAttn,
-        BackendKvCacheType kvType,
-        bool offloadKqv)
+    public IContextHandle CreateContext(IModelHandle modelHandle, ModelSettings settings)
     {
+        if (modelHandle is not LlamaModelHandle nativeHandle)
+            throw new ArgumentException("Invalid model handle type.", nameof(modelHandle));
+
         var ctxParams = LlamaNative.llama_context_default_params();
-        ctxParams.NCtx = nCtx;
-        ctxParams.NBatch = nBatch;
-        ctxParams.NUbatch = nBatch;
-        ctxParams.NThreads = nThreads;
-        ctxParams.NThreadsBatch = nThreads;
-        ctxParams.Embeddings = embeddings;
-        ctxParams.OffloadKqv = offloadKqv;
+        ctxParams.NCtx = settings.ContextSize > 0 ? (uint)settings.ContextSize : 2048;
+        ctxParams.NBatch = settings.BatchSize > 0 ? (uint)settings.BatchSize : 512;
+        ctxParams.NThreads = settings.Threads > 0 ? settings.Threads : Environment.ProcessorCount;
+        ctxParams.NThreadsBatch = ctxParams.NThreads;
+        ctxParams.Embeddings = settings.Embeddings;
+        ctxParams.OffloadKqv = settings.GpuLayerCount > 0;
+        ctxParams.FlashAttnType = settings.FlashAttention ? LlamaFlashAttnType.Enabled : LlamaFlashAttnType.Disabled;
 
-        ctxParams.FlashAttnType = flashAttn switch
+        var ggmlType = settings.KvCacheQuantization?.ToUpperInvariant() switch
         {
-            BackendFlashAttentionType.Enabled => LlamaFlashAttnType.Enabled,
-            BackendFlashAttentionType.Disabled => LlamaFlashAttnType.Disabled,
-            _ => LlamaFlashAttnType.Auto
-        };
-
-        var ggmlType = kvType switch
-        {
-            BackendKvCacheType.Q8_0 => GgmlType.Q8_0,
-            BackendKvCacheType.Q4_K => GgmlType.Q4_K,
-            BackendKvCacheType.Q5_K => GgmlType.Q5_K,
-            BackendKvCacheType.F32 => GgmlType.F32,
-            BackendKvCacheType.Q4_0 => GgmlType.Q4_0,
+            "Q8_0" or "Q8_K" => GgmlType.Q8_0,
+            "Q4_K" => GgmlType.Q4_K,
+            "Q5_K" => GgmlType.Q5_K,
+            "F32" => GgmlType.F32,
+            "Q4_0" => GgmlType.Q4_0,
             _ => GgmlType.F16
         };
 
         ctxParams.TypeK = ggmlType;
         ctxParams.TypeV = ggmlType;
 
-        return LlamaNative.llama_init_from_model(modelPtr, in ctxParams);
+        IntPtr ptr = LlamaNative.llama_init_from_model(nativeHandle.Pointer, in ctxParams);
+        return ptr != IntPtr.Zero ? new LlamaContextHandle(ptr) : throw new InvalidOperationException("Failed to create context natively.");
     }
 
-    /// <summary>
-    /// Frees a model from memory.
-    /// </summary>
-    public void FreeModel(IntPtr modelPtr)
+    public void FreeModel(IModelHandle modelHandle)
     {
-        if (modelPtr != IntPtr.Zero)
+        if (modelHandle is LlamaModelHandle nativeHandle && nativeHandle.Pointer != IntPtr.Zero)
+            LlamaNative.llama_model_free(nativeHandle.Pointer);
+    }
+
+    public void FreeContext(IContextHandle contextHandle)
+    {
+        if (contextHandle is LlamaContextHandle nativeHandle && nativeHandle.Pointer != IntPtr.Zero)
+            LlamaNative.llama_free(nativeHandle.Pointer);
+    }
+
+    public void ClearContextMemory(IContextHandle contextHandle, bool clearKvCache)
+    {
+        if (contextHandle is LlamaContextHandle nativeHandle && nativeHandle.Pointer != IntPtr.Zero)
         {
-            LlamaNative.llama_model_free(modelPtr);
+            IntPtr memPtr = LlamaNative.llama_get_memory(nativeHandle.Pointer);
+            if (memPtr != IntPtr.Zero)
+            {
+                LlamaNative.llama_memory_clear(memPtr, clearKvCache);
+            }
         }
     }
 
-    /// <summary>
-    /// Frees a context from memory.
-    /// </summary>
-    public void FreeContext(IntPtr ctxPtr)
-    {
-        if (ctxPtr != IntPtr.Zero)
-        {
-            LlamaNative.llama_free(ctxPtr);
-        }
-    }
-
-    /// <summary>
-    /// Gets the memory handle from context.
-    /// </summary>
-    public IntPtr GetMemory(IntPtr ctxPtr)
-    {
-        return LlamaNative.llama_get_memory(ctxPtr);
-    }
-
-    /// <summary>
-    /// Clears the memory contents.
-    /// </summary>
-    public void ClearMemory(IntPtr memoryPtr, bool clearKvCache)
-    {
-        if (memoryPtr != IntPtr.Zero)
-        {
-            LlamaNative.llama_memory_clear(memoryPtr, clearKvCache);
-        }
-    }
-
-
-    // Keeping the reference to prevent Garbage Collection
     private GgmlLogCallback? _nativeLogCallback;
-
-    /// <summary>
-    /// Sets the logging callback for native operations.
-    /// </summary>
-
     public void SetLogCallback(BackendLogCallback callback)
     {
         _nativeLogCallback = (level, text, _) =>
         {
             if (text == IntPtr.Zero) return;
 
-            // 'level' is now natively recognized as GgmlLogLevel
-            var coreLevel = level switch
+            // Map GgmlLogLevel to generic int levels defined in ModelProvider
+            int coreLevel = level switch
             {
-                GgmlLogLevel.Error => BackendLogLevel.Error,
-                GgmlLogLevel.Warn => BackendLogLevel.Warning,
-                GgmlLogLevel.Debug => BackendLogLevel.Debug,
-                GgmlLogLevel.Info => BackendLogLevel.Info,
-                GgmlLogLevel.Cont => BackendLogLevel.Info, // Map continuation to Info
-                _ => BackendLogLevel.Info
+                GgmlLogLevel.Error => 3,
+                GgmlLogLevel.Warn => 2,
+                GgmlLogLevel.Debug => 4,
+                _ => 1
             };
 
             string message = Marshal.PtrToStringUTF8(text) ?? string.Empty;
             callback.Invoke(coreLevel, message);
         };
-
         LlamaNative.llama_log_set(_nativeLogCallback, IntPtr.Zero);
     }
 }

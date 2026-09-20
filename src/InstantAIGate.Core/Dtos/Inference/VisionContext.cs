@@ -1,38 +1,28 @@
-﻿namespace InstantAIGate.Core.Dtos.Inference;
-
-/// <summary>
-/// Wrapper for multimodal vision context.
-/// </summary>
-public sealed class VisionContext : IDisposable
+﻿// File: src/InstantAIGate.Core/Dtos/Inference/VisionContext.cs
+namespace InstantAIGate.Core.Dtos.Inference
 {
-    private bool _disposed;
-    private readonly IntPtr _handle;
-    private readonly Action<IntPtr> _onDispose;
+    using System;
+    using InstantAIGate.Core.Interfaces.Native;
 
-    /// <summary>
-    /// Native vision context handle.
-    /// </summary>
-    public IntPtr Handle => _handle;
-
-    /// <summary>
-    /// Initializes a new instance of the vision context.
-    /// </summary>
-    /// <param name="handle">Native vision context handle.</param>
-    /// <param name="onDispose">Callback to execute on disposal.</param>
-    public VisionContext(IntPtr handle, Action<IntPtr> onDispose)
+    public sealed class VisionContext : IDisposable
     {
-        _handle = handle;
-        _onDispose = onDispose ?? throw new ArgumentNullException(nameof(onDispose));
-    }
+        private bool _disposed;
+        private readonly IVisionHandle _handle;
+        private readonly Action<IVisionHandle> _onDispose;
 
-    /// <summary>
-    /// Disposes the vision context and releases resources.
-    /// </summary>
-    public void Dispose()
-    {
-        if (_disposed) return;
+        public IVisionHandle Handle => _handle;
 
-        _onDispose(_handle);
-        _disposed = true;
+        public VisionContext(IVisionHandle handle, Action<IVisionHandle> onDispose)
+        {
+            _handle = handle ?? throw new ArgumentNullException(nameof(handle));
+            _onDispose = onDispose ?? throw new ArgumentNullException(nameof(onDispose));
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _onDispose(_handle);
+            _disposed = true;
+        }
     }
 }
