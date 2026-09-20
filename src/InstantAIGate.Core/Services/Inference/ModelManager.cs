@@ -11,14 +11,11 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-/// <summary>
-/// Coordinates the single-model state, graceful draining, and context acquisition.
-/// </summary>
 public sealed class ModelManager : IDisposable, IModelManager
 {
     private readonly IModelProvider _modelProvider;
     private readonly IModelLocator _modelLocator;
-    private readonly RequestQueue _requestQueue;
+    private readonly IQueueManager _queueManager; // <-- Replaced RequestQueue
     private readonly ILogger<ModelManager> _logger;
 
     private ModelSettings? _activeConfig;
@@ -26,18 +23,15 @@ public sealed class ModelManager : IDisposable, IModelManager
     private bool _isDraining;
     private readonly SemaphoreSlim _globalLock = new(1, 1);
 
-    /// <summary>
-    /// Initializes a new instance of the model manager.
-    /// </summary>
     public ModelManager(
         IModelProvider modelProvider,
         IModelLocator modelLocator,
-        RequestQueue requestQueue,
+        IQueueManager queueManager, // <-- Injected Interface
         ILogger<ModelManager> logger)
     {
         _modelProvider = modelProvider;
         _modelLocator = modelLocator;
-        _requestQueue = requestQueue;
+        _queueManager = queueManager;
         _logger = logger;
         _activeLeases = 0;
         _isDraining = false;
@@ -57,7 +51,6 @@ public sealed class ModelManager : IDisposable, IModelManager
             }
 
             var resolvedPaths = await _modelLocator.ResolvePathsAsync(config, ct);
-
             config = config with
             {
                 ModelPath = resolvedPaths.PrimaryModelPath,
@@ -66,7 +59,9 @@ public sealed class ModelManager : IDisposable, IModelManager
 
             await _modelProvider.InitializeAsync(config, ct);
             _activeConfig = config;
-            _requestQueue.Resume();
+
+            // Allow traffic once loaded
+            _queueManager.Resume();
         }
         finally
         {
@@ -90,9 +85,12 @@ public sealed class ModelManager : IDisposable, IModelManager
     private async Task PerformGracefulSwapInternalAsync(ModelSettings newConfig, CancellationToken ct)
     {
         _logger.LogInformation("Initiating Hot-Swap to '{RepoId}'.", newConfig.RepoId);
-        _requestQueue.Pause();
+
+        // Phase 2.2: Implement Draining State
+        _queueManager.Pause(); // Blocks new leases
         _isDraining = true;
 
+        // Wait for all active inference requests to complete
         while (Volatile.Read(ref _activeLeases) > 0)
         {
             await Task.Delay(100, ct);
@@ -113,7 +111,8 @@ public sealed class ModelManager : IDisposable, IModelManager
         await _modelProvider.InitializeAsync(newConfig, ct);
         _activeConfig = newConfig;
         _isDraining = false;
-        _requestQueue.Resume();
+
+        _queueManager.Resume(); // Re-open traffic
         _logger.LogInformation("Hot-Swap to '{RepoId}' completed successfully.", newConfig.RepoId);
     }
 
@@ -150,12 +149,9 @@ public sealed class ModelManager : IDisposable, IModelManager
         await _globalLock.WaitAsync(ct);
         try
         {
-            if (_activeConfig?.RepoId != repoId)
-            {
-                return;
-            }
+            if (_activeConfig?.RepoId != repoId) return;
 
-            _requestQueue.Pause();
+            _queueManager.Pause();
             _isDraining = true;
 
             while (Volatile.Read(ref _activeLeases) > 0)
@@ -176,31 +172,21 @@ public sealed class ModelManager : IDisposable, IModelManager
     public async Task<ModelWeights> AcquireModelAsync(string repoId, CancellationToken ct = default)
     {
         var modelWeights = await _modelProvider.GetWeightsAsync(repoId, ct);
-
-        if (modelWeights != null)
-        {
-            return modelWeights;
-        }
-
+        if (modelWeights != null) return modelWeights;
         throw new InvalidCastException("Weights infrastructure cannot be mapped.");
     }
 
-    public ModelSettings? GetActiveSettings()
-    {
-        return _activeConfig;
-    }
+    public ModelSettings? GetActiveSettings() => _activeConfig;
 
     public InferenceMetrics GetMetrics()
     {
         int currentLeases = Volatile.Read(ref _activeLeases);
-        int pendingRequests = _requestQueue.PendingCount;
+        int pendingRequests = _queueManager.PendingCount;
         return new InferenceMetrics(currentLeases, pendingRequests);
     }
 
     public IEnumerable<ModelRegistryStatus> GetActiveModelsStatus() => _modelProvider.GetStatus();
-
     public IEnumerable<string> GetActiveModels() => _activeConfig != null ? new[] { _activeConfig.RepoId } : Array.Empty<string>();
-
     public IEnumerable<NativeModelDetails> GetNativeDetails() => _modelProvider.GetNativeDetails();
 
     public void Dispose()

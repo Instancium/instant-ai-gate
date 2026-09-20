@@ -24,7 +24,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IModelLocator, LlamaModelLocator>();
 
         // Register Core Services
-        services.AddSingleton<RequestQueue>();
+        services.AddSingleton<IQueueManager>(sp => new DynamicRequestQueue(initialLimit: 100, TimeProvider.System));
         services.AddSingleton<IModelProvider, ModelProvider>();
         services.AddSingleton<IModelManager, ModelManager>();
 
