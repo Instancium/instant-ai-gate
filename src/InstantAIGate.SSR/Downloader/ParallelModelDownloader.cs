@@ -67,7 +67,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
 
                 string destPath = Path.Combine(destinationDirectory, fileName);
 
-                using var request = new HttpRequestMessage(HttpMethod.Head, url);
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
                 response.EnsureSuccessStatusCode();
 
@@ -97,6 +97,17 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                     {
                         await DownloadSequentialAsync(modelId, file.Url, file.DestinationPath, file.TotalBytes,
                             bytesRead => ReportProgress(bytesRead), linkedCts.Token);
+                    }
+                }
+
+                // Safety Check: Reject tiny files (likely HTML error pages or CDN blocks)
+                foreach (var file in fileTasks)
+                {
+                    var fileInfo = new FileInfo(file.DestinationPath);
+                    if (fileInfo.Exists && fileInfo.Length < 1024 * 1024) // < 1 MB
+                    {
+                        _logger.LogError("Downloaded file '{File}' is abnormally small ({Size} bytes). The CDN likely returned an HTML error page.", fileInfo.Name, fileInfo.Length);
+                        throw new InvalidOperationException($"Download failed: The remote server returned an invalid file (size: {fileInfo.Length} bytes). Check URL and CDN restrictions.");
                     }
                 }
 
@@ -146,7 +157,14 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                 {
                     totalDownloadedBytes += bytesRead;
                     double speed = totalDownloadedBytes / sw.Elapsed.TotalSeconds;
-                    float percent = (float)totalDownloadedBytes / totalBytesAllFiles * 100;
+                    
+                    float percent = totalBytesAllFiles > 0
+                        ? (float)totalDownloadedBytes / totalBytesAllFiles * 100
+                        : 0f;
+
+                    if (percent >= 100f && totalDownloadedBytes < totalBytesAllFiles)
+                        percent = 99.9f;
+
                     progress.Report(new DownloadProgress(modelId, totalDownloadedBytes, totalBytesAllFiles, speed, percent));
                 }
             }

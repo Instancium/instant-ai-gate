@@ -71,7 +71,9 @@ public static class Program
                 services.AddTransient<IConsoleCommand, LoadCommand>();
                 services.AddTransient<IConsoleCommand, ImageCommand>();
                 services.AddTransient<IConsoleCommand, HelpCommand>();
-                services.AddTransient<IConsoleCommand, DebugCommand>(); // Register the toggle
+                services.AddTransient<IConsoleCommand, DebugCommand>();
+                services.AddTransient<IConsoleCommand, ModelsCommand>();
+                services.AddTransient<IConsoleCommand, DownloadCommand>();
 
                 // Register Main Loop
                 services.AddHostedService<CliHostedService>();

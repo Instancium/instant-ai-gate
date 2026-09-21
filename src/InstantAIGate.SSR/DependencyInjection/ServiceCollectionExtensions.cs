@@ -10,14 +10,22 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddInstantAIGateSSR(this IServiceCollection services)
     {
-        // Register HTTP Client for Downloader with basic resilience
-        services.AddHttpClient<IModelDownloader, ParallelModelDownloader>(client =>
-        {
-            // You can configure default headers or timeouts here if needed
-            client.Timeout = System.TimeSpan.FromHours(1); // Models can be large
-        });
+        // Configure HttpClientHandler to strictly follow redirects (HTTP 301/302)
+        services.AddHttpClient<IModelDownloader, ParallelModelDownloader>()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = true,
+                MaxAutomaticRedirections = 5
+            })
+            .ConfigureHttpClient(client =>
+            {
+                client.Timeout = System.TimeSpan.FromHours(1);
 
-        // Register Catalog Service as Singleton (caches the parsed JSON)
+                // Spoof User-Agent to bypass basic Cloudflare/CDN bot protections
+                client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 InstantAIGate/2.0");
+                client.DefaultRequestHeaders.Add("Accept", "*/*");
+            });
+
         services.AddSingleton<IModelCatalogService, ModelCatalogService>();
 
         return services;
