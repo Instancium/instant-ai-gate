@@ -2,6 +2,7 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -15,28 +16,37 @@ public class SyntheticNetworkHandler : HttpMessageHandler
 {
     private readonly long _virtualFileSize;
     private readonly byte[] _magicHeader;
+    private readonly bool _supportRanges;
 
-    public SyntheticNetworkHandler(long virtualFileSizeBytes = 1024 * 1024 * 50) // Default 50MB
+    // 1. Constructor only initializes state. No 'request' here.
+    public SyntheticNetworkHandler(long virtualFileSizeBytes = 1024 * 1024 * 50, bool supportRanges = true)
     {
         _virtualFileSize = virtualFileSizeBytes;
-        // Inject GGUF magic number "GGUF" (0x46554747) at the beginning for validation tests
-        _magicHeader = new byte[] { 0x47, 0x47, 0x55, 0x46 };
+        _supportRanges = supportRanges;
+        _magicHeader = new byte[] { 0x47, 0x47, 0x55, 0x46 }; // "GGUF"
     }
 
+    // 2. request is passed here via HttpClient pipeline
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        // Simulate network latency (optional, keep small for fast tests)
         await Task.Delay(5, cancellationToken);
 
+        // 3. Handle HEAD requests (Pre-flight checks)
         if (request.Method == HttpMethod.Head)
         {
             var response = new HttpResponseMessage(HttpStatusCode.OK);
             response.Content = new ByteArrayContent(Array.Empty<byte>());
             response.Content.Headers.ContentLength = _virtualFileSize;
-            response.Headers.AcceptRanges.Add("bytes");
+
+            if (_supportRanges)
+            {
+                response.Headers.AcceptRanges.Add("bytes");
+            }
+
             return response;
         }
 
+        // 4. Handle GET requests (Actual data transfer)
         if (request.Method == HttpMethod.Get)
         {
             long start = 0;
@@ -52,8 +62,6 @@ public class SyntheticNetworkHandler : HttpMessageHandler
             }
 
             long length = end - start + 1;
-
-            // Create a virtual stream that generates zeroes on the fly, avoiding massive RAM allocation
             var virtualStream = new VirtualZeroStream(length, start == 0 ? _magicHeader : null);
 
             var response = new HttpResponseMessage(isPartial ? HttpStatusCode.PartialContent : HttpStatusCode.OK)
@@ -73,9 +81,6 @@ public class SyntheticNetworkHandler : HttpMessageHandler
         return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed);
     }
 
-    /// <summary>
-    /// Generates dummy data without allocating actual memory.
-    /// </summary>
     private class VirtualZeroStream : Stream
     {
         private long _position;
@@ -101,7 +106,6 @@ public class SyntheticNetworkHandler : HttpMessageHandler
             int bytesToRead = (int)Math.Min(count, _length - _position);
             Array.Clear(buffer, offset, bytesToRead);
 
-            // Inject magic header if we are at the very beginning of the file
             if (_position == 0 && _headerToInject != null && bytesToRead >= _headerToInject.Length)
             {
                 Buffer.BlockCopy(_headerToInject, 0, buffer, offset, _headerToInject.Length);
