@@ -28,6 +28,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\InstantAIGate.Core\InstantAIGate.Core.csproj" />
     <ProjectReference Include="..\..\src\InstantAIGate.Native\InstantAIGate.Native.csproj" />
+    <ProjectReference Include="..\..\src\InstantAIGate.SSR\InstantAIGate.SSR.csproj" />
   </ItemGroup>
 
   <ItemGroup>

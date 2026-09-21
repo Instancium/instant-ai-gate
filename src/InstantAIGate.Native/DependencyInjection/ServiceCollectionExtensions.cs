@@ -45,6 +45,7 @@ public static class ServiceCollectionExtensions
             Console.Out.WriteLine($"[ggml/clip] {logMessage}");
         });
 
+        services.AddSingleton<IModelValidator, NativeModelValidator>();
 
         return services;
     }

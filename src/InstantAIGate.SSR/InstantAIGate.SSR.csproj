@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
+    <ProjectReference Include="..\InstantAIGate.Native\InstantAIGate.Native.csproj" />
   </ItemGroup>
 
 </Project>
