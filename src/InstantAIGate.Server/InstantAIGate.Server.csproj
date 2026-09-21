@@ -17,4 +17,10 @@
     <ProjectReference Include="..\InstantAIGate.SSR\InstantAIGate.SSR.csproj" />
   </ItemGroup>
 
+	<ItemGroup>
+		<Content Include="..\..\config\model_catalog.json" Link="config\model_catalog.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
 </Project>

@@ -11,6 +11,7 @@ using Spectre.Console;
 using System;
 using System.Text;
 using System.Threading.Tasks;
+using InstantAIGate.SSR.DependencyInjection;
 
 namespace InstantAIGate.Cli;
 
@@ -58,6 +59,7 @@ public static class Program
             {
                 // Register Core Native Inference (Vulkan backend)
                 services.AddInstantAIGateInference();
+                services.AddInstantAIGateSSR();
                 //services.AddSingleton<IModelPathProvider>(new LocalModelPathProvider("C:\\models\\Qwen_Qwen3-VL-8B-Instruct-GGUF"));
 
                 // Register CLI State & Debug State
