@@ -1,5 +1,6 @@
 ﻿namespace InstantAIGate.Core.Tests.Downloader;
 
+using InstantAIGate.Core.Tests.Inference.Stubs;
 using InstantAIGate.Core.Tests.Infrastructure;
 using InstantAIGate.SSR.Downloader;
 using InstantAIGate.SSR.Dtos;
@@ -28,8 +29,12 @@ public class ParallelModelDownloaderTests : IDisposable
     public async Task DownloadModelAsync_MultiThreaded_CalculatesSpeedAndCompletes()
     {
         // Arrange
+        var stubValidator = new StubModelValidator { ShouldPass = true };
         var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: 1024 * 1024 * 50, supportRanges: true);
-        var downloader = new ParallelModelDownloader(new HttpClient(handler), NullLogger<ParallelModelDownloader>.Instance);
+        var downloader = new ParallelModelDownloader(
+            new HttpClient(handler), 
+            NullLogger<ParallelModelDownloader>.Instance, 
+            stubValidator);
         var progressList = new List<DownloadProgress>();
         var progress = new Progress<DownloadProgress>(progressList.Add);
 
@@ -52,8 +57,10 @@ public class ParallelModelDownloaderTests : IDisposable
     public async Task DownloadModelAsync_WithoutRangeSupport_FallsBackToSequential()
     {
         // Arrange: server explicitly rejects Range requests
+        var stubValidator = new StubModelValidator { ShouldPass = true };
         var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: 1024 * 1024 * 20, supportRanges: false);
-        var downloader = new ParallelModelDownloader(new HttpClient(handler), NullLogger<ParallelModelDownloader>.Instance);
+        var downloader = new ParallelModelDownloader(new HttpClient(handler), 
+            NullLogger<ParallelModelDownloader>.Instance, stubValidator);
         var progressList = new List<DownloadProgress>();
         var progress = new Progress<DownloadProgress>(progressList.Add);
 
@@ -73,8 +80,10 @@ public class ParallelModelDownloaderTests : IDisposable
     public async Task DownloadModelAsync_WhenCancelled_StopsAndReleasesFileLocks()
     {
         // Arrange: massive virtual file to ensure it doesn't finish before cancellation
+        var stubValidator = new StubModelValidator { ShouldPass = true };
         var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: 1024L * 1024 * 1024 * 5); // 5 GB
-        var downloader = new ParallelModelDownloader(new HttpClient(handler), NullLogger<ParallelModelDownloader>.Instance);
+        var downloader = new ParallelModelDownloader(new HttpClient(handler), 
+            NullLogger<ParallelModelDownloader>.Instance, stubValidator);
 
         using var cts = new CancellationTokenSource();
         var progress = new Progress<DownloadProgress>(p =>

@@ -1,5 +1,7 @@
 ﻿namespace InstantAIGate.SSR.Downloader;
 
+using InstantAIGate.Core.Exceptions;
+using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
 using Microsoft.Extensions.Logging;
@@ -23,12 +25,14 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
     private const int BufferSize = 81920; // 80 KB
     private const int MaxDegreesOfParallelism = 4;
     private const long MinimumParallelSize = 10 * 1024 * 1024; // 10 MB
+    private readonly IModelValidator _modelValidator;
 
-    public ParallelModelDownloader(HttpClient httpClient, ILogger<ParallelModelDownloader> logger)
+    public ParallelModelDownloader(HttpClient httpClient, ILogger<ParallelModelDownloader> logger, IModelValidator modelValidator)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _activeDownloads = new ConcurrentDictionary<string, CancellationTokenSource>();
+        _modelValidator = modelValidator ?? throw new ArgumentNullException();
     }
 
     public async Task DownloadModelAsync(
@@ -74,22 +78,65 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                 fileTasks.Add(new FileDownloadContext(url, destPath, size, acceptRanges));
             }
 
-            // 2. Download files
+            // 2. Download files & Validate (with deterministic Garbage Collection)
             long totalDownloadedBytes = 0;
             var sw = Stopwatch.StartNew();
             var progressLock = new object();
+            bool isDownloadCompletedAndValid = false;
 
-            foreach (var file in fileTasks)
+            try
             {
-                if (file.TotalBytes > MinimumParallelSize && file.AcceptRanges)
+                foreach (var file in fileTasks)
                 {
-                    await DownloadParallelAsync(modelId, file.Url, file.DestinationPath, file.TotalBytes,
-                        bytesRead => ReportProgress(bytesRead), linkedCts.Token);
+                    if (file.TotalBytes > MinimumParallelSize && file.AcceptRanges)
+                    {
+                        await DownloadParallelAsync(modelId, file.Url, file.DestinationPath, file.TotalBytes,
+                            bytesRead => ReportProgress(bytesRead), linkedCts.Token);
+                    }
+                    else
+                    {
+                        await DownloadSequentialAsync(modelId, file.Url, file.DestinationPath, file.TotalBytes,
+                            bytesRead => ReportProgress(bytesRead), linkedCts.Token);
+                    }
                 }
-                else
+
+                // Phase 3: GGUF Validation BEFORE committing to storage
+                var downloadedFiles = fileTasks.Select(f => f.DestinationPath).ToList();
+                bool isValid = await _modelValidator.ValidateIntegrityAsync(downloadedFiles, linkedCts.Token);
+
+                if (!isValid)
                 {
-                    await DownloadSequentialAsync(modelId, file.Url, file.DestinationPath, file.TotalBytes,
-                        bytesRead => ReportProgress(bytesRead), linkedCts.Token);
+                    _logger.LogError("GGUF headers validation failed for model {ModelId}. Files will be purged by finally block.", modelId);
+                    throw new ModelIntegrityException(modelId, downloadedFiles.First());
+                }
+
+                // Mark state as valid to prevent finally-block purge
+                isDownloadCompletedAndValid = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Download process failed or validation was rejected for model {ModelId}. Purging files.", modelId);
+                throw;
+            }
+            finally
+            {
+                // Deterministic garbage collection for partial, cancelled, or corrupted downloads
+                if (!isDownloadCompletedAndValid)
+                {
+                    foreach (var file in fileTasks)
+                    {
+                        if (File.Exists(file.DestinationPath))
+                        {
+                            try
+                            {
+                                File.Delete(file.DestinationPath);
+                            }
+                            catch (IOException ioEx)
+                            {
+                                _logger.LogWarning(ioEx, "Failed to purge orphaned file {Path} during cleanup.", file.DestinationPath);
+                            }
+                        }
+                    }
                 }
             }
 
