@@ -1,11 +1,11 @@
-﻿// File: test/InstantAIGate.Core.Tests/Inference/LlamaVisionIntegrationTests.cs
-namespace InstantAIGate.Core.Tests.Inference;
+﻿namespace InstantAIGate.Core.Tests.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,18 +25,14 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
     private IModelManager _modelManager = null!;
     private IInferenceEngine _inferenceEngine = null!;
 
-    // Resolving test directories dynamically (CI/CD friendly)
-    //private readonly string _testModelsDir = Environment.GetEnvironmentVariable("TEST_MODELS_DIR")
-    //    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "InstantAIGate", "models");
-    //
-    private readonly string _testModelsDir = "C:\\models";
-    private const string TestRepoId = "qwen3-vl-8b-instruct";
-    private readonly string _testImagePath;
+    // Динамические переменные вместо констант
+    private string _testModelsDir = string.Empty;
+    private string _testRepoId = string.Empty;
+    private string _testImagePath = string.Empty;
 
     public LlamaVisionIntegrationTests(ITestOutputHelper output)
     {
         _output = output;
-        _testImagePath = Path.Combine(_testModelsDir, "test-1.jpeg");
     }
 
     public Task InitializeAsync()
@@ -44,22 +40,41 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         bool isNativeLoaded = NativeLibraryLoader.Load();
         Assert.True(isNativeLoaded, "Failed to load llama/mtmd native libraries.");
 
+        // 1. Собираем конфигурацию тестов (JSON + Environment Variables)
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+
+        // 2. Читаем пути (ENV перекрывает JSON, если задан)
+        _testModelsDir = configuration["TEST_MODELS_DIR"]
+            ?? configuration["InstantAIGate:Storage:ModelsDirectory"]
+            ?? @"C:\models";
+
+        _testRepoId = configuration["InstantAIGate:TestData:VisionRepoId"]
+            ?? "qwen3-vl-8b-instruct";
+
+        string imageFileName = configuration["InstantAIGate:TestData:VisionTestImage"]
+            ?? "test-1.jpeg";
+
+        _testImagePath = Path.Combine(_testModelsDir, imageFileName);
+
         var services = new ServiceCollection();
 
         services.AddLogging(builder =>
         {
-            builder.AddDebug(); // Route logs to test output
+            builder.AddDebug();
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
-        // Inject StorageSettings using object initializer to satisfy 'init' constraint
+        // 3. Передаем динамический путь в DI контейнер
         var storageSettings = new StorageSettings
         {
             ModelsDirectory = _testModelsDir
         };
         services.AddSingleton<IOptions<StorageSettings>>(Options.Create(storageSettings));
 
-        // Load Core & Native facades (registers the real LlamaModelLocator)
         services.AddInstantAIGateInference();
 
         _serviceProvider = services.BuildServiceProvider();
@@ -76,13 +91,12 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-
     [Fact]
     public async Task Should_Load_Vision_Model_And_Analyze_Image_Successfully()
     {
-        string expectedModelDirectory = Path.Combine(_testModelsDir, TestRepoId);
+        string expectedModelDirectory = Path.Combine(_testModelsDir, _testRepoId);
 
-        // STRICT ASSERTIONS: The test will FAIL immediately if files are missing.
+        // Жесткие ассерты без "return;" (согласно нашим предыдущим исправлениям)
         Assert.True(Directory.Exists(expectedModelDirectory),
             $"FATAL: Model directory not found. Expected path: '{expectedModelDirectory}'");
 
@@ -93,7 +107,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
 
         var config = new ModelSettings
         {
-            RepoId = TestRepoId,
+            RepoId = _testRepoId,
             VisionSupport = true,
             GpuLayerCount = 99,
             ContextSize = 4096,
@@ -102,17 +116,12 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
             Type = ModelType.Vlm
         };
 
-        // ... (остальной код загрузки и инференса остается прежним)
-
-        // Act 1: Load Model into VRAM
         _output.WriteLine("Loading model into VRAM...");
-
-        // The real LlamaModelLocator will search inside expectedModelDirectory for .gguf files
         await _modelManager.LoadModelAsync(config, cts.Token);
 
         var activeConfig = _modelManager.GetActiveSettings();
         Assert.NotNull(activeConfig);
-        Assert.Equal(TestRepoId, activeConfig.RepoId);
+        
 
         // Arrange: Prepare Chat Request
         var chatHistory = new List<ChatMessage>

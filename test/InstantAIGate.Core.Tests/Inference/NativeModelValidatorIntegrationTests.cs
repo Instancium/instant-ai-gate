@@ -2,9 +2,11 @@
 
 using InstantAIGate.Native.Inference;
 using InstantAIGate.Native.Bindings;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -12,6 +14,8 @@ public class NativeModelValidatorIntegrationTests : IDisposable
 {
     private readonly NativeModelValidator _validator;
     private readonly string _tempDirectory;
+    private readonly string _testModelsDir;
+    private readonly string _testRepoId;
 
     public NativeModelValidatorIntegrationTests()
     {
@@ -19,12 +23,27 @@ public class NativeModelValidatorIntegrationTests : IDisposable
         _tempDirectory = Path.Combine(Path.GetTempPath(), $"InstantAIGate_Tests_{Guid.NewGuid()}");
         Directory.CreateDirectory(_tempDirectory);
 
-        // Ensure native libraries are loaded for P/Invoke bindings
         if (!NativeLibraryLoader.IsLoaded)
         {
             NativeLibraryLoader.Load();
         }
+
+        // Собираем конфигурацию
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+
+        _testModelsDir = configuration["TEST_MODELS_DIR"]
+            ?? configuration["InstantAIGate:Storage:ModelsDirectory"]
+            ?? @"C:\models";
+
+        _testRepoId = configuration["InstantAIGate:TestData:VisionRepoId"]
+            ?? "qwen3-vl-8b-instruct";
     }
+
+   
 
     [Fact]
     public async Task ValidateIntegrityAsync_WithEmptyFile_ReturnsFalse()
