@@ -1,10 +1,11 @@
-﻿using InstantAIGate.Cli.State;
+﻿namespace InstantAIGate.Cli.Commands;
+
+using InstantAIGate.Cli.State;
+using InstantAIGate.Core.Dtos.Inference;
 using Spectre.Console;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-
-namespace InstantAIGate.Cli.Commands;
 
 public class ImageCommand : IConsoleCommand
 {
@@ -27,14 +28,13 @@ public class ImageCommand : IConsoleCommand
         }
 
         var cleanPath = argument.Trim('"', '\'', ' ');
-
         if (!File.Exists(cleanPath))
         {
             AnsiConsole.MarkupLine($"[red]Error: File not found at '{cleanPath}'[/]");
             return Task.CompletedTask;
         }
 
-        _session.PendingImagePaths.Add(cleanPath);
+        _session.PendingMedia.Add(new ImageFileContent(cleanPath));
         AnsiConsole.MarkupLine($"[green]Image queued for next request:[/] {cleanPath}");
 
         return Task.CompletedTask;

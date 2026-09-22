@@ -88,25 +88,29 @@ public class CliHostedService : IHostedService
             return;
         }
 
-        // 1. Prepare messages
-        var userMessage = new ChatMessage("user", input);
+        var parts = new List<MessageContent>();
+        if (_session.PendingMedia.Count > 0)
+        {
+            parts.AddRange(_session.PendingMedia);
+        }
+        parts.Add(new TextContent(input));
+
+        var userMessage = new ChatMessage("user", parts);
         _session.ChatHistory.Add(userMessage);
 
-        var requestMessages = _session.ChatHistory.ToList();
-        var imagesToProcess = _session.PendingImagePaths.Any() ? _session.PendingImagePaths.ToArray() : null;
+        var currentMediaParts = _session.PendingMedia.Count > 0
+            ? _session.PendingMedia.ToArray()
+            : null;
 
         AnsiConsole.Markup("[blue] AI:[/] ");
 
         try
         {
-            // 2. Format prompt natively via llama.cpp chat templates
             var formattedPrompt = await _inferenceEngine.ApplyChatTemplateAsync(
                 _session.ActiveModelConfig.RepoId,
-                requestMessages,
-                imagesToProcess,
+                _session.ChatHistory,
                 cancellationToken);
 
-            // 3. Configure inference settings
             var settings = new InferenceSettings
             {
                 MaxTokens = 4096,
@@ -115,13 +119,12 @@ public class CliHostedService : IHostedService
                 TopK = 40
             };
 
-            // 4. Stream generation directly from the native wrapper
             var fullResponse = new StringBuilder();
 
             await foreach (var chunk in _inferenceEngine.StreamGenerationAsync(
                 _session.ActiveModelConfig.RepoId,
                 formattedPrompt,
-                imagesToProcess,
+                currentMediaParts,
                 settings,
                 cancellationToken))
             {
@@ -130,15 +133,14 @@ public class CliHostedService : IHostedService
             }
 
             AnsiConsole.WriteLine();
-
-            // 5. Update history and clear pending multimodal data
             _session.ChatHistory.Add(new ChatMessage("assistant", fullResponse.ToString()));
-            _session.PendingImagePaths.Clear();
+
+            _session.PendingMedia.Clear();
         }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"\n[red]Fatal Inference Error:[/] {ex.Message}");
-            _session.ChatHistory.RemoveAt(_session.ChatHistory.Count - 1); // Remove failed user prompt
+            _session.ChatHistory.RemoveAt(_session.ChatHistory.Count - 1);
         }
     }
 

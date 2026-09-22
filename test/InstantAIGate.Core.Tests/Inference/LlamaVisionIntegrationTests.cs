@@ -40,14 +40,14 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         bool isNativeLoaded = NativeLibraryLoader.Load();
         Assert.True(isNativeLoaded, "Failed to load llama/mtmd native libraries.");
 
-        // 1. Собираем конфигурацию тестов (JSON + Environment Variables)
+    
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: true)
             .AddEnvironmentVariables()
             .Build();
 
-        // 2. Читаем пути (ENV перекрывает JSON, если задан)
+
         _testModelsDir = configuration["TEST_MODELS_DIR"]
             ?? configuration["InstantAIGate:Storage:ModelsDirectory"]
             ?? @"C:\models";
@@ -68,7 +68,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
-        // 3. Передаем динамический путь в DI контейнер
+
         var storageSettings = new StorageSettings
         {
             ModelsDirectory = _testModelsDir
@@ -96,7 +96,6 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
     {
         string expectedModelDirectory = Path.Combine(_testModelsDir, _testRepoId);
 
-        // Жесткие ассерты без "return;" (согласно нашим предыдущим исправлениям)
         Assert.True(Directory.Exists(expectedModelDirectory),
             $"FATAL: Model directory not found. Expected path: '{expectedModelDirectory}'");
 
@@ -121,41 +120,43 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
 
         var activeConfig = _modelManager.GetActiveSettings();
         Assert.NotNull(activeConfig);
-        
 
-        // Arrange: Prepare Chat Request
+        var parts = new List<MessageContent>
+        {
+            new ImageFileContent(_testImagePath),
+            new TextContent("Please describe in detail what you see in this image.")
+        };
+
         var chatHistory = new List<ChatMessage>
         {
-            new ChatMessage("user", "Please describe in detail what you see in this image.")
+            new ChatMessage("user", parts)
         };
-        var imagePaths = new List<string> { _testImagePath };
 
-        // Act 2: Apply Template & Tokenize
         _output.WriteLine("Applying Chat Template...");
-        string formattedPrompt = await _inferenceEngine.ApplyChatTemplateAsync(
-            config.RepoId, chatHistory, imagePaths, cts.Token);
 
-        // Assert exact token injection matching LlamaInference.cs implementation
+        string formattedPrompt = await _inferenceEngine.ApplyChatTemplateAsync(
+            config.RepoId, chatHistory, cts.Token);
+        
         Assert.Contains("<__media__>\n", formattedPrompt);
 
-        // Act 3: Stream Generation
         _output.WriteLine("Starting Inference...");
+
         var settings = new InferenceSettings { MaxTokens = 200, Temperature = 0.5f };
         var responseBuilder = new StringBuilder();
 
-        await foreach (var chunk in _inferenceEngine.StreamGenerationAsync(config.RepoId, formattedPrompt, imagePaths, settings, cts.Token))
+        var mediaParts = parts.Where(p => p is not TextContent).ToList();
+
+        await foreach (var chunk in _inferenceEngine.StreamGenerationAsync(config.RepoId, formattedPrompt, mediaParts, settings, cts.Token))
         {
             responseBuilder.Append(chunk);
             _output.WriteLine($"Chunk: {chunk.Replace("\n", "\\n")}");
         }
 
         string fullResponse = responseBuilder.ToString();
-
-        // Assert
         Assert.False(string.IsNullOrWhiteSpace(fullResponse), "The model returned an empty response.");
         _output.WriteLine($"\nFinal Response:\n{fullResponse}");
 
-        // Cleanup
         await _modelManager.UnloadModelAsync(config.RepoId, cts.Token);
+
     }
 }

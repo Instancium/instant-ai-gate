@@ -1,7 +1,9 @@
 ﻿namespace InstantAIGate.Native.DependencyInjection;
 
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Interfaces.Infrastructure;
 using InstantAIGate.Core.Services.Inference;
+using InstantAIGate.Core.Services.Infrastructure;
 using InstantAIGate.Native.Inference;
 using InstantAIGate.Native.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +32,10 @@ public static class ServiceCollectionExtensions
 
         // Register the high-level inference engine
         services.AddSingleton<IInferenceEngine, LlamaInference>();
+
+
+        services.AddSingleton<HttpClient>();
+        services.AddSingleton<IMediaResolver, LocalTempMediaResolver>();
 
         // Note: IModelPathProvider is intentionally omitted here. 
         // It should be registered by the hosting application (CLI/Server) 

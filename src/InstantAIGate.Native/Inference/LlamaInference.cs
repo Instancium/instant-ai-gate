@@ -4,6 +4,7 @@ namespace InstantAIGate.Native.Inference;
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Interfaces.Infrastructure;
 using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.Handles; 
 using Microsoft.Extensions.Logging;
@@ -20,14 +21,17 @@ public class LlamaInference : IInferenceEngine, IDisposable
 {
     private readonly IModelManager _modelManager;
     private readonly ILogger<LlamaInference> _logger;
+    private readonly IMediaResolver _mediaResolver;
     private bool _disposed;
 
     public LlamaInference(
         IModelManager modelManager,
-        ILogger<LlamaInference> logger)
+        ILogger<LlamaInference> logger,
+        IMediaResolver mediaResolver)
     {
         _modelManager = modelManager;
         _logger = logger;
+        _mediaResolver = mediaResolver;
     }
 
     // HELPER: Safely unbox opaque handles to native pointers
@@ -74,41 +78,42 @@ public class LlamaInference : IInferenceEngine, IDisposable
     public async Task<string> ApplyChatTemplateAsync(
         string modelId,
         IEnumerable<ChatMessage> messages,
-        IReadOnlyList<string>? imagePaths = null,
         CancellationToken ct = default)
     {
         using var model = await _modelManager.AcquireModelAsync(modelId, ct);
-
-        // Unboxing at the boundary
         IntPtr nativeModelPtr = UnwrapModel(model);
         IntPtr tmplPtr = LlamaNative.llama_model_chat_template(nativeModelPtr, null);
-
         string tmpl = tmplPtr != IntPtr.Zero ? Marshal.PtrToStringUTF8(tmplPtr)! : "chatml";
 
         var msgList = messages.ToList();
         var nativeMessages = new LlamaNative.llama_chat_message[msgList.Count];
-        bool mediaInjected = false;
 
         for (int i = 0; i < msgList.Count; i++)
         {
-            string content = msgList[i].Content;
+            var sb = new StringBuilder();
+            var parts = msgList[i].Parts ?? new List<MessageContent> { new TextContent(msgList[i].Content) };
 
-            if (!mediaInjected && msgList[i].Role == "user" && imagePaths != null && imagePaths.Count > 0)
+            foreach (var part in parts)
             {
-                var sb = new StringBuilder();
-                for (int j = 0; j < imagePaths.Count; j++)
+                if (part is not TextContent)
                 {
                     sb.Append("<__media__>\n");
                 }
-                sb.Append(content);
-                content = sb.ToString();
-                mediaInjected = true;
+            }
+
+    
+            foreach (var part in parts)
+            {
+                if (part is TextContent textPart)
+                {
+                    sb.Append(textPart.Text);
+                }
             }
 
             nativeMessages[i] = new LlamaNative.llama_chat_message
             {
                 role = msgList[i].Role,
-                content = content
+                content = sb.ToString()
             };
         }
 
@@ -125,19 +130,27 @@ public class LlamaInference : IInferenceEngine, IDisposable
         return Encoding.UTF8.GetString(buffer, 0, finalSize);
     }
 
-    public async IAsyncEnumerable<string> StreamGenerationAsync(string modelId, string prompt, IReadOnlyList<string>? imagePaths, InferenceSettings settings, [EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<string> StreamGenerationAsync(
+        string modelId,
+        string prompt,
+        IReadOnlyList<MessageContent>? mediaParts,
+        InferenceSettings settings,
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         using var model = await _modelManager.AcquireModelAsync(modelId, ct);
         using var context = await _modelManager.AcquireContextAsync(modelId, ct);
 
-        // Safely extract all pointers
+        // РЕЗОЛВИМ МЕДИА ЧЕРЕЗ НОВЫЙ ИНТЕРФЕЙС
+        using var mediaContext = mediaParts != null && mediaParts.Count > 0
+            ? await _mediaResolver.ResolveMediaAsync(mediaParts, ct)
+            : null;
+
+        var localImagePaths = mediaContext?.LocalFilePaths;
+
         IntPtr nativeModelPtr = UnwrapModel(model);
         IntPtr ctxHandle = UnwrapContext(context.TextContext);
         IntPtr vocab = LlamaNative.llama_model_get_vocab(nativeModelPtr);
-
-        // Pattern matching for Vision handle
         IntPtr mtmdCtxHandle = context.VisionContext?.Handle is MtmdVisionHandle vh ? vh.Pointer : IntPtr.Zero;
-
         int currentPos = 0;
 
         // Phase 1: Prompt Evaluation (Unified)
@@ -148,19 +161,19 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
             try
             {
-                if (imagePaths != null && imagePaths.Count > 0)
+                if (localImagePaths != null && localImagePaths.Count > 0)
                 {
                     var opt = MtmdNative.mtmd_helper_init_opt_default();
-                    bitmapPtrs = new IntPtr[imagePaths.Count];
+                    bitmapPtrs = new IntPtr[localImagePaths.Count];
 
-                    for (int i = 0; i < imagePaths.Count; i++)
+                    for (int i = 0; i < localImagePaths.Count; i++)
                     {
                         var bmpWrapper = MtmdNative.mtmd_helper_bitmap_init_from_file(
-                            mtmdCtxHandle, imagePaths[i], false, opt);
+                            mtmdCtxHandle, localImagePaths[i], false, opt);
 
                         if (bmpWrapper.Bitmap == IntPtr.Zero)
                         {
-                            throw new InvalidOperationException($"Failed to load image: {imagePaths[i]}");
+                            throw new InvalidOperationException($"Failed to load image: {localImagePaths[i]}");
                         }
 
                         var handle = new MtmdNative.MtmdBitmapHandle(bmpWrapper.Bitmap);
@@ -221,7 +234,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
         }
         else
         {
-            if (imagePaths != null && imagePaths.Count > 0)
+            if (localImagePaths != null && localImagePaths.Count > 0)
             {
                 _logger.LogWarning("Images provided, but no multimodal projector (mmproj) is loaded. Images will be ignored.");
             }
