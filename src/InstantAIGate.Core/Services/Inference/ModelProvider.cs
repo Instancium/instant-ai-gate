@@ -128,7 +128,7 @@ public class ModelProvider : IModelProvider, IDisposable
 
     public bool IsLoaded(string repoId) => _modelCache.ContainsKey(repoId);
 
-    public async Task InitializeAsync(ModelSettings config, CancellationToken ct = default)
+    public async Task InitializeAsync(ModelSettings config, ResolvedModelPaths resolvedPaths, CancellationToken ct = default)
     {
         if (config == null || string.IsNullOrWhiteSpace(config.RepoId))
             throw new ArgumentException("Config and RepoId required.", nameof(config));
@@ -157,7 +157,7 @@ public class ModelProvider : IModelProvider, IDisposable
 
             _logger.LogInformation("Delegating Model Load to Native Facade for '{RepoId}'...", repoId);
 
-            IModelHandle modelHandle = _backendFacade.LoadModel(config);
+            IModelHandle modelHandle = _backendFacade.LoadModel(config, resolvedPaths.PrimaryModelPath);
 
             if (modelHandle == null)
                 throw new InvalidOperationException($"Native engine returned null handle for '{repoId}'.");
@@ -168,9 +168,9 @@ public class ModelProvider : IModelProvider, IDisposable
                 _logger.LogInformation("Model '{RepoId}' loaded successfully.", repoId);
 
                 // Config now definitively has the projector path if VisionSupport is true
-                if (config.VisionSupport && !string.IsNullOrEmpty(config.ProjectorPath))
+                if (config.VisionSupport && !string.IsNullOrEmpty(resolvedPaths.VisionProjectorPath))
                 {
-                    var visionContext = _visionFacade.InitializeContext(config.ProjectorPath, modelHandle);
+                    var visionContext = _visionFacade.InitializeContext(resolvedPaths.VisionProjectorPath, modelHandle);
                     _visionCache.TryAdd(repoId, visionContext);
                 }
             }

@@ -14,7 +14,7 @@ namespace InstantAIGate.Core.Interfaces.Inference
         void BackendFree();
         bool SupportsGpuOffload();
 
-        IModelHandle LoadModel(ModelSettings settings);
+        IModelHandle LoadModel(ModelSettings settings, string modelPath);
         IContextHandle CreateContext(IModelHandle modelHandle, ModelSettings settings);
 
         void FreeModel(IModelHandle modelHandle);

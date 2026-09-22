@@ -6,5 +6,5 @@ using System.Threading.Tasks;
 
 public interface IModelLocator
 {
-    Task<ResolvedModelPaths> ResolvePathsAsync(ModelSettings config, CancellationToken ct = default);
+    Task<ResolvedModelPaths> ResolvePathsAsync(string repoId, bool visionSupport, CancellationToken ct = default);
 }

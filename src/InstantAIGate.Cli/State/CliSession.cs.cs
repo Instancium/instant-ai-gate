@@ -19,10 +19,3 @@ public class CliSession
         PendingImagePaths.Clear();
     }
 }
-
-public class ModelConfigurationWrapper
-{
-    public string Id { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public ModelSettings Config { get; set; } = new();
-}

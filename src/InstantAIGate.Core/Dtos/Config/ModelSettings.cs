@@ -11,16 +11,6 @@ public record ModelSettings
     public string RepoId { get; init; } = string.Empty;
 
     /// <summary>
-    /// Full path to the model file.
-    /// </summary>
-    public string ModelPath { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Path to the vision projector file for multimodal models.
-    /// </summary>
-    public string? ProjectorPath { get; init; }
-
-    /// <summary>
     /// Number of layers to offload to GPU.
     /// </summary>
     public int GpuLayerCount { get; init; }

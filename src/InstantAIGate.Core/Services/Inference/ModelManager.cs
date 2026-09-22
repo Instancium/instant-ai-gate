@@ -15,7 +15,7 @@ public sealed class ModelManager : IDisposable, IModelManager
 {
     private readonly IModelProvider _modelProvider;
     private readonly IModelLocator _modelLocator;
-    private readonly IQueueManager _queueManager; // <-- Replaced RequestQueue
+    private readonly IQueueManager _queueManager;
     private readonly ILogger<ModelManager> _logger;
 
     private ModelSettings? _activeConfig;
@@ -26,7 +26,7 @@ public sealed class ModelManager : IDisposable, IModelManager
     public ModelManager(
         IModelProvider modelProvider,
         IModelLocator modelLocator,
-        IQueueManager queueManager, // <-- Injected Interface
+        IQueueManager queueManager, 
         ILogger<ModelManager> logger)
     {
         _modelProvider = modelProvider;
@@ -50,17 +50,13 @@ public sealed class ModelManager : IDisposable, IModelManager
                 return;
             }
 
-            var resolvedPaths = await _modelLocator.ResolvePathsAsync(config, ct);
-            config = config with
-            {
-                ModelPath = resolvedPaths.PrimaryModelPath,
-                ProjectorPath = resolvedPaths.VisionProjectorPath
-            };
+            // ИЗМЕНЕНИЕ ЗДЕСЬ: Передаем repoId и visionSupport
+            var resolvedPaths = await _modelLocator.ResolvePathsAsync(config.RepoId, config.VisionSupport, ct);
 
-            await _modelProvider.InitializeAsync(config, ct);
+            // Мы больше не можем обновлять config.ModelPath, так как эти свойства удалены. 
+            // ModelProvider теперь должен принимать ResolvedModelPaths.
+            await _modelProvider.InitializeAsync(config, resolvedPaths, ct);
             _activeConfig = config;
-
-            // Allow traffic once loaded
             _queueManager.Resume();
         }
         finally
@@ -101,14 +97,10 @@ public sealed class ModelManager : IDisposable, IModelManager
             _modelProvider.UnloadModel(_activeConfig.RepoId);
         }
 
-        var resolvedPaths = await _modelLocator.ResolvePathsAsync(newConfig, ct);
-        newConfig = newConfig with
-        {
-            ModelPath = resolvedPaths.PrimaryModelPath,
-            ProjectorPath = resolvedPaths.VisionProjectorPath
-        };
+        var resolvedPaths = await _modelLocator.ResolvePathsAsync(newConfig.RepoId, newConfig.VisionSupport, ct);
+        await _modelProvider.InitializeAsync(newConfig, resolvedPaths, ct);
 
-        await _modelProvider.InitializeAsync(newConfig, ct);
+
         _activeConfig = newConfig;
         _isDraining = false;
 

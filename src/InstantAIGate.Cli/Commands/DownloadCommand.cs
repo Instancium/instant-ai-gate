@@ -1,13 +1,15 @@
-﻿namespace InstantAIGate.Cli.Commands;
+﻿// File: src/InstantAIGate.Cli/Commands/DownloadCommand.cs
+namespace InstantAIGate.Cli.Commands;
 
+using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
+using Microsoft.Extensions.Options;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,14 +17,21 @@ public class DownloadCommand : IConsoleCommand
 {
     private readonly IModelCatalogService _catalogService;
     private readonly IModelDownloader _downloader;
+    private readonly StorageSettings _storageSettings;
 
-    public DownloadCommand(IModelCatalogService catalogService, IModelDownloader downloader)
+    // Внедряем IOptions<StorageSettings> для получения правильного пути (ProgramData)
+    public DownloadCommand(
+        IModelCatalogService catalogService,
+        IModelDownloader downloader,
+        IOptions<StorageSettings> storageOptions)
     {
         _catalogService = catalogService;
         _downloader = downloader;
+        _storageSettings = storageOptions.Value;
     }
 
     public string Name => "/download";
+
     public string Description => "Downloads a model by ID from the catalog (e.g., /download qwen3-vl-2b-instruct).";
 
     public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
@@ -40,15 +49,14 @@ public class DownloadCommand : IConsoleCommand
             return;
         }
 
-        // Collect all URLs (Main weights + optional Vision Projector)
         var urlsToDownload = new List<string>(targetModel.DownloadUrls);
         if (targetModel.RequiresVisionProjector && targetModel.VisionProjectorUrls != null)
         {
             urlsToDownload.AddRange(targetModel.VisionProjectorUrls);
         }
 
-        // Define target directory relative to the CLI executable
-        string destinationDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models", targetModel.Id);
+        // ИСПРАВЛЕНИЕ: Используем ModelsDirectory из глобальных настроек вместо AppDomain.CurrentDomain.BaseDirectory
+        string destinationDir = Path.Combine(_storageSettings.ModelsDirectory, targetModel.Id);
 
         AnsiConsole.MarkupLine($"[blue]Starting download for '{targetModel.Name}'...[/]");
         AnsiConsole.MarkupLine($"[dim]Destination: {destinationDir}[/]");
@@ -69,20 +77,14 @@ public class DownloadCommand : IConsoleCommand
                 })
                 .StartAsync(async ctx =>
                 {
-                    var progressTask = ctx.AddTask($"[green]{targetModel.Id}[/]", new ProgressTaskSettings
-                    {
-                        MaxValue = 100
-                    });
+                    var progressTask = ctx.AddTask($"[green]{targetModel.Id}[/]", new ProgressTaskSettings { MaxValue = 100 });
 
-                    // Adapter: IProgress<DownloadProgress> to Spectre.Console ProgressTask
                     var progressReporter = new Progress<DownloadProgress>(p =>
                     {
                         progressTask.Value = p.Percentage;
-                        // Dynamically update speed description
                         progressTask.Description = $"[green]{targetModel.Id}[/] ({p.SpeedBytesPerSecond / 1024 / 1024:F2} MB/s)";
                     });
 
-                    // Trigger the SSR Pipeline
                     await _downloader.DownloadModelAsync(
                         targetModel.Id,
                         urlsToDownload,
@@ -100,7 +102,6 @@ public class DownloadCommand : IConsoleCommand
     }
 }
 
-// Custom Spectre.Console column to format our SpeedBytesPerSecond nicely
 internal sealed class DownloadSpeedColumn : ProgressColumn
 {
     public override IRenderable Render(RenderOptions options, ProgressTask task, TimeSpan deltaTime)

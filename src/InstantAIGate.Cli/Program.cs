@@ -1,17 +1,19 @@
 ﻿using InstantAIGate.Cli.Commands;
 using InstantAIGate.Cli.Logging;
 using InstantAIGate.Cli.State;
+using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Native.DependencyInjection;
+using InstantAIGate.SSR.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Spectre.Console;
 using System;
 using System.Text;
 using System.Threading.Tasks;
-using InstantAIGate.SSR.DependencyInjection;
 
 namespace InstantAIGate.Cli;
 
@@ -57,6 +59,8 @@ public static class Program
             })
             .ConfigureServices((context, services) =>
             {
+                services.Configure<StorageSettings>(context.Configuration.GetSection("InstantAIGate:Storage"));
+            
                 // Register Core Native Inference (Vulkan backend)
                 services.AddInstantAIGateInference();
                 services.AddInstantAIGateSSR();
@@ -79,7 +83,8 @@ public static class Program
                 services.AddHostedService<CliHostedService>();
             })
             .Build();
-
+        var storageConfig = host.Services.GetRequiredService<IOptions<StorageSettings>>().Value;
+        _ = storageConfig.ModelsDirectory;
         await host.RunAsync();
     }
 }

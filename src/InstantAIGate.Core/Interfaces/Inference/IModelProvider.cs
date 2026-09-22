@@ -21,7 +21,7 @@ public interface IModelProvider : IDisposable
     /// </summary>
     /// <param name="config">Model configuration settings.</param>
     /// <param name="ct">Cancellation token.</param>
-    Task InitializeAsync(ModelSettings config, CancellationToken ct = default);
+    Task InitializeAsync(ModelSettings config, ResolvedModelPaths resolvedPaths, CancellationToken ct = default);
 
     /// <summary>
     /// Gets an inference context for the specified model.

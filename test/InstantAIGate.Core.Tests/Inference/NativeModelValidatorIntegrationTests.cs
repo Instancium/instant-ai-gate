@@ -85,4 +85,23 @@ public class NativeModelValidatorIntegrationTests : IDisposable
             }
         }
     }
+
+
+    [Fact]
+    public async Task ValidateIntegrityAsync_WithRealGguf_ReturnsTrue()
+    {
+        // Adjust path based on your CI/CD environment variables or local setup
+        string modelsDir = Environment.GetEnvironmentVariable("TEST_MODELS_DIR") ?? @"C:\models";
+        string realModelPath = Path.Combine(modelsDir, "qwen3-vl-8b-instruct", "Qwen3VL-8B-Instruct-Q4_K_M.gguf");
+
+        // Fail fast if the environment is not prepared! No green checks for missing files.
+        if (!File.Exists(realModelPath))
+        {
+            Assert.Fail($"FATAL: Real GGUF model not found for validation test. Expected path: '{realModelPath}'");
+        }
+
+        bool isValid = await _validator.ValidateIntegrityAsync(new[] { realModelPath });
+
+        Assert.True(isValid, "Native engine should accept a physically valid GGUF file.");
+    }
 }

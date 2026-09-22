@@ -55,18 +55,23 @@ public class CliHostedService : IHostedService
         try
         {
             RenderHeader();
-
             while (!cancellationToken.IsCancellationRequested && !_session.IsExitRequested)
             {
-                AnsiConsole.Markup("[cyan]  User:[/] ");
-                var input = Console.ReadLine();
+                try
+                {
+                    AnsiConsole.Markup("[cyan]  User:[/] ");
+                    var input = Console.ReadLine();
+                    if (string.IsNullOrWhiteSpace(input)) continue;
 
-                if (string.IsNullOrWhiteSpace(input)) continue;
+                    var isCommand = await _commandDispatcher.TryExecuteAsync(input, cancellationToken);
+                    if (isCommand) continue;
 
-                var isCommand = await _commandDispatcher.TryExecuteAsync(input, cancellationToken);
-                if (isCommand) continue;
-
-                await HandleChatInferenceAsync(input, cancellationToken);
+                    await HandleChatInferenceAsync(input, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"\n[red]CLI Error:[/] {ex.Message}");
+                }
             }
         }
         finally

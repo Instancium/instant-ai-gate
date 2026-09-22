@@ -1,5 +1,4 @@
-﻿// File: test/InstantAIGate.Core.Tests/Inference/Stubs/StubModelLocator.cs
-namespace InstantAIGate.Core.Tests.Inference.Stubs;
+﻿namespace InstantAIGate.Core.Tests.Inference.Stubs;
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Interfaces.Inference;
@@ -9,17 +8,22 @@ using System.Threading.Tasks;
 public class StubModelLocator : IModelLocator
 {
     private readonly string _modelPath;
-    private readonly string _projectorPath;
+    private readonly string? _projectorPath;
 
-    public StubModelLocator(string modelPath, string projectorPath)
+    public StubModelLocator(string modelPath, string? projectorPath = null)
     {
         _modelPath = modelPath;
         _projectorPath = projectorPath;
     }
 
-    public Task<ResolvedModelPaths> ResolvePathsAsync(ModelSettings config, CancellationToken ct = default)
+    public Task<ResolvedModelPaths> ResolvePathsAsync(string repoId, bool visionSupport, CancellationToken ct = default)
     {
         // For testing, we bypass automatic search and return the exact hardcoded paths
-        return Task.FromResult(new ResolvedModelPaths(_modelPath, _projectorPath, 5000000000));
+        // We only return the projector path if visionSupport is explicitly requested
+        return Task.FromResult(new ResolvedModelPaths(
+            PrimaryModelPath: _modelPath,
+            VisionProjectorPath: visionSupport ? _projectorPath : null,
+            TotalSizeBytes: 5000000000
+        ));
     }
 }

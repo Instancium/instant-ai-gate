@@ -4,12 +4,11 @@ namespace InstantAIGate.Core.Tests.Inference;
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
-using InstantAIGate.Core.Tests.Inference.Stubs;
 using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions; 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -26,23 +25,25 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
     private IModelManager _modelManager = null!;
     private IInferenceEngine _inferenceEngine = null!;
 
-    // Hardcoded paths for the local test environment
-    private const string TestModelPath = @"C:\models\Qwen_Qwen3-VL-8B-Instruct-GGUF\Qwen3VL-8B-Instruct-Q4_K_M.gguf";
-    private const string TestProjectorPath = @"C:\models\Qwen_Qwen3-VL-8B-Instruct-GGUF\mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf";
-    private const string TestImagePath = @"C:\models\test-1.jpeg";
+    // Resolving test directories dynamically (CI/CD friendly)
+    //private readonly string _testModelsDir = Environment.GetEnvironmentVariable("TEST_MODELS_DIR")
+    //    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "InstantAIGate", "models");
+    //
+    private readonly string _testModelsDir = "C:\\models";
+    private const string TestRepoId = "qwen3-vl-8b-instruct";
+    private readonly string _testImagePath;
 
     public LlamaVisionIntegrationTests(ITestOutputHelper output)
     {
         _output = output;
+        _testImagePath = Path.Combine(_testModelsDir, "test-1.jpeg");
     }
 
     public Task InitializeAsync()
     {
-        // 1. Load native libraries manually for the test runner environment
         bool isNativeLoaded = NativeLibraryLoader.Load();
         Assert.True(isNativeLoaded, "Failed to load llama/mtmd native libraries.");
 
-        // 2. Setup Dependency Injection mimicking Program.cs
         var services = new ServiceCollection();
 
         services.AddLogging(builder =>
@@ -51,11 +52,15 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
-        services.AddInstantAIGateInference(); // Load Core & Native facades
+        // Inject StorageSettings using object initializer to satisfy 'init' constraint
+        var storageSettings = new StorageSettings
+        {
+            ModelsDirectory = _testModelsDir
+        };
+        services.AddSingleton<IOptions<StorageSettings>>(Options.Create(storageSettings));
 
-        // Safely replace the registered LlamaModelLocator with the test stub
-        services.Replace(ServiceDescriptor.Singleton<IModelLocator>(
-            new StubModelLocator(TestModelPath, TestProjectorPath)));
+        // Load Core & Native facades (registers the real LlamaModelLocator)
+        services.AddInstantAIGateInference();
 
         _serviceProvider = services.BuildServiceProvider();
         _modelManager = _serviceProvider.GetRequiredService<IModelManager>();
@@ -71,22 +76,24 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
+
     [Fact]
     public async Task Should_Load_Vision_Model_And_Analyze_Image_Successfully()
     {
-        // Skip test gracefully if the local file doesn't exist
-        if (!File.Exists(TestModelPath) || !File.Exists(TestImagePath))
-        {
-            _output.WriteLine("Test skipped because local models or test images were not found.");
-            return;
-        }
+        string expectedModelDirectory = Path.Combine(_testModelsDir, TestRepoId);
+
+        // STRICT ASSERTIONS: The test will FAIL immediately if files are missing.
+        Assert.True(Directory.Exists(expectedModelDirectory),
+            $"FATAL: Model directory not found. Expected path: '{expectedModelDirectory}'");
+
+        Assert.True(File.Exists(_testImagePath),
+            $"FATAL: Test image not found. Expected path: '{_testImagePath}'");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 
-        // Arrange: Prepare Configuration
         var config = new ModelSettings
         {
-            RepoId = "qwen-vl-test",
+            RepoId = TestRepoId,
             VisionSupport = true,
             GpuLayerCount = 99,
             ContextSize = 4096,
@@ -95,27 +102,32 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
             Type = ModelType.Vlm
         };
 
+        // ... (остальной код загрузки и инференса остается прежним)
+
         // Act 1: Load Model into VRAM
         _output.WriteLine("Loading model into VRAM...");
+
+        // The real LlamaModelLocator will search inside expectedModelDirectory for .gguf files
         await _modelManager.LoadModelAsync(config, cts.Token);
 
         var activeConfig = _modelManager.GetActiveSettings();
         Assert.NotNull(activeConfig);
-        Assert.Equal("qwen-vl-test", activeConfig.RepoId);
+        Assert.Equal(TestRepoId, activeConfig.RepoId);
 
-        // Arrange: Prepare Chat Request (Strictly English string)
+        // Arrange: Prepare Chat Request
         var chatHistory = new List<ChatMessage>
         {
             new ChatMessage("user", "Please describe in detail what you see in this image.")
         };
-        var imagePaths = new List<string> { TestImagePath };
+        var imagePaths = new List<string> { _testImagePath };
 
         // Act 2: Apply Template & Tokenize
         _output.WriteLine("Applying Chat Template...");
         string formattedPrompt = await _inferenceEngine.ApplyChatTemplateAsync(
             config.RepoId, chatHistory, imagePaths, cts.Token);
 
-        Assert.Contains("<__media__>", formattedPrompt); // Ensure image token was injected
+        // Assert exact token injection matching LlamaInference.cs implementation
+        Assert.Contains("<__media__>\n", formattedPrompt);
 
         // Act 3: Stream Generation
         _output.WriteLine("Starting Inference...");
