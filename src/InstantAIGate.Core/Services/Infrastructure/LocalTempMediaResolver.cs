@@ -1,98 +1,63 @@
-﻿namespace InstantAIGate.Core.Services.Infrastructure;
-
-using InstantAIGate.Core.Dtos.Inference;
+﻿using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Interfaces.Infrastructure;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
+namespace InstantAIGate.Core.Services.Infrastructure;
+
 public sealed class LocalTempMediaResolver : IMediaResolver
 {
-    private readonly HttpClient _httpClient;
+    private readonly IAssetManager _assetManager;
 
-    public LocalTempMediaResolver(HttpClient httpClient)
+    public LocalTempMediaResolver(IAssetManager assetManager)
     {
-        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _assetManager = assetManager ?? throw new ArgumentNullException(nameof(assetManager));
     }
 
     public async Task<IMediaContext> ResolveMediaAsync(IEnumerable<MessageContent> parts, CancellationToken ct = default)
     {
         var resolvedPaths = new List<string>();
-        var tempFiles = new List<string>();
 
-        try
+        foreach (var part in parts)
         {
-            foreach (var part in parts)
+            if (part is ImageFileContent fileContent)
             {
-                if (part is ImageFileContent fileContent)
-                {
-                    if (!File.Exists(fileContent.FilePath))
-                        throw new FileNotFoundException($"Local media file not found: {fileContent.FilePath}");
+                if (!File.Exists(fileContent.FilePath))
+                    throw new FileNotFoundException($"Local media file not found: {fileContent.FilePath}");
 
-                    resolvedPaths.Add(fileContent.FilePath);
-                }
-                else if (part is ImageBase64Content base64Content)
-                {
-                    string tempPath = Path.GetTempFileName();
-                    tempFiles.Add(tempPath);
-
-                    byte[] bytes = Convert.FromBase64String(base64Content.Base64);
-                    await File.WriteAllBytesAsync(tempPath, bytes, ct);
-
-                    resolvedPaths.Add(tempPath);
-                }
-                else if (part is ImageUrlContent urlContent)
-                {
-                    string tempPath = Path.GetTempFileName();
-                    tempFiles.Add(tempPath);
-
-                    using var response = await _httpClient.GetAsync(urlContent.Url, HttpCompletionOption.ResponseHeadersRead, ct);
-                    response.EnsureSuccessStatusCode();
-
-                    using var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-                    await response.Content.CopyToAsync(fs, ct);
-
-                    resolvedPaths.Add(tempPath);
-                }
+                resolvedPaths.Add(fileContent.FilePath);
             }
-
-            return new TempMediaContext(resolvedPaths, tempFiles);
-        }
-        catch
-        {
-            // Clean up partial downloads on failure
-            foreach (var tempFile in tempFiles)
+            else if (part is ImageBase64Content base64Content)
             {
-                try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { /* Ignore */ }
+                string path = await _assetManager.GetOrCacheMediaAsync(base64Content.Base64, ct);
+                resolvedPaths.Add(path);
             }
-            throw;
+            else if (part is ImageUrlContent urlContent)
+            {
+                string path = await _assetManager.GetOrCacheMediaAsync(urlContent.Url, ct);
+                resolvedPaths.Add(path);
+            }
         }
+
+        return new CachedMediaContext(resolvedPaths);
     }
 
-    private sealed class TempMediaContext : IMediaContext
+    private sealed class CachedMediaContext : IMediaContext
     {
-        private readonly List<string> _tempFiles;
         public IReadOnlyList<string> LocalFilePaths { get; }
 
-        public TempMediaContext(IReadOnlyList<string> resolvedPaths, List<string> tempFiles)
+        public CachedMediaContext(IReadOnlyList<string> resolvedPaths)
         {
             LocalFilePaths = resolvedPaths;
-            _tempFiles = tempFiles;
         }
 
         public void Dispose()
         {
-            foreach (var tempFile in _tempFiles)
-            {
-                try
-                {
-                    if (File.Exists(tempFile)) File.Delete(tempFile);
-                }
-                catch { /* Ignore deletion errors during cleanup */ }
-            }
+            // No-op: The lifecycle of these files is now managed globally by MemoryAssetManager.
         }
     }
 }
