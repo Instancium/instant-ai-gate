@@ -15,6 +15,40 @@ public static class NativeLibraryLoader
 
     public static bool IsLoaded { get; private set; }
 
+    //public static bool Load(string? customRuntimesDirectory = null)
+    //{
+    //    lock (LockObj)
+    //    {
+    //        if (_isInitialized)
+    //        {
+    //            return IsLoaded;
+    //        }
+
+    //        try
+    //        {
+    //            NativeLibrary.SetDllImportResolver(typeof(NativeLibraryLoader).Assembly,
+    //                (libName, asm, searchPath) => DllResolver(libName, asm, searchPath, customRuntimesDirectory));
+
+    //            _llamaHandle = NativeLibrary.Load("llama", typeof(NativeLibraryLoader).Assembly, null);
+    //            _mtmdHandle = NativeLibrary.Load("mtmd", typeof(NativeLibraryLoader).Assembly, null);
+
+    //            IsLoaded = _llamaHandle != IntPtr.Zero && _mtmdHandle != IntPtr.Zero;
+    //            _isInitialized = true;
+
+    //            if (IsLoaded)
+    //            {
+    //                InitializeBackend();
+    //            }
+
+    //            return IsLoaded;
+    //        }
+    //        catch (Exception ex)
+    //        {
+    //            throw new DllNotFoundException($"Failed to load native libraries. Platform: {GetPlatformName()}", ex);
+    //        }
+    //    }
+    //}
+
     public static bool Load(string? customRuntimesDirectory = null)
     {
         lock (LockObj)
@@ -26,11 +60,27 @@ public static class NativeLibraryLoader
 
             try
             {
-                NativeLibrary.SetDllImportResolver(typeof(NativeLibraryLoader).Assembly,
-                    (libName, asm, searchPath) => DllResolver(libName, asm, searchPath, customRuntimesDirectory));
+                // SetDllImportResolver can only be called once per assembly.
+                // We catch InvalidOperationException if it was previously set (e.g. across test teardowns).
+                try
+                {
+                    NativeLibrary.SetDllImportResolver(typeof(NativeLibraryLoader).Assembly,
+                        (libName, asm, searchPath) => DllResolver(libName, asm, searchPath, customRuntimesDirectory));
+                }
+                catch (InvalidOperationException)
+                {
+                    // Resolver is already registered, which is safe to ignore during test reruns.
+                }
 
-                _llamaHandle = NativeLibrary.Load("llama", typeof(NativeLibraryLoader).Assembly, null);
-                _mtmdHandle = NativeLibrary.Load("mtmd", typeof(NativeLibraryLoader).Assembly, null);
+                if (_llamaHandle == IntPtr.Zero)
+                {
+                    _llamaHandle = NativeLibrary.Load("llama", typeof(NativeLibraryLoader).Assembly, null);
+                }
+
+                if (_mtmdHandle == IntPtr.Zero)
+                {
+                    _mtmdHandle = NativeLibrary.Load("mtmd", typeof(NativeLibraryLoader).Assembly, null);
+                }
 
                 IsLoaded = _llamaHandle != IntPtr.Zero && _mtmdHandle != IntPtr.Zero;
                 _isInitialized = true;
