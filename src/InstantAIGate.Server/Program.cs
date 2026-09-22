@@ -1,29 +1,32 @@
 using InstantAIGate.Native.DependencyInjection;
 using InstantAIGate.SSR.DependencyInjection;
+using InstantAIGate.Server.Middleware;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+// Inject Core, Native, and SSR dependencies
 builder.Services.AddInstantAIGateInference();
 builder.Services.AddInstantAIGateSSR();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+// Pipeline configuration (Order is critical)
+app.UseMiddleware<GatewayExceptionMiddleware>();
+app.UseMiddleware<PortRoutingMiddleware>();
+app.UseMiddleware<ApiKeyAuthMiddleware>();
 
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();

@@ -1,0 +1,281 @@
+﻿+--- .github
+|    +--- workflows
+|    |    +--- deploy.yml
+|    |    \--- publish.yml
+|    \--- copilot-instructions.md
++--- config
+|    +--- .gitkeep
+|    +--- appsettings.json
+|    \--- model_catalog.json
++--- deploy
+|    +--- docker
+|    |    +--- .gitkeep
+|    |    +--- docker-compose.yml
+|    |    \--- Dockerfile
+|    \--- windows-service
+|         +--- .gitkeep
+|         \--- InstallService.ps1
++--- media
+|    +--- dashboard.gif
+|    +--- ig-logo.png
+|    \--- status-ready.png
++--- scripts
++--- src
+|    +--- InstantAIGate.Cli
+|    |    +--- Commands
+|    |    |    +--- CommandDispatcher.cs
+|    |    |    +--- DebugCommand.cs
+|    |    |    +--- DownloadCommand.cs
+|    |    |    +--- HelpCommand.cs
+|    |    |    +--- IConsoleCommand.cs
+|    |    |    +--- ImageCommand.cs
+|    |    |    +--- LoadCommand.cs
+|    |    |    \--- ModelsCommand.cs
+|    |    +--- Logging
+|    |    |    +--- DebugStateLogger.cs
+|    |    |    \--- DebugStateLoggerProvider.cs
+|    |    +--- models
+|    |    +--- State
+|    |    |    +--- CliSession.cs.cs
+|    |    |    \--- EngineLogFilter.cs
+|    |    +--- appsettings.json
+|    |    +--- CliHostedService.cs
+|    |    +--- InstantAIGate.Cli.csproj
+|    |    \--- Program.cs
+|    +--- InstantAIGate.Core
+|    |    +--- Dtos
+|    |    |    +--- Config
+|    |    |    |    +--- BackendSettings.cs
+|    |    |    |    +--- HardwareProfileSettings.cs
+|    |    |    |    +--- InferenceSettings.cs
+|    |    |    |    +--- ModelSettings.cs
+|    |    |    |    +--- ModelType.cs
+|    |    |    |    +--- ResolvedModelPaths.cs
+|    |    |    |    \--- StorageSettings.cs
+|    |    |    +--- Inference
+|    |    |    |    +--- Native
+|    |    |    |    |    \--- BackendEnums.cs
+|    |    |    |    +--- ChatMessage.cs
+|    |    |    |    +--- ImageBase64Content.cs
+|    |    |    |    +--- ImageFileContent.cs
+|    |    |    |    +--- ImageUrlContent.cs
+|    |    |    |    +--- InferenceContext.cs
+|    |    |    |    +--- InferenceMetrics.cs
+|    |    |    |    +--- MessageContent.cs
+|    |    |    |    +--- ModelContext.cs
+|    |    |    |    +--- ModelWeights.cs
+|    |    |    |    +--- TextContent.cs
+|    |    |    |    \--- VisionContext.cs
+|    |    |    \--- Status
+|    |    |         +--- ModelRegistryStatus.cs
+|    |    |         \--- NativeModelDetails.cs
+|    |    +--- Exceptions
+|    |    |    +--- ModelIntegrityException.cs
+|    |    |    \--- QueueFullException.cs
+|    |    +--- Interfaces
+|    |    |    +--- Inference
+|    |    |    |    +--- IBackendFacade.cs
+|    |    |    |    +--- IInferenceEngine.cs
+|    |    |    |    +--- IModelLocator.cs
+|    |    |    |    +--- IModelManager.cs
+|    |    |    |    +--- IModelPathProvider.cs
+|    |    |    |    +--- IModelProvider.cs
+|    |    |    |    +--- IModelValidator.cs
+|    |    |    |    +--- IQueueLease.cs
+|    |    |    |    +--- IQueueManager.cs
+|    |    |    |    \--- IVisionFacade.cs
+|    |    |    +--- Infrastructure
+|    |    |    |    \--- IMediaContext.cs
+|    |    |    \--- Native
+|    |    |         \--- IBackendHandle.cs
+|    |    +--- Services
+|    |    |    +--- Inference
+|    |    |    |    +--- DynamicRequestQueue.cs
+|    |    |    |    +--- ModelManager.cs
+|    |    |    |    +--- ModelProvider.cs
+|    |    |    |    \--- QueueLease.cs
+|    |    |    \--- Infrastructure
+|    |    |         \--- LocalTempMediaResolver.cs
+|    |    \--- InstantAIGate.Core.csproj
+|    +--- InstantAIGate.Native
+|    |    +--- Bindings
+|    |    |    +--- LlamaNative.cs
+|    |    |    +--- LlamaTypes.cs
+|    |    |    +--- MtmdNative.cs
+|    |    |    +--- MtmdTypes.cs
+|    |    |    \--- NativeLibraryLoader.cs
+|    |    +--- Core
+|    |    |    +--- LlamaContext.cs
+|    |    |    +--- LlamaModel.cs
+|    |    |    \--- MultiModalContext.cs
+|    |    +--- DependencyInjection
+|    |    |    \--- ServiceCollectionExtensions.cs
+|    |    +--- Handles
+|    |    |    \--- LlamaModelHandle.cs
+|    |    +--- Inference
+|    |    |    +--- BackendFacade.cs
+|    |    |    +--- LlamaInference.cs
+|    |    |    +--- LlamaModelLocator.cs
+|    |    |    +--- NativeModelValidator.cs
+|    |    |    \--- VisionFacade.cs
+|    |    +--- Logging
+|    |    |    \--- NativeStreamRedirector.cs
+|    |    +--- runtimes
+|    |    |    +--- build
+|    |    |    |    +--- docker-compose.yml
+|    |    |    |    +--- Dockerfile
+|    |    |    |    +--- start.ps1
+|    |    |    |    \--- start.sh
+|    |    |    +--- linux-x64
+|    |    |    |    +--- .gitkeep
+|    |    |    |    +--- libggml.so
+|    |    |    |    +--- libggml.so.0
+|    |    |    |    +--- libggml.so.0.23.0
+|    |    |    |    +--- libggml-base.so
+|    |    |    |    +--- libggml-base.so.0
+|    |    |    |    +--- libggml-base.so.0.23.0
+|    |    |    |    +--- libggml-cpu.so
+|    |    |    |    +--- libggml-cpu.so.0
+|    |    |    |    +--- libggml-cpu.so.0.23.0
+|    |    |    |    +--- libggml-vulkan.so
+|    |    |    |    +--- libggml-vulkan.so.0
+|    |    |    |    +--- libggml-vulkan.so.0.23.0
+|    |    |    |    +--- libllama.so
+|    |    |    |    +--- libllama.so.0
+|    |    |    |    +--- libllama.so.0.4.0
+|    |    |    |    +--- libllama-batched-bench-impl.so
+|    |    |    |    +--- libllama-bench-impl.so
+|    |    |    |    +--- libllama-cli-impl.so
+|    |    |    |    +--- libllama-common.so
+|    |    |    |    +--- libllama-common.so.0
+|    |    |    |    +--- libllama-common.so.0.4.0
+|    |    |    |    +--- libllama-completion-impl.so
+|    |    |    |    +--- libllama-fit-params-impl.so
+|    |    |    |    +--- libllama-perplexity-impl.so
+|    |    |    |    +--- libllama-quantize-impl.so
+|    |    |    |    +--- libllama-server-impl.so
+|    |    |    |    +--- libmtmd.so
+|    |    |    |    +--- libmtmd.so.0
+|    |    |    |    +--- libmtmd.so.0.4.0
+|    |    |    |    +--- llama
+|    |    |    |    +--- llama-batched-bench
+|    |    |    |    +--- llama-bench
+|    |    |    |    +--- llama-cli
+|    |    |    |    +--- llama-completion
+|    |    |    |    +--- llama-cvector-generator
+|    |    |    |    +--- llama-export-lora
+|    |    |    |    +--- llama-fit-params
+|    |    |    |    +--- llama-gemma3-cli
+|    |    |    |    +--- llama-gguf-split
+|    |    |    |    +--- llama-imatrix
+|    |    |    |    +--- llama-llava-cli
+|    |    |    |    +--- llama-minicpmv-cli
+|    |    |    |    +--- llama-mtmd-cli
+|    |    |    |    +--- llama-mtmd-debug
+|    |    |    |    +--- llama-perplexity
+|    |    |    |    +--- llama-quantize
+|    |    |    |    +--- llama-qwen2vl-cli
+|    |    |    |    +--- llama-results
+|    |    |    |    +--- llama-server
+|    |    |    |    +--- llama-tokenize
+|    |    |    |    \--- llama-tts
+|    |    |    +--- llama.cpp
+|    |    |    +--- win-x64
+|    |    |    |    +--- .gitkeep
+|    |    |    |    +--- ggml.dll
+|    |    |    |    +--- ggml-base.dll
+|    |    |    |    +--- ggml-cpu.dll
+|    |    |    |    +--- ggml-vulkan.dll
+|    |    |    |    +--- llama.dll
+|    |    |    |    +--- llama.exe
+|    |    |    |    +--- llama-batched-bench.exe
+|    |    |    |    +--- llama-batched-bench-impl.dll
+|    |    |    |    +--- llama-bench.exe
+|    |    |    |    +--- llama-bench-impl.dll
+|    |    |    |    +--- llama-cli.exe
+|    |    |    |    +--- llama-cli-impl.dll
+|    |    |    |    +--- llama-common.dll
+|    |    |    |    +--- llama-completion.exe
+|    |    |    |    +--- llama-completion-impl.dll
+|    |    |    |    +--- llama-cvector-generator.exe
+|    |    |    |    +--- llama-export-lora.exe
+|    |    |    |    +--- llama-fit-params.exe
+|    |    |    |    +--- llama-fit-params-impl.dll
+|    |    |    |    +--- llama-gemma3-cli.exe
+|    |    |    |    +--- llama-gguf-split.exe
+|    |    |    |    +--- llama-imatrix.exe
+|    |    |    |    +--- llama-llava-cli.exe
+|    |    |    |    +--- llama-minicpmv-cli.exe
+|    |    |    |    +--- llama-mtmd-cli.exe
+|    |    |    |    +--- llama-mtmd-debug.exe
+|    |    |    |    +--- llama-perplexity.exe
+|    |    |    |    +--- llama-perplexity-impl.dll
+|    |    |    |    +--- llama-quantize.exe
+|    |    |    |    +--- llama-quantize-impl.dll
+|    |    |    |    +--- llama-qwen2vl-cli.exe
+|    |    |    |    +--- llama-results.exe
+|    |    |    |    +--- llama-server.exe
+|    |    |    |    +--- llama-server-impl.dll
+|    |    |    |    +--- llama-tokenize.exe
+|    |    |    |    +--- llama-tts.exe
+|    |    |    |    \--- mtmd.dll
+|    |    |    +--- .gitignore
+|    |    |    +--- README.md
+|    |    |    \--- setup-symlinks.sh
+|    |    \--- InstantAIGate.Native.csproj
+|    +--- InstantAIGate.Server
+|    |    +--- Controllers
+|    |    |    \--- .gitkeep
+|    |    +--- Hubs
+|    |    |    \--- .gitkeep
+|    |    +--- Middleware
+|    |    |    \--- .gitkeep
+|    |    +--- Properties
+|    |    |    \--- launchSettings.json
+|    |    +--- appsettings.Development.json
+|    |    +--- appsettings.json
+|    |    +--- InstantAIGate.Server.csproj
+|    |    \--- Program.cs
+|    \--- InstantAIGate.SSR
+|         +--- Contracts
+|         |    +--- IModelCatalogService.cs
+|         |    \--- IModelDownloader.cs
+|         +--- DependencyInjection
+|         |    \--- ServiceCollectionExtensions.cs
+|         +--- Downloader
+|         |    \--- ParallelModelDownloader.cs
+|         +--- Dtos
+|         |    +--- CatalogModelEntry.cs
+|         |    \--- DownloadProgress.cs
+|         +--- Services
+|         |    \--- ModelCatalogService.cs
+|         \--- InstantAIGate.SSR.csproj
++--- test
+|    \--- InstantAIGate.Core.Tests
+|         +--- Downloader
+|         |    +--- ParallelModelDownloaderTests.cs
+|         |    \--- SsrPipelineIntegrationTests.cs
+|         +--- Inference
+|         |    +--- Stubs
+|         |    |    +--- StubModelLocator.cs
+|         |    |    \--- StubModelValidator.cs
+|         |    +--- DynamicRequestQueueTests.cs
+|         |    +--- LlamaVisionIntegrationTests.cs
+|         |    \--- NativeModelValidatorIntegrationTests.cs
+|         +--- Infrastructure
+|         |    \--- SyntheticNetworkHandler.cs
+|         +--- appsettings.json
+|         \--- InstantAIGate.Core.Tests.csproj
++--- .dockerignore
++--- .gitattributes
++--- .gitignore
++--- .gitkeep
++--- InstantAIGate.sln
++--- InstantAIGate.slnLaunch.user
++--- InstantAIGate.slnx
++--- LICENSE.txt
++--- project_structure.txt
++--- README.md
++--- Show-Structure.ps1
++--- THIRD-PARTY-NOTICES.md
+\--- TRADEMARK.md
