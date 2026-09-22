@@ -15,7 +15,7 @@ public class BackendFacade : IBackendFacade
     public void BackendInit() => LlamaNative.llama_backend_init();
     public void BackendFree() => LlamaNative.llama_backend_free();
     public bool SupportsGpuOffload() => LlamaNative.llama_supports_gpu_offload();
-
+    private static GgmlLogCallback? _nativeLogCallback;
     public IModelHandle LoadModel(ModelSettings settings, string modelPath)
     {
         var modelParams = LlamaNative.llama_model_default_params();
@@ -84,25 +84,31 @@ public class BackendFacade : IBackendFacade
         }
     }
 
-    private GgmlLogCallback? _nativeLogCallback;
+
     public void SetLogCallback(BackendLogCallback callback)
     {
         _nativeLogCallback = (level, text, _) =>
         {
             if (text == IntPtr.Zero) return;
 
-            // Map GgmlLogLevel to generic int levels defined in ModelProvider
-            int coreLevel = level switch
+            try
             {
-                GgmlLogLevel.Error => 3,
-                GgmlLogLevel.Warn => 2,
-                GgmlLogLevel.Debug => 4,
-                _ => 1
-            };
-
-            string message = Marshal.PtrToStringUTF8(text) ?? string.Empty;
-            callback.Invoke(coreLevel, message);
+                int coreLevel = level switch
+                {
+                    GgmlLogLevel.Error => 3,
+                    GgmlLogLevel.Warn => 2,
+                    GgmlLogLevel.Debug => 4,
+                    _ => 1
+                };
+                string message = Marshal.PtrToStringUTF8(text) ?? string.Empty;
+                callback.Invoke(coreLevel, message);
+            }
+            catch
+            {
+                // Глушим любые исключения на границе, чтобы защитить C++ от краша процесса
+            }
         };
+
         LlamaNative.llama_log_set(_nativeLogCallback, IntPtr.Zero);
     }
 }

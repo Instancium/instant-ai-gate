@@ -81,17 +81,25 @@ public class ModelProvider : IModelProvider, IDisposable
     private static void LlamaLogHandler(int level, string message)
     {
         if (string.IsNullOrWhiteSpace(message) || _staticLogger == null) return;
-
         string cleanMessage = message.TrimEnd('\n', '\r');
         if (string.IsNullOrWhiteSpace(cleanMessage)) return;
 
-        // Mapped from native ints to prevent Core from knowing about Native enums
-        switch (level)
+        try
         {
-            case 3: _staticLogger.LogError("[Native] {Message}", cleanMessage); break; // Error
-            case 2: _staticLogger.LogWarning("[Native] {Message}", cleanMessage); break; // Warn
-            case 4: _staticLogger.LogDebug("[Native] {Message}", cleanMessage); break; // Debug
-            default: _staticLogger.LogInformation("[Native] {Message}", cleanMessage); break; // Info
+            switch (level)
+            {
+                case 3: _staticLogger.LogError("[Native] {Message}", cleanMessage); break;
+                case 2: _staticLogger.LogWarning("[Native] {Message}", cleanMessage); break;
+                case 4: _staticLogger.LogDebug("[Native] {Message}", cleanMessage); break;
+                default: _staticLogger.LogInformation("[Native] {Message}", cleanMessage); break;
+            }
+        }
+        catch
+        {
+            // STRICT P/INVOKE RULE:
+            // Never allow exceptions (e.g., ObjectDisposedException
+            // from disposed loggers between tests) to propagate back into unmanaged C++ code. 
+            // Doing so instantly kills the testhost.exe process (Fatal Execution Engine Error).
         }
     }
 
