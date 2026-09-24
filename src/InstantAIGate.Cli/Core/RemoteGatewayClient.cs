@@ -29,20 +29,20 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     }
 
     public async IAsyncEnumerable<string> StreamChatAsync(
-         string repoId,
-         ChatMessage message,
-         [EnumeratorCancellation] CancellationToken ct)
+            string repoId,
+            IEnumerable<ChatMessage> messages,
+            [EnumeratorCancellation] CancellationToken ct)
     {
         var requestPayload = new
         {
             model = repoId,
-            messages = new[] { new { role = message.Role, content = message.Content } },
+            messages = System.Linq.Enumerable.Select(messages, m => new { role = m.Role, content = m.Content }).ToArray(),
             stream = true
         };
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        var request = new HttpRequestMessage(System.Net.Http.HttpMethod.Post, "/v1/chat/completions")
         {
-            Content = JsonContent.Create(requestPayload)
+            Content = System.Net.Http.Json.JsonContent.Create(requestPayload)
         };
         // In real app, append bearer token for public endpoint if required
 
@@ -80,6 +80,17 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         }
     }
 
+    public async Task LoadModelAsync(string repoId, CancellationToken ct = default)
+    {
+        var request = new HttpRequestMessage(System.Net.Http.HttpMethod.Post, "/admin/models/load")
+        {
+            Content = System.Net.Http.Json.JsonContent.Create(new { RepoId = repoId })
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _adminKey);
+
+        using var response = await _httpClient.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+    }
     public async Task ConnectTelemetryAsync(
         Action<InferenceMetrics> onMetrics,
         Action<DownloadProgress> onSsrProgress,

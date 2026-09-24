@@ -31,17 +31,23 @@
 |    |    |    +--- ImageCommand.cs
 |    |    |    +--- LoadCommand.cs
 |    |    |    \--- ModelsCommand.cs
+|    |    +--- Core
+|    |    |    +--- IGatewayClient.cs
+|    |    |    +--- LocalGatewayClient.cs
+|    |    |    \--- RemoteGatewayClient.cs
 |    |    +--- Logging
 |    |    |    +--- DebugStateLogger.cs
 |    |    |    \--- DebugStateLoggerProvider.cs
 |    |    +--- models
 |    |    +--- State
 |    |    |    +--- CliSession.cs.cs
-|    |    |    \--- EngineLogFilter.cs
+|    |    |    +--- EngineLogFilter.cs
+|    |    |    \--- TuiDashboardState.cs
 |    |    +--- appsettings.json
 |    |    +--- CliHostedService.cs
 |    |    +--- InstantAIGate.Cli.csproj
-|    |    \--- Program.cs
+|    |    +--- Program.cs
+|    |    \--- TuiHostedService.cs
 |    +--- InstantAIGate.Core
 |    |    +--- Dtos
 |    |    |    +--- Config
@@ -233,13 +239,15 @@
 |    |    |    \--- v1
 |    |    |         \--- ChatCompletionsController.cs
 |    |    +--- Diagnostics
-|    |    |    \--- ModelReadyHealthCheckcs.cs
+|    |    |    +--- MetricsBroadcasterWorker.cs
+|    |    |    +--- ModelReadyHealthCheckcs.cs
+|    |    |    \--- SignalRLoggerProvider.cs
 |    |    +--- Dtos
 |    |    |    \--- OpenAi
 |    |    |         +--- OpenAiChatModels.cs
 |    |    |         \--- OpenAiStreamModels.cs
 |    |    +--- Hubs
-|    |    |    \--- .gitkeep
+|    |    |    \--- ITelemetryClient.cs
 |    |    +--- Mapping
 |    |    |    \--- ChatContractMapper.cs
 |    |    +--- Middleware
@@ -285,7 +293,8 @@
 |         +--- Server
 |         |    +--- GatewayInferenceE2ETests.cs
 |         |    +--- GatewaySecurityAndHealthTests.cs
-|         |    \--- GatewayTestFixture.cs
+|         |    +--- GatewayTestFixture.cs
+|         |    \--- TelemetryHubIntegrationTests.cs
 |         +--- appsettings.json
 |         +--- InstantAIGate.Core.Tests.csproj
 |         \--- xunit.runner.json

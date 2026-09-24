@@ -1,4 +1,5 @@
-﻿using InstantAIGate.Cli.Core;
+﻿using InstantAIGate.Cli.Commands;
+using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.Logging;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Config;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Spectre.Console;
 using System;
 using System.Linq;
@@ -23,6 +25,20 @@ public static class Program
         Console.OutputEncoding = Encoding.UTF8;
         Console.InputEncoding = Encoding.UTF8;
 
+        var originalOut = Console.Out;
+        var originalError = Console.Error;
+
+        var debugState = new DebugState();
+
+        Console.SetOut(new EngineLogFilter(originalOut, debugState));
+        Console.SetError(new EngineLogFilter(originalError, debugState));
+
+        AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Out = new AnsiConsoleOutput(originalOut)
+        });
+
+      
         var isRemote = args.Contains("--remote");
         var remoteUrl = isRemote ? args[Array.IndexOf(args, "--remote") + 1] : string.Empty;
         var adminKey = isRemote && args.Contains("--key") ? args[Array.IndexOf(args, "--key") + 1] : "test-admin-secret";
@@ -34,15 +50,28 @@ public static class Program
             })
             .ConfigureLogging(logging =>
             {
-                logging.ClearProviders(); // We manage our own TUI rendering, no standard console logs
+                logging.ClearProviders();
+                logging.Services.AddSingleton<ILoggerProvider>(sp =>
+                {
+                    var state = sp.GetRequiredService<DebugState>();
+                    return new DebugStateLoggerProvider(state);
+                });
             })
             .ConfigureServices((context, services) =>
             {
-                var state = new TuiDashboardState
-                {
-                    ConnectionMode = isRemote ? $"Remote ({remoteUrl})" : "Local Standalone"
-                };
-                services.AddSingleton(state);
+                services.Configure<StorageSettings>(context.Configuration.GetSection("InstantAIGate:Storage"));
+
+                services.AddSingleton<CliSession>();
+                services.AddSingleton(debugState);
+
+                services.AddSingleton<CommandDispatcher>();
+                services.AddTransient<IConsoleCommand, LoadCommand>();
+                services.AddTransient<IConsoleCommand, ImageCommand>();
+                services.AddTransient<IConsoleCommand, HelpCommand>();
+                services.AddTransient<IConsoleCommand, DebugCommand>();
+                services.AddTransient<IConsoleCommand, ModelsCommand>();
+                services.AddTransient<IConsoleCommand, DownloadCommand>();
+
 
                 if (isRemote)
                 {
@@ -55,16 +84,17 @@ public static class Program
                 }
                 else
                 {
-                    // Boot Local Inference Engine
-                    services.Configure<StorageSettings>(context.Configuration.GetSection("InstantAIGate:Storage"));
                     services.AddInstantAIGateInference();
                     services.AddInstantAIGateSSR();
                     services.AddSingleton<IGatewayClient, LocalGatewayClient>();
                 }
 
-                services.AddHostedService<TuiHostedService>();
+                services.AddHostedService<CliHostedService>();
             })
             .Build();
+
+        var storageConfig = host.Services.GetRequiredService<IOptions<StorageSettings>>().Value;
+        _ = storageConfig.ModelsDirectory;
 
         await host.RunAsync();
     }

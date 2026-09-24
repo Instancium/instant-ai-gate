@@ -1,11 +1,14 @@
 ﻿using InstantAIGate.Cli.Commands;
+using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.State;
-using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
-using InstantAIGate.Core.Interfaces.Inference;
 using Microsoft.Extensions.Hosting;
 using Spectre.Console;
+using System;
+using System.Collections.Generic;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace InstantAIGate.Cli;
 
@@ -14,7 +17,7 @@ public class CliHostedService : IHostedService
     private readonly IHostApplicationLifetime _appLifetime;
     private readonly CommandDispatcher _commandDispatcher;
     private readonly CliSession _session;
-    private readonly IInferenceEngine _inferenceEngine;
+    private readonly IGatewayClient _gatewayClient;
     private Task? _applicationTask;
     private CancellationTokenSource? _cancellationTokenSource;
 
@@ -22,12 +25,12 @@ public class CliHostedService : IHostedService
         IHostApplicationLifetime appLifetime,
         CommandDispatcher commandDispatcher,
         CliSession session,
-        IInferenceEngine inferenceEngine)
+        IGatewayClient gatewayClient)
     {
         _appLifetime = appLifetime;
         _commandDispatcher = commandDispatcher;
         _session = session;
-        _inferenceEngine = inferenceEngine;
+        _gatewayClient = gatewayClient;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -43,7 +46,6 @@ public class CliHostedService : IHostedService
         {
             await _cancellationTokenSource.CancelAsync();
         }
-
         if (_applicationTask != null)
         {
             await Task.WhenAny(_applicationTask, Task.Delay(Timeout.Infinite, cancellationToken));
@@ -82,7 +84,7 @@ public class CliHostedService : IHostedService
 
     private async Task HandleChatInferenceAsync(string input, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(_session.ActiveModelId) || _session.ActiveModelConfig == null)
+        if (string.IsNullOrEmpty(_session.ActiveModelId))
         {
             AnsiConsole.MarkupLine("[red]No model is currently loaded. Use /load <id> first.[/]");
             return;
@@ -98,34 +100,15 @@ public class CliHostedService : IHostedService
         var userMessage = new ChatMessage("user", parts);
         _session.ChatHistory.Add(userMessage);
 
-        var currentMediaParts = _session.PendingMedia.Count > 0
-            ? _session.PendingMedia.ToArray()
-            : null;
-
         AnsiConsole.Markup("[blue] AI:[/] ");
 
         try
         {
-            var formattedPrompt = await _inferenceEngine.ApplyChatTemplateAsync(
-                _session.ActiveModelConfig.RepoId,
-                _session.ChatHistory,
-                cancellationToken);
-
-            var settings = new InferenceSettings
-            {
-                MaxTokens = 4096,
-                Temperature = 0.7f,
-                TopP = 0.9f,
-                TopK = 40
-            };
-
             var fullResponse = new StringBuilder();
 
-            await foreach (var chunk in _inferenceEngine.StreamGenerationAsync(
-                _session.ActiveModelConfig.RepoId,
-                formattedPrompt,
-                currentMediaParts,
-                settings,
+            await foreach (var chunk in _gatewayClient.StreamChatAsync(
+                _session.ActiveModelId,
+                _session.ChatHistory,
                 cancellationToken))
             {
                 AnsiConsole.Write(chunk);
@@ -134,7 +117,6 @@ public class CliHostedService : IHostedService
 
             AnsiConsole.WriteLine();
             _session.ChatHistory.Add(new ChatMessage("assistant", fullResponse.ToString()));
-
             _session.PendingMedia.Clear();
         }
         catch (Exception ex)
@@ -152,7 +134,7 @@ public class CliHostedService : IHostedService
                 .LeftJustified()
                 .Color(Color.Blue));
 
-        AnsiConsole.MarkupLine("[dim]Local Inference Engine CLI - Instancium R&D (Vulkan Native)[/]");
+        AnsiConsole.MarkupLine("[dim]Gateway CLI - Local & Remote Access Ready[/]");
         AnsiConsole.MarkupLine("Type [yellow]/help[/] to view available commands.\n");
     }
 }
