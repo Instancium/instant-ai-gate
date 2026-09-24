@@ -1,4 +1,5 @@
 ﻿using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.SSR.Dtos;
 using System;
 using System.Collections.Concurrent;
 using System.Text;
@@ -16,17 +17,19 @@ public class TuiDashboardState
     public InferenceMetrics LastMetrics { get; set; } = new(0, 0);
     public double TokensPerSecond { get; set; }
     public string EngineStatus { get; set; } = "IDLE";
+    public DownloadProgress? SsrProgress { get; set; }
 
     // Zone C: Chat History
     public ConcurrentQueue<ChatMessage> ChatHistory { get; } = new();
+    public StringBuilder CurrentAssistantResponse { get; } = new();
+    public bool IsGenerating { get; set; }
 
     // Zone D: Input & Media
     public StringBuilder InputBuffer { get; } = new();
     public ConcurrentBag<MessageContent> PendingMedia { get; } = new();
 
-    // Thread-safe event for UI refresh triggers
+    // UI Triggers
     public event Action? OnStateChanged;
-
     public void NotifyUpdate() => OnStateChanged?.Invoke();
 
     public void ClearInput()
