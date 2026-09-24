@@ -38,7 +38,7 @@ public static class Program
             Out = new AnsiConsoleOutput(originalOut)
         });
 
-      
+
         var isRemote = args.Contains("--remote");
         var remoteUrl = isRemote ? args[Array.IndexOf(args, "--remote") + 1] : string.Empty;
         var adminKey = isRemote && args.Contains("--key") ? args[Array.IndexOf(args, "--key") + 1] : "test-admin-secret";
@@ -51,16 +51,11 @@ public static class Program
             .ConfigureLogging(logging =>
             {
                 logging.ClearProviders();
-                logging.Services.AddSingleton<ILoggerProvider>(sp =>
-                {
-                    var state = sp.GetRequiredService<DebugState>();
-                    return new DebugStateLoggerProvider(state);
-                });
+                logging.Services.AddSingleton<ILoggerProvider>(sp => new DebugStateLoggerProvider(debugState));
             })
             .ConfigureServices((context, services) =>
             {
                 services.Configure<StorageSettings>(context.Configuration.GetSection("InstantAIGate:Storage"));
-
                 services.AddSingleton<CliSession>();
                 services.AddSingleton(debugState);
 
@@ -72,22 +67,34 @@ public static class Program
                 services.AddTransient<IConsoleCommand, ModelsCommand>();
                 services.AddTransient<IConsoleCommand, DownloadCommand>();
 
+      
+                services.AddTransient<IConsoleCommand, ConnectCommand>();
 
-                if (isRemote)
+                services.AddHttpClient();
+                services.AddInstantAIGateInference();
+                services.AddInstantAIGateSSR();
+                services.AddSingleton<LocalGatewayClient>();
+
+     
+                services.AddSingleton<GatewayClientProxy>(sp =>
                 {
-                    services.AddHttpClient();
-                    services.AddSingleton<IGatewayClient>(sp =>
+                    IGatewayClient initial;
+                    var httpClientFactory = sp.GetRequiredService<System.Net.Http.IHttpClientFactory>();
+
+                    if (isRemote)
                     {
-                        var httpClient = sp.GetRequiredService<System.Net.Http.HttpClient>();
-                        return new RemoteGatewayClient(httpClient, remoteUrl, adminKey);
-                    });
-                }
-                else
-                {
-                    services.AddInstantAIGateInference();
-                    services.AddInstantAIGateSSR();
-                    services.AddSingleton<IGatewayClient, LocalGatewayClient>();
-                }
+                        initial = new RemoteGatewayClient(httpClientFactory.CreateClient(), remoteUrl, adminKey);
+                    }
+                    else
+                    {
+                        initial = sp.GetRequiredService<LocalGatewayClient>();
+                    }
+
+                    return new GatewayClientProxy(sp, httpClientFactory, initial);
+                });
+
+    
+                services.AddSingleton<IGatewayClient>(sp => sp.GetRequiredService<GatewayClientProxy>());
 
                 services.AddHostedService<CliHostedService>();
             })

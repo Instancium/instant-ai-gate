@@ -1,7 +1,9 @@
 ﻿using InstantAIGate.Cli.Commands;
 using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.State;
+using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.Core.Interfaces.Inference;
 using Microsoft.Extensions.Hosting;
 using Spectre.Console;
 using System;
@@ -61,7 +63,8 @@ public class CliHostedService : IHostedService
             {
                 try
                 {
-                    AnsiConsole.Markup("[cyan]  User:[/] ");
+                    // Added newline and icon for better visual hierarchy
+                    AnsiConsole.Markup("\n[bold cyan]👤 User:[/] ");
                     var input = Console.ReadLine();
                     if (string.IsNullOrWhiteSpace(input)) continue;
 
@@ -86,7 +89,7 @@ public class CliHostedService : IHostedService
     {
         if (string.IsNullOrEmpty(_session.ActiveModelId))
         {
-            AnsiConsole.MarkupLine("[red]No model is currently loaded. Use /load <id> first.[/]");
+            AnsiConsole.MarkupLine("[red]No model is currently loaded. Use /connect and /load <id> first.[/]");
             return;
         }
 
@@ -100,22 +103,31 @@ public class CliHostedService : IHostedService
         var userMessage = new ChatMessage("user", parts);
         _session.ChatHistory.Add(userMessage);
 
-        AnsiConsole.Markup("[blue] AI:[/] ");
+     
+        AnsiConsole.WriteLine();
+        ///AnsiConsole.MarkupLine("[bold blue]🤖 AI:[/]");
 
         try
         {
             var fullResponse = new StringBuilder();
 
+          
             await foreach (var chunk in _gatewayClient.StreamChatAsync(
                 _session.ActiveModelId,
                 _session.ChatHistory,
                 cancellationToken))
             {
-                AnsiConsole.Write(chunk);
+            
+                AnsiConsole.Markup($"[silver]{Markup.Escape(chunk)}[/]");
                 fullResponse.Append(chunk);
             }
 
             AnsiConsole.WriteLine();
+            AnsiConsole.WriteLine();
+
+     
+            AnsiConsole.Write(new Rule().RuleStyle("grey").LeftJustified());
+
             _session.ChatHistory.Add(new ChatMessage("assistant", fullResponse.ToString()));
             _session.PendingMedia.Clear();
         }
