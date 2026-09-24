@@ -74,6 +74,7 @@
 |    |    |    \--- QueueFullException.cs
 |    |    +--- Interfaces
 |    |    |    +--- Inference
+|    |    |    |    +--- IAssetManager.cs
 |    |    |    |    +--- IBackendFacade.cs
 |    |    |    |    +--- IInferenceEngine.cs
 |    |    |    |    +--- IModelLocator.cs
@@ -95,7 +96,8 @@
 |    |    |    |    +--- ModelProvider.cs
 |    |    |    |    \--- QueueLease.cs
 |    |    |    \--- Infrastructure
-|    |    |         \--- LocalTempMediaResolver.cs
+|    |    |         +--- LocalTempMediaResolver.cs
+|    |    |         \--- MemoryAssetManager.cs
 |    |    \--- InstantAIGate.Core.csproj
 |    +--- InstantAIGate.Native
 |    |    +--- Bindings
@@ -225,11 +227,25 @@
 |    |    \--- InstantAIGate.Native.csproj
 |    +--- InstantAIGate.Server
 |    |    +--- Controllers
-|    |    |    \--- .gitkeep
+|    |    |    +--- admin
+|    |    |    |    +--- AdminModelsController.cs
+|    |    |    |    \--- AdminQueueController.cs
+|    |    |    \--- v1
+|    |    |         \--- ChatCompletionsController.cs
+|    |    +--- Diagnostics
+|    |    |    \--- ModelReadyHealthCheckcs.cs
+|    |    +--- Dtos
+|    |    |    \--- OpenAi
+|    |    |         +--- OpenAiChatModels.cs
+|    |    |         \--- OpenAiStreamModels.cs
 |    |    +--- Hubs
 |    |    |    \--- .gitkeep
+|    |    +--- Mapping
+|    |    |    \--- ChatContractMapper.cs
 |    |    +--- Middleware
-|    |    |    \--- .gitkeep
+|    |    |    +--- ApiKeyAuthMiddleware.cs
+|    |    |    +--- GatewayExceptionMiddleware.cs
+|    |    |    \--- PortRoutingMiddleware.cs
 |    |    +--- Properties
 |    |    |    \--- launchSettings.json
 |    |    +--- appsettings.Development.json
@@ -255,6 +271,8 @@
 |         +--- Downloader
 |         |    +--- ParallelModelDownloaderTests.cs
 |         |    \--- SsrPipelineIntegrationTests.cs
+|         +--- Dtos
+|         |    \--- OpenAiContractTests.cs
 |         +--- Inference
 |         |    +--- Stubs
 |         |    |    +--- StubModelLocator.cs
@@ -264,8 +282,13 @@
 |         |    \--- NativeModelValidatorIntegrationTests.cs
 |         +--- Infrastructure
 |         |    \--- SyntheticNetworkHandler.cs
+|         +--- Server
+|         |    +--- GatewayInferenceE2ETests.cs
+|         |    +--- GatewaySecurityAndHealthTests.cs
+|         |    \--- GatewayTestFixture.cs
 |         +--- appsettings.json
-|         \--- InstantAIGate.Core.Tests.csproj
+|         +--- InstantAIGate.Core.Tests.csproj
+|         \--- xunit.runner.json
 +--- .dockerignore
 +--- .gitattributes
 +--- .gitignore
