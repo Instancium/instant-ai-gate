@@ -16,7 +16,7 @@ RUN dotnet publish src/InstantAIGate.Server/InstantAIGate.Server.csproj \
     /p:PublishSingleFile=false
 
 # Stage 2: Runtime Phase
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-bookworm-slim AS final
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS final
 WORKDIR /app
 
 # Install native runtime dependencies required by llama.cpp (OpenMP and Vulkan ICD loader).
