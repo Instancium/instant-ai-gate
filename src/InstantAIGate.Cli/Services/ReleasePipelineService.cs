@@ -261,13 +261,22 @@ public class ReleasePipelineService
             string zipPath = Path.Combine(GetSolutionRootDirectory(), $"InstantAIGate-Server-win-x64-v{state.NewVersion}.zip");
             if (state.LastCompletedStep < 8)
             {
+                bool buildDocker = AnsiConsole.Confirm("Do you want to build and push the Docker image?", defaultValue: true);
+
                 await AnsiConsole.Status().StartAsync("Building release artifacts...", async ctx =>
                 {
                     ctx.Status("Building Windows self-contained artifact...");
                     zipPath = await BuildWindowsAssetAsync(state.NewVersion, cancellationToken);
 
-                    ctx.Status("Building Linux GHCR image...");
-                    await BuildDockerImageAsync(state.NewVersion, isPreRelease, cancellationToken);
+                    if (buildDocker)
+                    {
+                        ctx.Status("Building Linux GHCR image...");
+                        await BuildDockerImageAsync(state.NewVersion, isPreRelease, cancellationToken);
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine("[yellow]Skipping Docker build as requested.[/]");
+                    }
                 });
 
                 state.LastCompletedStep = 8;
@@ -289,9 +298,11 @@ public class ReleasePipelineService
                     await ExecuteProcessAsync("gh", $"release create v{state.NewVersion} -t \"Release v{state.NewVersion}\" -F \"{finalNotesFile}\" {preReleaseFlag}", cancellationToken);
 
                     ctx.Status("Uploading Windows asset...");
+                    // Вот здесь используется zipPath
                     await ExecuteProcessAsync("gh", $"release upload v{state.NewVersion} \"{zipPath}\"", cancellationToken);
                     File.Delete(finalNotesFile);
 
+                    // Если пропустили сборку, то и пушить нечего, но для простоты оставим логику
                     ctx.Status("Pushing GHCR images...");
                     await PushDockerImageAsync(state.NewVersion, isPreRelease, cancellationToken);
 
@@ -299,7 +310,6 @@ public class ReleasePipelineService
                     await ExecuteProcessAsync("git", $"branch -d {state.ReleaseBranch}", cancellationToken);
                 });
 
-               
                 ClearState();
             }
 
@@ -312,6 +322,48 @@ public class ReleasePipelineService
         }
     }
 
+    private async Task ExecuteProcessLiveAsync(string fileName, string arguments, CancellationToken cancellationToken)
+    {
+        bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = isWindows ? "cmd.exe" : fileName,
+                Arguments = isWindows ? $"/c {fileName} {arguments}" : arguments,
+                WorkingDirectory = GetSolutionRootDirectory(),
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+
+        // Stream output in real-time
+        process.OutputDataReceived += (sender, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data))
+                AnsiConsole.MarkupLine($"[grey]{Markup.Escape(e.Data)}[/]");
+        };
+
+        process.ErrorDataReceived += (sender, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data))
+                AnsiConsole.MarkupLine($"[dim red]{Markup.Escape(e.Data)}[/]");
+        };
+
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        await process.WaitForExitAsync(cancellationToken);
+
+        if (process.ExitCode != 0)
+        {
+            throw new Exception($"Process '{fileName}' failed with exit code {process.ExitCode}.");
+        }
+    }
     private string GetSolutionRootDirectory()
     {
         var directory = new DirectoryInfo(Environment.CurrentDirectory);
@@ -460,14 +512,12 @@ Commit Log:
         return zipPath;
     }
 
-    private async Task BuildDockerImageAsync(string version, bool isPreRelease, CancellationToken cancellationToken)
+    private async Task BuildDockerImageAsync(string newVersion, bool isPreRelease, CancellationToken cancellationToken)
     {
-        string imageName = "ghcr.io/your-org/instantaigate-server";
-        await ExecuteProcessAsync("docker", $"build -f deploy/docker/Dockerfile -t {imageName}:v{version} .", cancellationToken);
-        if (!isPreRelease)
-        {
-            await ExecuteProcessAsync("docker", $"tag {imageName}:v{version} {imageName}:latest", cancellationToken);
-        }
+        string tag = $"ghcr.io/your-org/instantaigate-server:v{newVersion}";
+
+        // Use live streaming for long-running Docker builds
+        await ExecuteProcessLiveAsync("docker", $"build -f deploy/docker/Dockerfile -t {tag} .", cancellationToken);
     }
 
     private async Task PushDockerImageAsync(string version, bool isPreRelease, CancellationToken cancellationToken)
