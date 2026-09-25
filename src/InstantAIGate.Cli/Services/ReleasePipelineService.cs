@@ -380,12 +380,14 @@ Commit Log:
 
     private async Task<int> ExecuteProcessWithReturnCodeAsync(string fileName, string arguments, CancellationToken cancellationToken)
     {
+        bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+
         var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = fileName,
-                Arguments = arguments,
+                FileName = isWindows ? "cmd.exe" : fileName,
+                Arguments = isWindows ? $"/c {fileName} {arguments}" : arguments,
                 WorkingDirectory = GetSolutionRootDirectory(),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -408,13 +410,15 @@ Commit Log:
 
     private async Task<string> GetCommandOutputAsync(string fileName, string arguments, CancellationToken cancellationToken)
     {
+        bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+
         var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = fileName,
-                Arguments = arguments,
-                WorkingDirectory = GetSolutionRootDirectory(), 
+                FileName = isWindows ? "cmd.exe" : fileName,
+                Arguments = isWindows ? $"/c {fileName} {arguments}" : arguments,
+                WorkingDirectory = GetSolutionRootDirectory(),
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
