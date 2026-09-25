@@ -1,6 +1,8 @@
 ﻿using InstantAIGate.Cli.Commands;
+using InstantAIGate.Cli.Configuration;
 using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.Logging;
+using InstantAIGate.Cli.Services;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Native.DependencyInjection;
@@ -94,8 +96,13 @@ public static class Program
                 services.AddSingleton<IGatewayClient>(sp => sp.GetRequiredService<GatewayClientProxy>());
 
                 services.AddHostedService<CliHostedService>();
+                services.Configure<ReleasePipelineSettings>(context.Configuration.GetSection("ReleasePipeline"));
+                services.AddSingleton<ReleasePipelineService>();
+                services.AddTransient<IConsoleCommand, ReleaseCommand>();
             })
             .Build();
+
+
 
         var storageConfig = host.Services.GetRequiredService<IOptions<StorageSettings>>().Value;
         _ = storageConfig.ModelsDirectory;
