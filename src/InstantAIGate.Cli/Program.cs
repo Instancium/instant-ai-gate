@@ -45,6 +45,7 @@ public static class Program
         var host = Host.CreateDefaultBuilder(args)
             .ConfigureAppConfiguration((context, config) =>
             {
+                config.SetBasePath(AppContext.BaseDirectory);
                 config.AddJsonFile("cli-settings.json", optional: false, reloadOnChange: true);
             })
             .ConfigureLogging(logging =>
