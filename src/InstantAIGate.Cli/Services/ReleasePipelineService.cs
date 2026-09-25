@@ -154,7 +154,10 @@ public class ReleasePipelineService
                 ctx.Status($"Switching to {_settings.TargetBranch}...");
                 await ExecuteProcessAsync("git", $"checkout {_settings.TargetBranch}", cancellationToken);
                 ctx.Status("Pulling merge commit...");
-                await ExecuteProcessAsync("git", "pull", cancellationToken);
+
+                // Блокируем любые интерактивные окна при pull
+                await ExecuteProcessAsync("git", $"--no-pager pull origin {_settings.TargetBranch} --no-edit", cancellationToken);
+
                 ctx.Status($"Tagging as v{newVersion}...");
                 await ExecuteProcessAsync("git", $"tag v{newVersion}", cancellationToken);
                 await ExecuteProcessAsync("git", $"push origin v{newVersion}", cancellationToken);
