@@ -35,7 +35,7 @@
 		</None>
 	</ItemGroup>
 
-	<Target Name="CreateLinuxSymlinks" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(PublishDir)' != ''">
+	<Target Name="CreateLinuxSymlinks" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'linux-x64'">
 		<!-- Execute directly in PublishDir since the files are now flattened to the root -->
 		<Exec Command="bash -c 'cd $(PublishDir) &amp;&amp; for f in *.so.*.*.*; do base=$${f%%.so*}.so; v1=$${base}.0; ln -sf $$f $$v1; ln -sf $$v1 $$base; done'" ContinueOnError="true" />
 	</Target>
