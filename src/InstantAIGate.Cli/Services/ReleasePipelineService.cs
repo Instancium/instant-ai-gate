@@ -20,8 +20,8 @@ public class ReleasePipelineService
     private readonly IGatewayClient _gatewayClient;
     private readonly ReleasePipelineSettings _settings;
 
-    private const string ServerProjectFile = "src/InstantAIGate.Server/InstantAIGate.Server.csproj";
-    private const string SolutionFile = "InstantAIGate.sln";
+    private string ServerProjectFile => Path.Combine(GetSolutionRootDirectory(), "src", "InstantAIGate.Server", "InstantAIGate.Server.csproj");
+    private string SolutionFile => Path.Combine(GetSolutionRootDirectory(), "InstantAIGate.sln");
 
     public ReleasePipelineService(IGatewayClient gatewayClient, IOptions<ReleasePipelineSettings> options)
     {
@@ -34,11 +34,24 @@ public class ReleasePipelineService
         try
         {
             // Step 1: Pre-flight checks and branch selection
-            EnsureCleanWorkingDirectory();
-            await ExecuteProcessAsync("git", "fetch --all", cancellationToken);
+            await AnsiConsole.Status().StartAsync("Checking repository state...", async ctx =>
+            {
+                EnsureCleanWorkingDirectory();
+                ctx.Status("Fetching latest changes from origin...");
+                await ExecuteProcessAsync("git", "fetch --all", cancellationToken);
+            });
+
             string selectedBranch = await SelectWorkingBranchAsync(cancellationToken);
-            await ExecuteProcessAsync("git", $"checkout {selectedBranch}", cancellationToken);
-            await ExecuteProcessAsync("git", "pull", cancellationToken);
+
+            await AnsiConsole.Status().StartAsync($"Preparing branch '{selectedBranch}'...", async ctx =>
+            {
+                ctx.Status($"Switching to {selectedBranch}...");
+                await ExecuteProcessAsync("git", $"checkout {selectedBranch}", cancellationToken);
+                ctx.Status("Pulling latest commits...");
+                await ExecuteProcessAsync("git", "pull", cancellationToken);
+            });
+            
+            string originalBranch = selectedBranch;
 
             // Step 2: Version and Isolation
             string currentVersion = GetCurrentVersion();
@@ -54,40 +67,81 @@ public class ReleasePipelineService
             bool isPreRelease = newVersion.Contains('-');
             string releaseBranch = $"{_settings.ReleaseBranchPrefix}{newVersion}";
 
-            await ExecuteProcessAsync("git", $"checkout -b {releaseBranch}", cancellationToken);
-            UpdateProjectVersion(newVersion);
-
-            // Step 3: Fail-Fast Validation
-            await AnsiConsole.Status().StartAsync("Running unit tests...", async ctx =>
+            await AnsiConsole.Status().StartAsync($"Creating release branch '{releaseBranch}'...", async ctx =>
             {
-                int exitCode = await ExecuteProcessWithReturnCodeAsync("dotnet", $"test {SolutionFile} -c Release", cancellationToken);
-                if (exitCode != 0)
+                await ExecuteProcessAsync("git", $"checkout -b {releaseBranch}", cancellationToken);
+                UpdateProjectVersion(newVersion);
+            });
+
+            string tempNotesFile = Path.Combine(Path.GetTempPath(), $"RELEASE_NOTES_v{newVersion}.md");
+            string releaseNotes = string.Empty;
+            try
+            {
+                // Step 3: Fail-Fast Validation
+                await AnsiConsole.Status().StartAsync("Running unit tests...", async ctx =>
                 {
-                    throw new InvalidOperationException("Unit tests failed. Pipeline aborted. Branch not pushed.");
-                }
-            });
+                    int exitCode = await ExecuteProcessWithReturnCodeAsync("dotnet", $"test \"{SolutionFile}\" -c Release", cancellationToken);
+                    if (exitCode != 0)
+                    {
+                        throw new InvalidOperationException("Unit tests failed.");
+                    }
+                });
 
-            // Step 4: Generate Release Notes via AI
-            string releaseNotes = await AnsiConsole.Status().StartAsync("Generating release notes via AI...", async ctx =>
-            {
-                return await GenerateReleaseNotesAsync(cancellationToken);
-            });
-            AnsiConsole.MarkupLine("\n[green]Generated Release Notes:[/]\n" + releaseNotes + "\n");
+                // Step 4: Generate Release Notes via AI
+                 releaseNotes = await AnsiConsole.Status().StartAsync("Generating release notes via AI...", async ctx =>
+                {
+                    return await GenerateReleaseNotesAsync(cancellationToken);
+                });
 
-            // Step 5: Commit and Create PR
-            await AnsiConsole.Status().StartAsync("Committing and creating Pull Request...", async ctx =>
-            {
-                await ExecuteProcessAsync("git", "add .", cancellationToken);
-                string commitMsg = $"chore(release): prepare version v{newVersion}";
-                await ExecuteProcessAsync("git", $"commit -m \"{commitMsg}\"", cancellationToken);
-                await ExecuteProcessAsync("git", $"push -u origin {releaseBranch}", cancellationToken);
-
-                string tempNotesFile = Path.GetTempFileName();
                 await File.WriteAllTextAsync(tempNotesFile, releaseNotes, cancellationToken);
-                string prTitle = $"chore(release): publish version v{newVersion}";
-                await ExecuteProcessAsync("gh", $"pr create --base {_settings.TargetBranch} --head {releaseBranch} --title \"{prTitle}\" --body-file \"{tempNotesFile}\"", cancellationToken);
-                File.Delete(tempNotesFile);
-            });
+
+                // Step 4.5: Interactive Review, QA Pause, and Editing
+                AnsiConsole.MarkupLine("\n[yellow]Opening Release Notes in your default text editor...[/]");
+                Process.Start(new ProcessStartInfo(tempNotesFile) { UseShellExecute = true });
+
+                AnsiConsole.MarkupLine("\n[cyan]Take your time to manual test the application or tweak the release notes.[/]");
+                var userAction = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Are you ready to commit and create the Pull Request?")
+                        .AddChoices(new[] { "Approve (Commit & Create PR)", "Abort (Rollback changes)" }));
+
+                if (userAction == "Abort (Rollback changes)")
+                {
+                    throw new InvalidOperationException("Pipeline aborted manually by user during QA review.");
+                }
+
+                // Read the potentially edited notes
+                releaseNotes = await File.ReadAllTextAsync(tempNotesFile, cancellationToken);
+
+                // Step 5: Commit and Create PR
+                await AnsiConsole.Status().StartAsync("Committing and creating Pull Request...", async ctx =>
+                {
+                    ctx.Status("Committing version changes...");
+                    await ExecuteProcessAsync("git", "add .", cancellationToken);
+                    string commitMsg = $"chore(release): prepare version v{newVersion}";
+                    await ExecuteProcessAsync("git", $"commit -m \"{commitMsg}\"", cancellationToken);
+
+                    ctx.Status("Pushing branch to origin...");
+                    await ExecuteProcessAsync("git", $"push -u origin {releaseBranch}", cancellationToken);
+
+                    ctx.Status("Creating Pull Request via gh-cli...");
+                    string prTitle = $"chore(release): publish version v{newVersion}";
+                    await ExecuteProcessAsync("gh", $"pr create --base {_settings.TargetBranch} --head {releaseBranch} --title \"{prTitle}\" --body-file \"{tempNotesFile}\"", cancellationToken);
+                });
+            }
+            catch (Exception)
+            {
+                // ROLLBACK MECHANISM
+                AnsiConsole.MarkupLine("[red]Pipeline interrupted. Rolling back local changes...[/]");
+                await ExecuteProcessAsync("git", "restore .", CancellationToken.None);
+                await ExecuteProcessAsync("git", $"checkout {originalBranch}", CancellationToken.None);
+                await ExecuteProcessAsync("git", $"branch -D {releaseBranch}", CancellationToken.None);
+                throw; // Rethrow to exit pipeline safely
+            }
+            finally
+            {
+                if (File.Exists(tempNotesFile)) File.Delete(tempNotesFile);
+            }
 
             // Step 6: Interactive Pause
             AnsiConsole.MarkupLine($"[yellow]Pull Request created. Please review, approve, and merge it into '{_settings.TargetBranch}' using the web interface.[/]");
@@ -96,8 +150,11 @@ public class ReleasePipelineService
             // Step 7: Sync and Tag
             await AnsiConsole.Status().StartAsync("Syncing main and tagging...", async ctx =>
             {
+                ctx.Status($"Switching to {_settings.TargetBranch}...");
                 await ExecuteProcessAsync("git", $"checkout {_settings.TargetBranch}", cancellationToken);
+                ctx.Status("Pulling merge commit...");
                 await ExecuteProcessAsync("git", "pull", cancellationToken);
+                ctx.Status($"Tagging as v{newVersion}...");
                 await ExecuteProcessAsync("git", $"tag v{newVersion}", cancellationToken);
                 await ExecuteProcessAsync("git", $"push origin v{newVersion}", cancellationToken);
             });
@@ -116,16 +173,17 @@ public class ReleasePipelineService
             // Step 9: Final Publish
             await AnsiConsole.Status().StartAsync("Publishing release...", async ctx =>
             {
-                string tempNotesFile = Path.GetTempFileName();
-                await File.WriteAllTextAsync(tempNotesFile, releaseNotes, cancellationToken);
+                string finalNotesFile = Path.GetTempFileName(); // <-- Используем новое имя
+                await File.WriteAllTextAsync(finalNotesFile, releaseNotes, cancellationToken);
                 string preReleaseFlag = isPreRelease ? "--prerelease" : "--latest";
 
                 ctx.Status("Creating GitHub Release...");
-                await ExecuteProcessAsync("gh", $"release create v{newVersion} -t \"Release v{newVersion}\" -F \"{tempNotesFile}\" {preReleaseFlag}", cancellationToken);
+                await ExecuteProcessAsync("gh", $"release create v{newVersion} -t \"Release v{newVersion}\" -F \"{finalNotesFile}\" {preReleaseFlag}", cancellationToken);
 
                 ctx.Status("Uploading Windows asset...");
                 await ExecuteProcessAsync("gh", $"release upload v{newVersion} \"{zipPath}\"", cancellationToken);
-                File.Delete(tempNotesFile);
+
+                File.Delete(finalNotesFile); // <-- Удаляем финальный файл
 
                 ctx.Status("Pushing GHCR images...");
                 await PushDockerImageAsync(newVersion, isPreRelease, cancellationToken);
@@ -142,6 +200,16 @@ public class ReleasePipelineService
         }
     }
 
+    private string GetSolutionRootDirectory()
+    {
+        var directory = new DirectoryInfo(Environment.CurrentDirectory);
+        while (directory != null && !directory.GetFiles("InstantAIGate.sln").Any())
+        {
+            directory = directory.Parent;
+        }
+        return directory?.FullName ?? Environment.CurrentDirectory;
+    }
+
     private void EnsureCleanWorkingDirectory()
     {
         var process = new Process
@@ -150,6 +218,7 @@ public class ReleasePipelineService
             {
                 FileName = "git",
                 Arguments = "status --porcelain",
+                WorkingDirectory = GetSolutionRootDirectory(),
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
@@ -167,20 +236,7 @@ public class ReleasePipelineService
 
     private async Task<string> SelectWorkingBranchAsync(CancellationToken cancellationToken)
     {
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "git",
-                Arguments = "branch --sort=-committerdate --format=\"%(refname:short)\"",
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-        process.Start();
-        string output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        string output = await GetCommandOutputAsync("git", "branch --sort=-committerdate --format=\"%(refname:short)\"", cancellationToken);
 
         var branches = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Where(b => _settings.AllowedBranchPrefixes.Any(prefix => b.StartsWith(prefix) || b == prefix))
@@ -200,6 +256,9 @@ public class ReleasePipelineService
 
     private string GetCurrentVersion()
     {
+        if (!File.Exists(ServerProjectFile))
+            throw new FileNotFoundException($"Cannot find project file at {ServerProjectFile}");
+
         var content = File.ReadAllText(ServerProjectFile);
         var match = Regex.Match(content, @"<Version>(.*?)</Version>");
         return match.Success ? match.Groups[1].Value : "1.0.0";
@@ -266,13 +325,14 @@ Commit Log:
 
     private async Task<string> BuildWindowsAssetAsync(string version, CancellationToken cancellationToken)
     {
+        string rootDir = GetSolutionRootDirectory();
         string outputDir = Path.Combine(Path.GetTempPath(), $"InstantAIGate_Build_v{version}");
         if (Directory.Exists(outputDir)) Directory.Delete(outputDir, true);
 
-        string buildArgs = $"publish {ServerProjectFile} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o \"{outputDir}\"";
+        string buildArgs = $"publish \"{ServerProjectFile}\" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o \"{outputDir}\"";
         await ExecuteProcessAsync("dotnet", buildArgs, cancellationToken);
 
-        string nativeSourceDir = "src/InstantAIGate.Native/runtimes/win-x64";
+        string nativeSourceDir = Path.Combine(rootDir, "src", "InstantAIGate.Native", "runtimes", "win-x64");
         if (Directory.Exists(nativeSourceDir))
         {
             foreach (var file in Directory.GetFiles(nativeSourceDir, "*.dll"))
@@ -281,7 +341,7 @@ Commit Log:
             }
         }
 
-        string zipPath = Path.Combine(Directory.GetCurrentDirectory(), $"InstantAIGate-Server-win-x64-v{version}.zip");
+        string zipPath = Path.Combine(rootDir, $"InstantAIGate-Server-win-x64-v{version}.zip");
         if (File.Exists(zipPath)) File.Delete(zipPath);
 
         System.IO.Compression.ZipFile.CreateFromDirectory(outputDir, zipPath);
@@ -325,6 +385,7 @@ Commit Log:
             {
                 FileName = fileName,
                 Arguments = arguments,
+                WorkingDirectory = GetSolutionRootDirectory(),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -334,6 +395,13 @@ Commit Log:
 
         process.Start();
         await process.WaitForExitAsync(cancellationToken);
+
+        if (process.ExitCode != 0)
+        {
+            string error = await process.StandardError.ReadToEndAsync(cancellationToken);
+            AnsiConsole.MarkupLine($"[dim red]Process output:[/] {error}");
+        }
+
         return process.ExitCode;
     }
 
@@ -345,6 +413,7 @@ Commit Log:
             {
                 FileName = fileName,
                 Arguments = arguments,
+                WorkingDirectory = GetSolutionRootDirectory(), 
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
