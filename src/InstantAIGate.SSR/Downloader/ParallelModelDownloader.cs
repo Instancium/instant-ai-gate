@@ -26,7 +26,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
     private const int MaxDegreesOfParallelism = 4;
     private const long MinimumParallelSize = 10 * 1024 * 1024; // 10 MB
     private readonly IModelValidator _modelValidator;
-
+    private record FileDownloadContext(string Url, string DestinationPath, string TempPath, long TotalBytes, bool AcceptRanges);
     public ParallelModelDownloader(HttpClient httpClient, ILogger<ParallelModelDownloader> logger, IModelValidator modelValidator)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
@@ -36,11 +36,11 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
     }
 
     public async Task DownloadModelAsync(
-        string modelId,
-        IReadOnlyList<string> downloadUrls,
-        string destinationDirectory,
-        IProgress<DownloadProgress> progress,
-        CancellationToken ct = default)
+            string modelId,
+            IReadOnlyList<string> downloadUrls,
+            string destinationDirectory,
+            IProgress<DownloadProgress> progress,
+            CancellationToken ct = default)
     {
         if (downloadUrls == null || !downloadUrls.Any())
             throw new ArgumentException("No download URLs provided.", nameof(downloadUrls));
@@ -55,7 +55,6 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
 
         try
         {
-            // 1. Pre-flight checks to determine total size across all files
             long totalBytesAllFiles = 0;
             var fileTasks = new List<FileDownloadContext>();
 
@@ -66,6 +65,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                 if (string.IsNullOrEmpty(fileName)) fileName = Guid.NewGuid().ToString("N") + ".bin";
 
                 string destPath = Path.Combine(destinationDirectory, fileName);
+                string tempPath = destPath + ".tmp"; // <--- ВРЕМЕННЫЙ ФАЙЛ
 
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
@@ -73,12 +73,11 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
 
                 long size = response.Content.Headers.ContentLength ?? 0;
                 bool acceptRanges = response.Headers.AcceptRanges.Contains("bytes");
-
                 totalBytesAllFiles += size;
-                fileTasks.Add(new FileDownloadContext(url, destPath, size, acceptRanges));
+
+                fileTasks.Add(new FileDownloadContext(url, destPath, tempPath, size, acceptRanges));
             }
 
-            // 2. Download files & Validate (with deterministic Garbage Collection)
             long totalDownloadedBytes = 0;
             var sw = Stopwatch.StartNew();
             var progressLock = new object();
@@ -88,64 +87,62 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
             {
                 foreach (var file in fileTasks)
                 {
+                    // ПЕРЕДАЕМ tempPath ВМЕСТО destPath
                     if (file.TotalBytes > MinimumParallelSize && file.AcceptRanges)
                     {
-                        await DownloadParallelAsync(modelId, file.Url, file.DestinationPath, file.TotalBytes,
+                        await DownloadParallelAsync(modelId, file.Url, file.TempPath, file.TotalBytes,
                             bytesRead => ReportProgress(bytesRead), linkedCts.Token);
                     }
                     else
                     {
-                        await DownloadSequentialAsync(modelId, file.Url, file.DestinationPath, file.TotalBytes,
+                        await DownloadSequentialAsync(modelId, file.Url, file.TempPath, file.TotalBytes,
                             bytesRead => ReportProgress(bytesRead), linkedCts.Token);
                     }
                 }
 
-                // Safety Check: Reject tiny files (likely HTML error pages or CDN blocks)
                 foreach (var file in fileTasks)
                 {
-                    var fileInfo = new FileInfo(file.DestinationPath);
-                    if (fileInfo.Exists && fileInfo.Length < 1024 * 1024) // < 1 MB
+                    var fileInfo = new FileInfo(file.TempPath);
+                    if (fileInfo.Exists && fileInfo.Length < 1024 * 1024)
                     {
-                        _logger.LogError("Downloaded file '{File}' is abnormally small ({Size} bytes). The CDN likely returned an HTML error page.", fileInfo.Name, fileInfo.Length);
-                        throw new InvalidOperationException($"Download failed: The remote server returned an invalid file (size: {fileInfo.Length} bytes). Check URL and CDN restrictions.");
+                        _logger.LogError("Downloaded file '{File}' is abnormally small.", fileInfo.Name);
+                        throw new InvalidOperationException("Download failed: The remote server returned an invalid file.");
                     }
                 }
 
-                // Phase 3: GGUF Validation BEFORE committing to storage
-                var downloadedFiles = fileTasks.Select(f => f.DestinationPath).ToList();
+                // ВАЛИДИРУЕМ ВРЕМЕННЫЕ ФАЙЛЫ ДО ПЕРЕИМЕНОВАНИЯ
+                var downloadedFiles = fileTasks.Select(f => f.TempPath).ToList();
                 bool isValid = await _modelValidator.ValidateIntegrityAsync(downloadedFiles, linkedCts.Token);
 
                 if (!isValid)
                 {
-                    _logger.LogError("GGUF headers validation failed for model {ModelId}. Files will be purged by finally block.", modelId);
+                    _logger.LogError("GGUF headers validation failed for model {ModelId}.", modelId);
                     throw new ModelIntegrityException(modelId, downloadedFiles.First());
                 }
 
-                // Mark state as valid to prevent finally-block purge
+                // АТОМАРНАЯ ПОДМЕНА: Переименовываем .tmp в .gguf только после успешной проверки!
+                foreach (var file in fileTasks)
+                {
+                    File.Move(file.TempPath, file.DestinationPath, overwrite: true);
+                }
+
                 isDownloadCompletedAndValid = true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Download process failed or validation was rejected for model {ModelId}. Purging files.", modelId);
+                _logger.LogError(ex, "Download process failed or validation was rejected for model {ModelId}.", modelId);
                 throw;
             }
             finally
             {
-                // Deterministic garbage collection for partial, cancelled, or corrupted downloads
+                // ОЧИСТКА: Удаляем только мусорные .tmp файлы, если тест прервался
                 if (!isDownloadCompletedAndValid)
                 {
                     foreach (var file in fileTasks)
                     {
-                        if (File.Exists(file.DestinationPath))
+                        if (File.Exists(file.TempPath))
                         {
-                            try
-                            {
-                                File.Delete(file.DestinationPath);
-                            }
-                            catch (IOException ioEx)
-                            {
-                                _logger.LogWarning(ioEx, "Failed to purge orphaned file {Path} during cleanup.", file.DestinationPath);
-                            }
+                            try { File.Delete(file.TempPath); } catch { }
                         }
                     }
                 }
@@ -157,14 +154,8 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                 {
                     totalDownloadedBytes += bytesRead;
                     double speed = totalDownloadedBytes / sw.Elapsed.TotalSeconds;
-
-                    float percent = totalBytesAllFiles > 0
-                        ? (float)totalDownloadedBytes / totalBytesAllFiles * 100
-                        : 0f;
-
-                    if (percent >= 100f && totalDownloadedBytes < totalBytesAllFiles)
-                        percent = 99.9f;
-
+                    float percent = totalBytesAllFiles > 0 ? (float)totalDownloadedBytes / totalBytesAllFiles * 100 : 0f;
+                    if (percent >= 100f && totalDownloadedBytes < totalBytesAllFiles) percent = 99.9f;
                     progress.Report(new DownloadProgress(modelId, totalDownloadedBytes, totalBytesAllFiles, speed, percent));
                 }
             }
@@ -249,5 +240,4 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
         _activeDownloads.Clear();
     }
 
-    private record FileDownloadContext(string Url, string DestinationPath, long TotalBytes, bool AcceptRanges);
 }
