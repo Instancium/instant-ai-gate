@@ -122,7 +122,8 @@ public class ReleasePipelineService
                     await ExecuteProcessAsync("git", $"commit -m \"{commitMsg}\"", cancellationToken);
 
                     ctx.Status("Pushing branch to origin...");
-                    await ExecuteProcessAsync("git", $"push -u origin {releaseBranch}", cancellationToken);
+                    // Add --force to safely overwrite any stale remote prep branches
+                    await ExecuteProcessAsync("git", $"push -u origin {releaseBranch} --force", cancellationToken);
 
                     ctx.Status("Creating Pull Request via gh-cli...");
                     string prTitle = $"chore(release): publish version v{newVersion}";
