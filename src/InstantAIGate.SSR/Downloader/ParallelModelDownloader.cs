@@ -182,7 +182,6 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
         fs.SetLength(totalBytes);
 
         var tasks = new Task[MaxDegreesOfParallelism];
-
         for (int i = 0; i < MaxDegreesOfParallelism; i++)
         {
             long start = i * chunkSize;
@@ -194,36 +193,36 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                 request.Headers.Range = new RangeHeaderValue(start, end);
 
                 using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-                using var stream = await response.Content.ReadAsStreamAsync(ct);
+                response.EnsureSuccessStatusCode(); 
 
+                using var stream = await response.Content.ReadAsStreamAsync(ct);
                 byte[] buffer = new byte[BufferSize];
                 int read;
                 long localPosition = start;
 
+                using var threadFs = new FileStream(destination, FileMode.Open, FileAccess.Write, FileShare.Write, BufferSize, useAsync: true);
+                threadFs.Seek(localPosition, SeekOrigin.Begin);
+
                 while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, ct)) > 0)
                 {
-                    using (var threadFs = new FileStream(destination, FileMode.Open, FileAccess.Write, FileShare.Write, BufferSize, useAsync: true))
-                    {
-                        threadFs.Seek(localPosition, SeekOrigin.Begin);
-                        await threadFs.WriteAsync(buffer, 0, read, ct);
-                    }
-                    localPosition += read;
+                    await threadFs.WriteAsync(buffer, 0, read, ct);
                     onBytesRead(read);
                 }
             }, ct);
         }
-
         await Task.WhenAll(tasks);
     }
 
     private async Task DownloadSequentialAsync(string modelId, string url, string destination, long totalBytes, Action<int> onBytesRead, CancellationToken ct)
     {
         using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode(); 
+
         using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var fs = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, useAsync: true);
-
         byte[] buffer = new byte[BufferSize];
         int read;
+
         while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, ct)) > 0)
         {
             await fs.WriteAsync(buffer, 0, read, ct);
