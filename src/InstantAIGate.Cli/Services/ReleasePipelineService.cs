@@ -2,6 +2,7 @@
 
 using InstantAIGate.Cli.Configuration;
 using InstantAIGate.Cli.Core;
+using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Inference;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
@@ -11,6 +12,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,6 +24,33 @@ public class ReleasePipelineService
 
     private string ServerProjectFile => Path.Combine(GetSolutionRootDirectory(), "src", "InstantAIGate.Server", "InstantAIGate.Server.csproj");
     private string SolutionFile => Path.Combine(GetSolutionRootDirectory(), "InstantAIGate.sln");
+    private string StateFile => Path.Combine(Path.GetTempPath(), "InstantAIGate_Pipeline_State.json");
+
+
+    private PipelineState LoadOrCreateState()
+    {
+        if (File.Exists(StateFile))
+        {
+            try
+            {
+                var json = File.ReadAllText(StateFile);
+                return JsonSerializer.Deserialize<PipelineState>(json) ?? new PipelineState();
+            }
+            catch { return new PipelineState(); }
+        }
+        return new PipelineState();
+    }
+
+    private void SaveState(PipelineState state)
+    {
+        var json = JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(StateFile, json);
+    }
+
+    private void ClearState()
+    {
+        if (File.Exists(StateFile)) File.Delete(StateFile);
+    }
 
     public ReleasePipelineService(IGatewayClient gatewayClient, IOptions<ReleasePipelineSettings> options)
     {
@@ -29,175 +58,257 @@ public class ReleasePipelineService
         _settings = options.Value;
     }
 
+
     public async Task ExecutePipelineAsync(CancellationToken cancellationToken)
     {
         try
         {
+            var state = LoadOrCreateState();
+
+            if (state.LastCompletedStep > 0)
+            {
+                AnsiConsole.MarkupLine($"[yellow]Found an interrupted pipeline for version v{state.NewVersion} (Last completed step: {state.LastCompletedStep}).[/]");
+                var resume = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Resume pipeline or start fresh?")
+                        .AddChoices("Resume", "Start Fresh"));
+
+                if (resume == "Start Fresh")
+                {
+                    ClearState();
+                    state = new PipelineState();
+                }
+            }
+
+            // ==========================================
             // Step 1: Pre-flight checks and branch selection
-            await AnsiConsole.Status().StartAsync("Checking repository state...", async ctx =>
+            // ==========================================
+            if (state.LastCompletedStep < 1)
             {
-                EnsureCleanWorkingDirectory();
-                ctx.Status("Fetching latest changes from origin...");
-                await ExecuteProcessAsync("git", "fetch --all", cancellationToken);
-            });
+                await AnsiConsole.Status().StartAsync("Checking repository state...", async ctx =>
+                {
+                    EnsureCleanWorkingDirectory();
+                    ctx.Status("Fetching latest changes from origin...");
+                    await ExecuteProcessAsync("git", "fetch --all", cancellationToken);
+                });
 
-            string selectedBranch = await SelectWorkingBranchAsync(cancellationToken);
+                state.SelectedBranch = await SelectWorkingBranchAsync(cancellationToken);
 
-            await AnsiConsole.Status().StartAsync($"Preparing branch '{selectedBranch}'...", async ctx =>
-            {
-                ctx.Status($"Switching to {selectedBranch}...");
-                await ExecuteProcessAsync("git", $"checkout {selectedBranch}", cancellationToken);
-                ctx.Status("Pulling latest commits...");
-                await ExecuteProcessAsync("git", "pull", cancellationToken);
-            });
-            
-            string originalBranch = selectedBranch;
+                await AnsiConsole.Status().StartAsync($"Preparing branch '{state.SelectedBranch}'...", async ctx =>
+                {
+                    ctx.Status($"Switching to {state.SelectedBranch}...");
+                    await ExecuteProcessAsync("git", $"checkout {state.SelectedBranch}", cancellationToken);
+                    ctx.Status("Pulling latest commits...");
+                    await ExecuteProcessAsync("git", "pull", cancellationToken);
+                });
 
+                state.LastCompletedStep = 1;
+                SaveState(state);
+            }
+
+            // ==========================================
             // Step 2: Version and Isolation
-            string currentVersion = GetCurrentVersion();
-            AnsiConsole.MarkupLine($"\nCurrent version: [cyan]{currentVersion}[/]");
-            var bumpType = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Select version bump type:")
-                    .AddChoices(new[] { "patch", "minor", "major", "prerelease", "abort" }));
-
-            if (bumpType == "abort") return;
-
-            string newVersion = CalculateNewVersion(currentVersion, bumpType);
-            bool isPreRelease = newVersion.Contains('-');
-            string releaseBranch = $"{_settings.ReleaseBranchPrefix}{newVersion}";
-
-            await AnsiConsole.Status().StartAsync($"Creating release branch '{releaseBranch}'...", async ctx =>
+            // ==========================================
+            if (state.LastCompletedStep < 2)
             {
-                await ExecuteProcessAsync("git", $"checkout -b {releaseBranch}", cancellationToken);
-                UpdateProjectVersion(newVersion);
-            });
+                string currentVersion = GetCurrentVersion();
+                AnsiConsole.MarkupLine($"\nCurrent version: [cyan]{currentVersion}[/]");
+                var bumpType = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("Select version bump type:")
+                        .AddChoices(new[] { "patch", "minor", "major", "prerelease", "abort" }));
 
-            string tempNotesFile = Path.Combine(Path.GetTempPath(), $"RELEASE_NOTES_v{newVersion}.md");
-            string releaseNotes = string.Empty;
+                if (bumpType == "abort") return;
+
+                state.NewVersion = CalculateNewVersion(currentVersion, bumpType);
+                state.ReleaseBranch = $"{_settings.ReleaseBranchPrefix}{state.NewVersion}";
+
+                await AnsiConsole.Status().StartAsync($"Creating release branch '{state.ReleaseBranch}'...", async ctx =>
+                {
+                    await ExecuteProcessAsync("git", $"checkout -b {state.ReleaseBranch}", cancellationToken);
+                    UpdateProjectVersion(state.NewVersion);
+                });
+
+                state.LastCompletedStep = 2;
+                SaveState(state);
+            }
+
+            bool isPreRelease = state.NewVersion.Contains('-');
+            string tempNotesFile = Path.Combine(Path.GetTempPath(), $"RELEASE_NOTES_v{state.NewVersion}.md");
+
             try
             {
+                // ==========================================
                 // Step 3: Fail-Fast Validation
-                await AnsiConsole.Status().StartAsync("Running unit tests...", async ctx =>
+                // ==========================================
+                if (state.LastCompletedStep < 3)
                 {
-                    int exitCode = await ExecuteProcessWithReturnCodeAsync("dotnet", $"test \"{SolutionFile}\" -c Release", cancellationToken);
-                    if (exitCode != 0)
+                    await AnsiConsole.Status().StartAsync("Running unit tests...", async ctx =>
                     {
-                        throw new InvalidOperationException("Unit tests failed.");
-                    }
-                });
+                        int exitCode = await ExecuteProcessWithReturnCodeAsync("dotnet", $"test \"{SolutionFile}\" -c Release", cancellationToken);
+                        if (exitCode != 0) throw new InvalidOperationException("Unit tests failed.");
+                    });
 
-                // Step 4: Generate Release Notes via AI
-                 releaseNotes = await AnsiConsole.Status().StartAsync("Generating release notes via AI...", async ctx =>
-                {
-                    return await GenerateReleaseNotesAsync(cancellationToken);
-                });
-
-                await File.WriteAllTextAsync(tempNotesFile, releaseNotes, cancellationToken);
-
-                // Step 4.5: Interactive Review, QA Pause, and Editing
-                AnsiConsole.MarkupLine("\n[yellow]Opening Release Notes in your default text editor...[/]");
-                Process.Start(new ProcessStartInfo(tempNotesFile) { UseShellExecute = true });
-
-                AnsiConsole.MarkupLine("\n[cyan]Take your time to manual test the application or tweak the release notes.[/]");
-                var userAction = AnsiConsole.Prompt(
-                    new SelectionPrompt<string>()
-                        .Title("Are you ready to commit and create the Pull Request?")
-                        .AddChoices(new[] { "Approve (Commit & Create PR)", "Abort (Rollback changes)" }));
-
-                if (userAction == "Abort (Rollback changes)")
-                {
-                    throw new InvalidOperationException("Pipeline aborted manually by user during QA review.");
+                    state.LastCompletedStep = 3;
+                    SaveState(state);
                 }
 
-                // Read the potentially edited notes
-                releaseNotes = await File.ReadAllTextAsync(tempNotesFile, cancellationToken);
-
-                // Step 5: Commit and Create PR
-                await AnsiConsole.Status().StartAsync("Committing and creating Pull Request...", async ctx =>
+                // ==========================================
+                // Step 4: Generate Release Notes via AI
+                // ==========================================
+                if (state.LastCompletedStep < 4)
                 {
-                    ctx.Status("Committing version changes...");
-                    await ExecuteProcessAsync("git", "add .", cancellationToken);
-                    string commitMsg = $"chore(release): prepare version v{newVersion}";
-                    await ExecuteProcessAsync("git", $"commit -m \"{commitMsg}\"", cancellationToken);
+                    state.ReleaseNotes = await AnsiConsole.Status().StartAsync("Generating release notes via AI...", async ctx =>
+                    {
+                        return await GenerateReleaseNotesAsync(cancellationToken);
+                    });
+                    await File.WriteAllTextAsync(tempNotesFile, state.ReleaseNotes, cancellationToken);
 
-                    ctx.Status("Pushing branch to origin...");
-                    // Add --force to safely overwrite any stale remote prep branches
-                    await ExecuteProcessAsync("git", $"push -u origin {releaseBranch} --force", cancellationToken);
+                    AnsiConsole.MarkupLine("\n[yellow]Opening Release Notes in your default text editor...[/]");
+                    Process.Start(new ProcessStartInfo(tempNotesFile) { UseShellExecute = true });
 
-                    ctx.Status("Creating Pull Request via gh-cli...");
-                    string prTitle = $"chore(release): publish version v{newVersion}";
-                    await ExecuteProcessAsync("gh", $"pr create --base {_settings.TargetBranch} --head {releaseBranch} --title \"{prTitle}\" --body-file \"{tempNotesFile}\"", cancellationToken);
-                });
+                    AnsiConsole.MarkupLine("\n[cyan]Take your time to manual test the application or tweak the release notes.[/]");
+                    var userAction = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("Are you ready to commit and create the Pull Request?")
+                            .AddChoices(new[] { "Approve (Commit & Create PR)", "Abort (Rollback changes)" }));
+
+                    if (userAction == "Abort (Rollback changes)")
+                    {
+                        throw new InvalidOperationException("Pipeline aborted manually by user during QA review.");
+                    }
+
+                    state.ReleaseNotes = await File.ReadAllTextAsync(tempNotesFile, cancellationToken);
+                    state.LastCompletedStep = 4;
+                    SaveState(state);
+                }
+
+                // ==========================================
+                // Step 5: Commit and Create PR
+                // ==========================================
+                if (state.LastCompletedStep < 5)
+                {
+                    await AnsiConsole.Status().StartAsync("Committing and creating Pull Request...", async ctx =>
+                    {
+                        await File.WriteAllTextAsync(tempNotesFile, state.ReleaseNotes, cancellationToken);
+
+                        ctx.Status("Committing version changes...");
+                        await ExecuteProcessAsync("git", "add .", cancellationToken);
+                        string commitMsg = $"chore(release): prepare version v{state.NewVersion}";
+                        await ExecuteProcessAsync("git", $"commit -m \"{commitMsg}\"", cancellationToken);
+
+                        ctx.Status("Pushing branch to origin...");
+                        await ExecuteProcessAsync("git", $"push -u origin {state.ReleaseBranch} --force", cancellationToken);
+
+                        ctx.Status("Creating Pull Request via gh-cli...");
+                        string prTitle = $"chore(release): publish version v{state.NewVersion}";
+                        await ExecuteProcessAsync("gh", $"pr create --base {_settings.TargetBranch} --head {state.ReleaseBranch} --title \"{prTitle}\" --body-file \"{tempNotesFile}\"", cancellationToken);
+                    });
+
+                    state.LastCompletedStep = 5;
+                    SaveState(state);
+                }
             }
             catch (Exception)
             {
-                // ROLLBACK MECHANISM
-                AnsiConsole.MarkupLine("[red]Pipeline interrupted. Rolling back local changes...[/]");
-                await ExecuteProcessAsync("git", "restore .", CancellationToken.None);
-                await ExecuteProcessAsync("git", $"checkout {originalBranch}", CancellationToken.None);
-                await ExecuteProcessAsync("git", $"branch -D {releaseBranch}", CancellationToken.None);
-                throw; // Rethrow to exit pipeline safely
-            }
-            finally
-            {
-                if (File.Exists(tempNotesFile)) File.Delete(tempNotesFile);
+                // Откат только если мы упали до того, как сделали PR (до шага 5)
+                if (state.LastCompletedStep < 5)
+                {
+                    AnsiConsole.MarkupLine("[red]Pipeline interrupted before PR creation. Rolling back local changes...[/]");
+                    await ExecuteProcessAsync("git", "restore .", CancellationToken.None);
+                    await ExecuteProcessAsync("git", $"checkout {state.SelectedBranch}", CancellationToken.None);
+                    await ExecuteProcessAsync("git", $"branch -D {state.ReleaseBranch}", CancellationToken.None);
+                    ClearState(); // При откате сбрасываем стейт
+                }
+                throw;
             }
 
+            // ==========================================
             // Step 6: Interactive Pause
-            AnsiConsole.MarkupLine($"[yellow]Pull Request created. Please review, approve, and merge it into '{_settings.TargetBranch}' using the web interface.[/]");
-            AnsiConsole.Prompt(new TextPrompt<string>("Press [green]ENTER[/] after the PR is successfully merged...").AllowEmpty());
+            // ==========================================
+            if (state.LastCompletedStep < 6)
+            {
+                AnsiConsole.MarkupLine($"[yellow]Pull Request created. Please review, approve, and merge it into '{_settings.TargetBranch}' using the web interface.[/]");
+                AnsiConsole.Prompt(new TextPrompt<string>("Press [green]ENTER[/] after the PR is successfully merged...").AllowEmpty());
 
+                state.LastCompletedStep = 6;
+                SaveState(state);
+            }
+
+            // ==========================================
             // Step 7: Sync and Tag
-            await AnsiConsole.Status().StartAsync("Syncing main and tagging...", async ctx =>
+            // ==========================================
+            if (state.LastCompletedStep < 7)
             {
-                ctx.Status($"Switching to {_settings.TargetBranch}...");
-                await ExecuteProcessAsync("git", $"checkout {_settings.TargetBranch}", cancellationToken);
-                ctx.Status("Pulling merge commit...");
-                await ExecuteProcessAsync("git", "pull", cancellationToken);
-                ctx.Status($"Tagging as v{newVersion}...");
-                await ExecuteProcessAsync("git", $"tag v{newVersion}", cancellationToken);
-                await ExecuteProcessAsync("git", $"push origin v{newVersion}", cancellationToken);
-            });
+                await AnsiConsole.Status().StartAsync("Syncing main and tagging...", async ctx =>
+                {
+                    ctx.Status($"Switching to {_settings.TargetBranch}...");
+                    await ExecuteProcessAsync("git", $"checkout {_settings.TargetBranch}", cancellationToken);
+                    ctx.Status("Pulling merge commit...");
+                    await ExecuteProcessAsync("git", $"--no-pager pull origin {_settings.TargetBranch} --no-edit", cancellationToken);
+                    ctx.Status($"Tagging as v{state.NewVersion}...");
+                    await ExecuteProcessAsync("git", $"tag v{state.NewVersion}", cancellationToken);
+                    await ExecuteProcessAsync("git", $"push origin v{state.NewVersion}", cancellationToken);
+                });
 
+                state.LastCompletedStep = 7;
+                SaveState(state);
+            }
+
+            // ==========================================
             // Step 8: Build Final Artifacts
-            string zipPath = string.Empty;
-            await AnsiConsole.Status().StartAsync("Building release artifacts...", async ctx =>
+            // ==========================================
+            string zipPath = Path.Combine(GetSolutionRootDirectory(), $"InstantAIGate-Server-win-x64-v{state.NewVersion}.zip");
+            if (state.LastCompletedStep < 8)
             {
-                ctx.Status("Building Windows self-contained artifact...");
-                zipPath = await BuildWindowsAssetAsync(newVersion, cancellationToken);
+                await AnsiConsole.Status().StartAsync("Building release artifacts...", async ctx =>
+                {
+                    ctx.Status("Building Windows self-contained artifact...");
+                    zipPath = await BuildWindowsAssetAsync(state.NewVersion, cancellationToken);
 
-                ctx.Status("Building Linux GHCR image...");
-                await BuildDockerImageAsync(newVersion, isPreRelease, cancellationToken);
-            });
+                    ctx.Status("Building Linux GHCR image...");
+                    await BuildDockerImageAsync(state.NewVersion, isPreRelease, cancellationToken);
+                });
 
+                state.LastCompletedStep = 8;
+                SaveState(state);
+            }
+
+            // ==========================================
             // Step 9: Final Publish
-            await AnsiConsole.Status().StartAsync("Publishing release...", async ctx =>
+            // ==========================================
+            if (state.LastCompletedStep < 9)
             {
-                string finalNotesFile = Path.GetTempFileName();
-                await File.WriteAllTextAsync(finalNotesFile, releaseNotes, cancellationToken);
-                string preReleaseFlag = isPreRelease ? "--prerelease" : "--latest";
+                await AnsiConsole.Status().StartAsync("Publishing release...", async ctx =>
+                {
+                    string finalNotesFile = Path.GetTempFileName();
+                    await File.WriteAllTextAsync(finalNotesFile, state.ReleaseNotes, cancellationToken);
+                    string preReleaseFlag = isPreRelease ? "--prerelease" : "--latest";
 
-                ctx.Status("Creating GitHub Release...");
-                await ExecuteProcessAsync("gh", $"release create v{newVersion} -t \"Release v{newVersion}\" -F \"{finalNotesFile}\" {preReleaseFlag}", cancellationToken);
+                    ctx.Status("Creating GitHub Release...");
+                    await ExecuteProcessAsync("gh", $"release create v{state.NewVersion} -t \"Release v{state.NewVersion}\" -F \"{finalNotesFile}\" {preReleaseFlag}", cancellationToken);
 
-                ctx.Status("Uploading Windows asset...");
-                await ExecuteProcessAsync("gh", $"release upload v{newVersion} \"{zipPath}\"", cancellationToken);
+                    ctx.Status("Uploading Windows asset...");
+                    await ExecuteProcessAsync("gh", $"release upload v{state.NewVersion} \"{zipPath}\"", cancellationToken);
+                    File.Delete(finalNotesFile);
 
-                File.Delete(finalNotesFile);
+                    ctx.Status("Pushing GHCR images...");
+                    await PushDockerImageAsync(state.NewVersion, isPreRelease, cancellationToken);
 
-                ctx.Status("Pushing GHCR images...");
-                await PushDockerImageAsync(newVersion, isPreRelease, cancellationToken);
+                    ctx.Status("Cleaning up local release branch...");
+                    await ExecuteProcessAsync("git", $"branch -d {state.ReleaseBranch}", cancellationToken);
+                });
 
-                ctx.Status("Cleaning up local release branch...");
-                await ExecuteProcessAsync("git", $"branch -d {releaseBranch}", cancellationToken);
-            });
+               
+                ClearState();
+            }
 
-            AnsiConsole.MarkupLine($"\n[bold green]Release v{newVersion} published successfully![/]");
+            AnsiConsole.MarkupLine($"\n[bold green]Release v{state.NewVersion} published successfully![/]");
         }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"\n[bold red]Pipeline Error:[/] {Markup.Escape(ex.Message)}");
+            AnsiConsole.MarkupLine("[dim]Your progress has been saved. Run /release again to resume from the last successful step.[/]");
         }
     }
 
