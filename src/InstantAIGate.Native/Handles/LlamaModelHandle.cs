@@ -1,8 +1,8 @@
 ﻿// File: src/InstantAIGate.Native/Handles/NativeHandles.cs
 namespace InstantAIGate.Native.Handles;
 
-using System;
 using InstantAIGate.Core.Interfaces.Native;
+using System;
 
 internal sealed class LlamaModelHandle : IModelHandle
 {

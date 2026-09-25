@@ -2,9 +2,6 @@
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.SSR.Contracts;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Server.Controllers.admin;
 

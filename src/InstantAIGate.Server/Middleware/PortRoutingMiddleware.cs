@@ -1,8 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
-using System.Threading.Tasks;
-
-namespace InstantAIGate.Server.Middleware;
+﻿namespace InstantAIGate.Server.Middleware;
 
 public class PortRoutingMiddleware
 {

@@ -1,9 +1,8 @@
 ﻿// File: src/InstantAIGate.Core/Interfaces/Inference/IBackendFacade.cs
 namespace InstantAIGate.Core.Interfaces.Inference
 {
-    using System;
-    using InstantAIGate.Core.Interfaces.Native;
     using InstantAIGate.Core.Dtos.Config;
+    using InstantAIGate.Core.Interfaces.Native;
 
     public delegate void BackendLogCallback(int level, string message);
 

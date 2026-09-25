@@ -1,15 +1,10 @@
-﻿using InstantAIGate.Cli.State;
-using InstantAIGate.Core.Dtos.Config;
+﻿using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
 using Microsoft.Extensions.Configuration;
-using System;
-using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Cli.Core;
 

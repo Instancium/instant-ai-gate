@@ -1,7 +1,5 @@
 ﻿using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Server.Dtos.OpenAi;
-using System;
-using System.Collections.Generic;
 using System.Text.Json;
 
 namespace InstantAIGate.Server.Mapping;

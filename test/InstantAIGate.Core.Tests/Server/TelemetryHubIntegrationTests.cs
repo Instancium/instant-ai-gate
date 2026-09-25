@@ -1,12 +1,6 @@
-﻿using InstantAIGate.Core.Tests.Server;
-using InstantAIGate.Server.Dtos.OpenAi;
-using Microsoft.AspNetCore.SignalR.Client;
-using System;
-using System.Collections.Generic;
+﻿using Microsoft.AspNetCore.SignalR.Client;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Threading.Tasks;
-using Xunit;
 
 namespace InstantAIGate.Core.Tests.Server;
 

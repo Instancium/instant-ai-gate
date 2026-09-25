@@ -19,7 +19,6 @@ public class DownloadCommand : IConsoleCommand
     private readonly IModelDownloader _downloader;
     private readonly StorageSettings _storageSettings;
 
-    // Внедряем IOptions<StorageSettings> для получения правильного пути (ProgramData)
     public DownloadCommand(
         IModelCatalogService catalogService,
         IModelDownloader downloader,
@@ -55,7 +54,6 @@ public class DownloadCommand : IConsoleCommand
             urlsToDownload.AddRange(targetModel.VisionProjectorUrls);
         }
 
-        // ИСПРАВЛЕНИЕ: Используем ModelsDirectory из глобальных настроек вместо AppDomain.CurrentDomain.BaseDirectory
         string destinationDir = Path.Combine(_storageSettings.ModelsDirectory, targetModel.Id);
 
         AnsiConsole.MarkupLine($"[blue]Starting download for '{targetModel.Name}'...[/]");

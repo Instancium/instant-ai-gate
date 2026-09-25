@@ -157,7 +157,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                 {
                     totalDownloadedBytes += bytesRead;
                     double speed = totalDownloadedBytes / sw.Elapsed.TotalSeconds;
-                    
+
                     float percent = totalBytesAllFiles > 0
                         ? (float)totalDownloadedBytes / totalBytesAllFiles * 100
                         : 0f;

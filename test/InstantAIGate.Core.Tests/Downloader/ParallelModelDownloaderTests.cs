@@ -32,8 +32,8 @@ public class ParallelModelDownloaderTests : IDisposable
         var stubValidator = new StubModelValidator { ShouldPass = true };
         var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: 1024 * 1024 * 50, supportRanges: true);
         var downloader = new ParallelModelDownloader(
-            new HttpClient(handler), 
-            NullLogger<ParallelModelDownloader>.Instance, 
+            new HttpClient(handler),
+            NullLogger<ParallelModelDownloader>.Instance,
             stubValidator);
         var progressList = new List<DownloadProgress>();
         var progress = new Progress<DownloadProgress>(progressList.Add);
@@ -59,7 +59,7 @@ public class ParallelModelDownloaderTests : IDisposable
         // Arrange: server explicitly rejects Range requests
         var stubValidator = new StubModelValidator { ShouldPass = true };
         var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: 1024 * 1024 * 20, supportRanges: false);
-        var downloader = new ParallelModelDownloader(new HttpClient(handler), 
+        var downloader = new ParallelModelDownloader(new HttpClient(handler),
             NullLogger<ParallelModelDownloader>.Instance, stubValidator);
         var progressList = new List<DownloadProgress>();
         var progress = new Progress<DownloadProgress>(progressList.Add);
@@ -82,7 +82,7 @@ public class ParallelModelDownloaderTests : IDisposable
         // Arrange: massive virtual file to ensure it doesn't finish before cancellation
         var stubValidator = new StubModelValidator { ShouldPass = true };
         var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: 1024L * 1024 * 1024 * 5); // 5 GB
-        var downloader = new ParallelModelDownloader(new HttpClient(handler), 
+        var downloader = new ParallelModelDownloader(new HttpClient(handler),
             NullLogger<ParallelModelDownloader>.Instance, stubValidator);
 
         using var cts = new CancellationTokenSource();

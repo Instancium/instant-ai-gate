@@ -1,16 +1,10 @@
 ﻿using InstantAIGate.Cli.Commands;
 using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.State;
-using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
-using InstantAIGate.Core.Interfaces.Inference;
 using Microsoft.Extensions.Hosting;
 using Spectre.Console;
-using System;
-using System.Collections.Generic;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Cli;
 
@@ -103,7 +97,7 @@ public class CliHostedService : IHostedService
         var userMessage = new ChatMessage("user", parts);
         _session.ChatHistory.Add(userMessage);
 
-     
+
         AnsiConsole.WriteLine();
         ///AnsiConsole.MarkupLine("[bold blue]🤖 AI:[/]");
 
@@ -111,13 +105,13 @@ public class CliHostedService : IHostedService
         {
             var fullResponse = new StringBuilder();
 
-          
+
             await foreach (var chunk in _gatewayClient.StreamChatAsync(
                 _session.ActiveModelId,
                 _session.ChatHistory,
                 cancellationToken))
             {
-            
+
                 AnsiConsole.Markup($"[silver]{Markup.Escape(chunk)}[/]");
                 fullResponse.Append(chunk);
             }
@@ -125,7 +119,7 @@ public class CliHostedService : IHostedService
             AnsiConsole.WriteLine();
             AnsiConsole.WriteLine();
 
-     
+
             AnsiConsole.Write(new Rule().RuleStyle("grey").LeftJustified());
 
             _session.ChatHistory.Add(new ChatMessage("assistant", fullResponse.ToString()));

@@ -2,8 +2,6 @@
 using InstantAIGate.Server.Dtos.OpenAi;
 using InstantAIGate.Server.Mapping;
 using System.Text.Json;
-using System.Linq;
-using Xunit;
 
 namespace InstantAIGate.Core.Tests.Dtos;
 

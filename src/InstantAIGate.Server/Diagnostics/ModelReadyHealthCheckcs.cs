@@ -1,7 +1,5 @@
 ﻿using InstantAIGate.Core.Interfaces.Inference;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Server.Diagnostics;
 

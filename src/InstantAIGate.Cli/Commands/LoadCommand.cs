@@ -1,8 +1,8 @@
 ﻿namespace InstantAIGate.Cli.Commands;
 
 using InstantAIGate.Cli.State;
-using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Dtos.Config;
+using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.SSR.Contracts;
 using Microsoft.Extensions.Configuration;
 using Spectre.Console;
@@ -17,7 +17,6 @@ public class LoadCommand : IConsoleCommand
     private readonly IModelManager _modelManager;
     private readonly IModelCatalogService _catalogService;
 
-    // Внедряем IModelCatalogService вместо статического списка конфигураций
     public LoadCommand(CliSession session, IConfiguration configuration, IModelManager modelManager, IModelCatalogService catalogService)
     {
         _session = session;
@@ -38,7 +37,7 @@ public class LoadCommand : IConsoleCommand
             return;
         }
 
- 
+
         var parts = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var modelId = parts[0];
         var profileName = parts.Length > 1 ? parts[1] : "Default";
@@ -54,7 +53,7 @@ public class LoadCommand : IConsoleCommand
         if (hwProfile == null)
         {
             AnsiConsole.MarkupLine($"[yellow]Warning: Hardware profile '{profileName}' not found. Using safe defaults.[/]");
-            hwProfile = new HardwareProfileSettings(); 
+            hwProfile = new HardwareProfileSettings();
         }
 
 

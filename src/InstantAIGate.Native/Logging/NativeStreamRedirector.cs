@@ -1,11 +1,11 @@
 ﻿namespace InstantAIGate.Native.Logging;
 
+using Microsoft.Win32.SafeHandles;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.Win32.SafeHandles;
 
 /// <summary>
 /// Intercepts OS-level stderr streams. Fully cross-platform compatible.

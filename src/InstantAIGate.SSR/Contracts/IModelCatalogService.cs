@@ -1,7 +1,4 @@
 ﻿using InstantAIGate.SSR.Dtos;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace InstantAIGate.SSR.Contracts
 {

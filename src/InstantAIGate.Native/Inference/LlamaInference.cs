@@ -6,7 +6,7 @@ using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Interfaces.Infrastructure;
 using InstantAIGate.Native.Bindings;
-using InstantAIGate.Native.Handles; 
+using InstantAIGate.Native.Handles;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -101,7 +101,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 }
             }
 
-    
+
             foreach (var part in parts)
             {
                 if (part is TextContent textPart)
@@ -140,7 +140,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
         using var model = await _modelManager.AcquireModelAsync(modelId, ct);
         using var context = await _modelManager.AcquireContextAsync(modelId, ct);
 
-        // РЕЗОЛВИМ МЕДИА ЧЕРЕЗ НОВЫЙ ИНТЕРФЕЙС
         using var mediaContext = mediaParts != null && mediaParts.Count > 0
             ? await _mediaResolver.ResolveMediaAsync(mediaParts, ct)
             : null;

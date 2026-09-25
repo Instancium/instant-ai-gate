@@ -47,8 +47,8 @@ public class LlamaModelLocator : IModelLocator
         {
             var currentFileName = Path.GetFileName(modelPath);
             var directory = Path.GetDirectoryName(modelPath);
-            bool isProjector = currentFileName != null 
-                && (currentFileName.Contains("mmproj", StringComparison.OrdinalIgnoreCase) 
+            bool isProjector = currentFileName != null
+                && (currentFileName.Contains("mmproj", StringComparison.OrdinalIgnoreCase)
                 || currentFileName.Contains("clip", StringComparison.OrdinalIgnoreCase));
 
             if (isProjector && !string.IsNullOrEmpty(directory))

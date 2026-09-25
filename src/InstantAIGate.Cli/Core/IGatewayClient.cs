@@ -1,9 +1,5 @@
 ﻿using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.SSR.Dtos;
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Cli.Core;
 

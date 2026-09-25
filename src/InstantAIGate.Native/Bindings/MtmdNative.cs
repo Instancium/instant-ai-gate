@@ -379,27 +379,27 @@ public static partial class MtmdNative
     #endregion
 
 
-// 1. Вспомогательные структуры для опций
-[StructLayout(LayoutKind.Sequential)]
-public struct MtmdHelperVideoInitParams
-{
-    public float FpsTarget;
-    public IntPtr FfmpegBinDir;
-    public long TimestampIntervalMs;
-}
 
-[StructLayout(LayoutKind.Sequential)]
-public struct MtmdHelperInitOpt
-{
-    public MtmdHelperVideoInitParams VideoParams;
-}
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MtmdHelperVideoInitParams
+    {
+        public float FpsTarget;
+        public IntPtr FfmpegBinDir;
+        public long TimestampIntervalMs;
+    }
 
-[StructLayout(LayoutKind.Sequential)]
-public struct MtmdHelperBitmapWrapper
-{
-    public IntPtr Bitmap;
-    public IntPtr VideoCtx;
-}
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MtmdHelperInitOpt
+    {
+        public MtmdHelperVideoInitParams VideoParams;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MtmdHelperBitmapWrapper
+    {
+        public IntPtr Bitmap;
+        public IntPtr VideoCtx;
+    }
 
 
     [DllImport("mtmd", CallingConvention = CallingConvention.Cdecl)]

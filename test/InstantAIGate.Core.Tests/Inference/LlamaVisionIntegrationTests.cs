@@ -25,7 +25,6 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
     private IModelManager _modelManager = null!;
     private IInferenceEngine _inferenceEngine = null!;
 
-    // Динамические переменные вместо констант
     private string _testModelsDir = string.Empty;
     private string _testRepoId = string.Empty;
     private string _testImagePath = string.Empty;
@@ -40,7 +39,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         bool isNativeLoaded = NativeLibraryLoader.Load();
         Assert.True(isNativeLoaded, "Failed to load llama/mtmd native libraries.");
 
-    
+
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: true)
@@ -136,7 +135,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
 
         string formattedPrompt = await _inferenceEngine.ApplyChatTemplateAsync(
             config.RepoId, chatHistory, cts.Token);
-        
+
         Assert.Contains("<__media__>\n", formattedPrompt);
 
         _output.WriteLine("Starting Inference...");

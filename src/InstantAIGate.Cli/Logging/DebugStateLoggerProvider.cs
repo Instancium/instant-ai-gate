@@ -1,8 +1,5 @@
 ﻿using InstantAIGate.Cli.State;
 using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace InstantAIGate.Cli.Logging
 {

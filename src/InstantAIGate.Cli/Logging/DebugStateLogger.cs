@@ -1,7 +1,6 @@
 ﻿// InstantAIGate.Cli/Logging/DebugStateLogger.cs
-using Microsoft.Extensions.Logging;
 using InstantAIGate.Cli.State;
-using System;
+using Microsoft.Extensions.Logging;
 
 namespace InstantAIGate.Cli.Logging;
 

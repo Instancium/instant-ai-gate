@@ -1,7 +1,4 @@
-﻿using System.Threading;
-using System.Threading.Tasks;
-
-namespace InstantAIGate.Core.Interfaces.Inference;
+﻿namespace InstantAIGate.Core.Interfaces.Inference;
 
 public interface IAssetManager
 {

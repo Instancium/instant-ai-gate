@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.Core.Dtos.Config
+﻿namespace InstantAIGate.Core.Dtos.Config
 {
     public record HardwareProfileSettings
     {

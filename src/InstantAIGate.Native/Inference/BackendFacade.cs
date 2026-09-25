@@ -105,7 +105,7 @@ public class BackendFacade : IBackendFacade
             }
             catch
             {
-                // Глушим любые исключения на границе, чтобы защитить C++ от краша процесса
+
             }
         };
 

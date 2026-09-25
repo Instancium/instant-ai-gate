@@ -2,7 +2,6 @@
 using InstantAIGate.SSR.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Server.Hubs;
 

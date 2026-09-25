@@ -1,12 +1,11 @@
 ﻿namespace InstantAIGate.Core.Tests.Inference;
 
-using InstantAIGate.Native.Inference;
 using InstantAIGate.Native.Bindings;
+using InstantAIGate.Native.Inference;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -28,7 +27,6 @@ public class NativeModelValidatorIntegrationTests : IDisposable
             NativeLibraryLoader.Load();
         }
 
-        // Собираем конфигурацию
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: true)
@@ -43,7 +41,7 @@ public class NativeModelValidatorIntegrationTests : IDisposable
             ?? "qwen3-vl-8b-instruct";
     }
 
-   
+
 
     [Fact]
     public async Task ValidateIntegrityAsync_WithEmptyFile_ReturnsFalse()

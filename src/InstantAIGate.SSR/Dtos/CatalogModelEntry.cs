@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.SSR.Dtos
+﻿namespace InstantAIGate.SSR.Dtos
 {
     public record CatalogModelEntry(
         string Id,
@@ -11,8 +7,8 @@ namespace InstantAIGate.SSR.Dtos
         ulong ParameterCount,
         string Quantization,
         ulong TotalFileSizeBytes,
-        IReadOnlyList<string> DownloadUrls,        
+        IReadOnlyList<string> DownloadUrls,
         bool RequiresVisionProjector,
-        IReadOnlyList<string>? VisionProjectorUrls  
+        IReadOnlyList<string>? VisionProjectorUrls
     );
 }

@@ -1,8 +1,8 @@
 ﻿// File: src/InstantAIGate.Core/Dtos/Inference/VisionContext.cs
 namespace InstantAIGate.Core.Dtos.Inference
 {
-    using System;
     using InstantAIGate.Core.Interfaces.Native;
+    using System;
 
     public sealed class VisionContext : IDisposable
     {

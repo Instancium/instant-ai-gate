@@ -26,7 +26,7 @@ public sealed class ModelManager : IDisposable, IModelManager
     public ModelManager(
         IModelProvider modelProvider,
         IModelLocator modelLocator,
-        IQueueManager queueManager, 
+        IQueueManager queueManager,
         ILogger<ModelManager> logger)
     {
         _modelProvider = modelProvider;
@@ -50,11 +50,8 @@ public sealed class ModelManager : IDisposable, IModelManager
                 return;
             }
 
-            // ИЗМЕНЕНИЕ ЗДЕСЬ: Передаем repoId и visionSupport
             var resolvedPaths = await _modelLocator.ResolvePathsAsync(config.RepoId, config.VisionSupport, ct);
 
-            // Мы больше не можем обновлять config.ModelPath, так как эти свойства удалены. 
-            // ModelProvider теперь должен принимать ResolvedModelPaths.
             await _modelProvider.InitializeAsync(config, resolvedPaths, ct);
             _activeConfig = config;
             _queueManager.Resume();

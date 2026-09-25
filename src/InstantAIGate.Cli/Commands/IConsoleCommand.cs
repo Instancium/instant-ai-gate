@@ -1,7 +1,4 @@
-﻿using System.Threading;
-using System.Threading.Tasks;
-
-namespace InstantAIGate.Cli.Commands;
+﻿namespace InstantAIGate.Cli.Commands;
 
 public interface IConsoleCommand
 {

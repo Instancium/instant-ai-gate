@@ -11,10 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
-using System;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Cli;
 
@@ -67,7 +64,7 @@ public static class Program
                 services.AddTransient<IConsoleCommand, ModelsCommand>();
                 services.AddTransient<IConsoleCommand, DownloadCommand>();
 
-      
+
                 services.AddTransient<IConsoleCommand, ConnectCommand>();
 
                 services.AddHttpClient();
@@ -75,7 +72,7 @@ public static class Program
                 services.AddInstantAIGateSSR();
                 services.AddSingleton<LocalGatewayClient>();
 
-     
+
                 services.AddSingleton<GatewayClientProxy>(sp =>
                 {
                     IGatewayClient initial;
@@ -93,7 +90,7 @@ public static class Program
                     return new GatewayClientProxy(sp, httpClientFactory, initial);
                 });
 
-    
+
                 services.AddSingleton<IGatewayClient>(sp => sp.GetRequiredService<GatewayClientProxy>());
 
                 services.AddHostedService<CliHostedService>();

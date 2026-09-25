@@ -35,7 +35,7 @@ public static class ServiceCollectionExtensions
 
 
         services.AddSingleton<HttpClient>();
-       
+
         services.AddSingleton<IAssetManager, MemoryAssetManager>();
         services.AddSingleton<IMediaResolver, LocalTempMediaResolver>();
 

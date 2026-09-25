@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.SSR.Dtos
+﻿namespace InstantAIGate.SSR.Dtos
 {
     public record DownloadProgress(
         string ModelId,

@@ -1,11 +1,6 @@
 ﻿using InstantAIGate.Server.Hubs;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using System;
-using System.Threading;
 using System.Threading.Channels;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Server.Diagnostics;
 
