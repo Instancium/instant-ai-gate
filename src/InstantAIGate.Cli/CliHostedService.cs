@@ -57,7 +57,6 @@ public class CliHostedService : IHostedService
             {
                 try
                 {
-                    // Added newline and icon for better visual hierarchy
                     AnsiConsole.Markup("\n[bold cyan]👤 User:[/] ");
                     var input = Console.ReadLine();
                     if (string.IsNullOrWhiteSpace(input)) continue;

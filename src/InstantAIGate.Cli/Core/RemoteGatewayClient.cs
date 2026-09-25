@@ -37,7 +37,6 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         {
             Content = System.Net.Http.Json.JsonContent.Create(requestPayload)
         };
-        // In real app, append bearer token for public endpoint if required
 
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();

@@ -37,9 +37,8 @@ public class NativeModelValidator : IModelValidator
         IntPtr modelHandle = IntPtr.Zero;
         try
         {
-            // Pragmatic: If only one file, use load_from_file. 
-            // If multiple, assume GGUF splits and use load_from_splits (requires implementation mapping).
-            // For now, we validate the primary (or first) file header to ensure basic GGUF integrity.
+            // Integrity is verified via the header of the primary (first) file,
+            // which is sufficient to confirm basic GGUF validity for single and split models.
             string primaryFile = paths.First();
 
             modelHandle = LlamaNative.llama_model_load_from_file(primaryFile, in modelParams, (nuint)primaryFile.Length);

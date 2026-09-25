@@ -31,8 +31,8 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
 
         _testRepoId = config["InstantAIGate:TestData:VisionRepoId"] ?? "qwen3-vl-8b-instruct";
 
-        // Crucial: Load native libraries into the xUnit test process memory space
-        // before the TestServer attempts to initialize the backend facade.
+        // Native libraries must be loaded into the test process memory space
+        // before the TestServer initializes the backend facade.
         InstantAIGate.Native.Bindings.NativeLibraryLoader.Load();
     }
 

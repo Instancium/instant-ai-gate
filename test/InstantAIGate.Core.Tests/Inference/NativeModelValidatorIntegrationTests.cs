@@ -85,9 +85,6 @@ public class NativeModelValidatorIntegrationTests : IDisposable
         Assert.False(isValid, "Validation must fail gracefully if the file is missing.");
     }
 
-    // Note: To test a TRUE case, you would need to bundle a tiny, valid 1KB dummy .gguf 
-    // file in your test project resources and copy it to the temp directory.
-
     public void Dispose()
     {
         if (Directory.Exists(_tempDirectory))
@@ -107,11 +104,11 @@ public class NativeModelValidatorIntegrationTests : IDisposable
     [Fact]
     public async Task ValidateIntegrityAsync_WithRealGguf_ReturnsTrue()
     {
-        // Adjust path based on your CI/CD environment variables or local setup
+        // Model directory is taken from TEST_MODELS_DIR, defaulting to C:\models
         string modelsDir = Environment.GetEnvironmentVariable("TEST_MODELS_DIR") ?? @"C:\models";
         string realModelPath = Path.Combine(modelsDir, "qwen3-vl-8b-instruct", "Qwen3VL-8B-Instruct-Q4_K_M.gguf");
 
-        // Fail fast if the environment is not prepared! No green checks for missing files.
+        // The test fails when the real model file is absent so it never passes silently
         if (!File.Exists(realModelPath))
         {
             Assert.Fail($"FATAL: Real GGUF model not found for validation test. Expected path: '{realModelPath}'");

@@ -70,8 +70,7 @@ public sealed class LlamaContext : IDisposable
 
         var @params = parameters ?? LlamaNative.llama_context_default_params();
 
-        // Get model handle through reflection or store it in LlamaModel
-        // For now, we assume the model has a way to expose its handle
+        // The context is created from the model handle exposed by LlamaModel
         _handle = LlamaNative.llama_init_from_model(GetModelHandle(), @params);
 
         if (_handle != IntPtr.Zero)

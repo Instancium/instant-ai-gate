@@ -254,8 +254,8 @@ public sealed class MultiModalContext : IDisposable
         IntPtr markerPtr = MtmdNative.mtmd_get_marker(_handle);
         MediaMarker = markerPtr != IntPtr.Zero ? Marshal.PtrToStringUTF8(markerPtr) : null;
 
-        // These require a chunk parameter in the native API
-        // For now, we'll set defaults that can be overridden per-chunk
+        // mRoPE and non-causal mask depend on a per-chunk native API call,
+        // so conservative defaults are set here and can be overridden per chunk
         UsesMRope = false;
         UsesNonCausalMask = false;
     }
