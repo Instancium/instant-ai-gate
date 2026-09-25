@@ -462,7 +462,7 @@ Commit Log:
 
     private async Task BuildDockerImageAsync(string version, bool isPreRelease, CancellationToken cancellationToken)
     {
-        string imageName = "ghcr.io/your-org/instantaigate-server";
+        string imageName = "ghcr.io/instancium/instantaigate-server";
         await ExecuteProcessAsync("docker", $"build -f deploy/docker/Dockerfile -t {imageName}:v{version} .", cancellationToken);
         if (!isPreRelease)
         {
@@ -472,7 +472,7 @@ Commit Log:
 
     private async Task PushDockerImageAsync(string version, bool isPreRelease, CancellationToken cancellationToken)
     {
-        string imageName = "ghcr.io/your-org/instantaigate-server";
+        string imageName = "ghcr.io/instancium/instantaigate-server";
         await ExecuteProcessAsync("docker", $"push {imageName}:v{version}", cancellationToken);
         if (!isPreRelease)
         {
