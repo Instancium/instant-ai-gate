@@ -24,7 +24,6 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
     private ServiceProvider _serviceProvider = null!;
     private IModelManager _modelManager = null!;
     private IInferenceEngine _inferenceEngine = null!;
-
     private string _testModelsDir = string.Empty;
     private string _testRepoId = string.Empty;
     private string _testImagePath = string.Empty;
@@ -39,13 +38,11 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         bool isNativeLoaded = NativeLibraryLoader.Load();
         Assert.True(isNativeLoaded, "Failed to load llama/mtmd native libraries.");
 
-
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: true)
             .AddEnvironmentVariables()
             .Build();
-
 
         _testModelsDir = configuration["TEST_MODELS_DIR"]
             ?? configuration["InstantAIGate:Storage:ModelsDirectory"]
@@ -54,26 +51,22 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         _testRepoId = configuration["InstantAIGate:TestData:VisionRepoId"]
             ?? "qwen3-vl-8b-instruct";
 
-        string imageFileName = configuration["InstantAIGate:TestData:VisionTestImage"]
-            ?? "test-1.jpeg";
-
-        _testImagePath = Path.Combine(_testModelsDir, imageFileName);
+      
+        _testImagePath = Path.Combine(AppContext.BaseDirectory, "TestData", "test-1.jpeg");
 
         var services = new ServiceCollection();
-
         services.AddLogging(builder =>
         {
             builder.AddDebug();
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
-
         var storageSettings = new StorageSettings
         {
             ModelsDirectory = _testModelsDir
         };
-        services.AddSingleton<IOptions<StorageSettings>>(Options.Create(storageSettings));
 
+        services.AddSingleton<IOptions<StorageSettings>>(Options.Create(storageSettings));
         services.AddInstantAIGateInference();
 
         _serviceProvider = services.BuildServiceProvider();
@@ -123,7 +116,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         var parts = new List<MessageContent>
         {
             new ImageFileContent(_testImagePath),
-            new TextContent("Please describe in detail what you see in this image.")
+            new TextContent("Please extract the main headline printed in large letters on this newspaper.")
         };
 
         var chatHistory = new List<ChatMessage>
@@ -155,7 +148,8 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         Assert.False(string.IsNullOrWhiteSpace(fullResponse), "The model returned an empty response.");
         _output.WriteLine($"\nFinal Response:\n{fullResponse}");
 
-        await _modelManager.UnloadModelAsync(config.RepoId, cts.Token);
+        Assert.Contains("MEN WALK ON MOON", fullResponse, StringComparison.OrdinalIgnoreCase);
 
+        await _modelManager.UnloadModelAsync(config.RepoId, cts.Token);
     }
 }
