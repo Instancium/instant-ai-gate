@@ -23,7 +23,7 @@ public class HelpCommand : IConsoleCommand
     {
         var allCommands = _serviceProvider.GetRequiredService<IEnumerable<IConsoleCommand>>();
 
-        // Add Expand() to force internal cell wrapping and use a cleaner border
+        // Expand() forces internal cell wrapping for a cleaner border
         var table = new Table()
             .Border(TableBorder.Rounded)
             .Expand();

@@ -5,7 +5,7 @@ using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
-using InstantAIGate.Core.Interfaces.Native; // <-- New Opaque Handles
+using InstantAIGate.Core.Interfaces.Native;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;

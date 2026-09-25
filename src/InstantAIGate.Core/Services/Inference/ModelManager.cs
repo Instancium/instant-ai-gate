@@ -79,8 +79,8 @@ public sealed class ModelManager : IDisposable, IModelManager
     {
         _logger.LogInformation("Initiating Hot-Swap to '{RepoId}'.", newConfig.RepoId);
 
-        // Phase 2.2: Implement Draining State
-        _queueManager.Pause(); // Blocks new leases
+        // Pause the queue so no new leases are granted while draining active requests
+        _queueManager.Pause();
         _isDraining = true;
 
         // Wait for all active inference requests to complete

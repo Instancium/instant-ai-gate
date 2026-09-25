@@ -15,6 +15,5 @@ public interface ITelemetryClient
 [Authorize(Roles = "Admin")]
 public class TelemetryHub : Hub<ITelemetryClient>
 {
-    // Clients connect and receive streams automatically.
-    // Explicit client-to-server methods can be added here if needed.
+    // Hub exposes server-to-client telemetry streams only; clients are passive receivers.
 }

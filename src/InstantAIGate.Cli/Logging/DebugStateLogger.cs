@@ -37,7 +37,7 @@ public class DebugStateLogger : ILogger
 
         string message = formatter(state, exception);
 
-        // Optional: colorize or format the output based on log level
+        // Log level determines the console color of the message
         var color = logLevel switch
         {
             LogLevel.Error or LogLevel.Critical => ConsoleColor.Red,
