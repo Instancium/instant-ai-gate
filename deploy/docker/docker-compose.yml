@@ -1,20 +1,31 @@
-version: '3.8'
-
 services:
-  instantaigate:
+  gateway:
     build:
       context: ../../
       dockerfile: deploy/docker/Dockerfile
+    image: ghcr.io/your-org/instantaigate:latest
+    container_name: instantaigate-server
+    restart: unless-stopped
     ports:
       - "5000:5000"
-    volumes:
-      - models-data:/app/models
+      - "5001:5001"
     environment:
-      - Network__Host=0.0.0.0
-      - Network__Port=5000
-      - Network__AllowRemoteAccess=true
-      - Network__RequireAuthentication=true
-    restart: unless-stopped
-
-volumes:
-  models-data:
+      # Administrative API Key can be injected via .env file or host environment
+      - InstantAIGate__AdminApiKey=${ADMIN_API_KEY:-default-secure-key}
+      # Required for proper Vulkan ICD detection inside the container
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      # Map the host models directory directly into the container
+      - ./data/models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            # NVIDIA Container Toolkit integration
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    devices:
+      # Direct Rendering Manager passthrough for Vulkan (AMD/Intel compatibility)
+      - /dev/dri:/dev/dri
