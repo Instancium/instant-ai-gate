@@ -2,6 +2,13 @@
   <img src="media/ig-logo.png" alt="InstantAIGate logo" height="180" />
 </p>
 
+<p align="center">
+  <a href="#-quick-start-60s"><img src="https://img.shields.io/badge/GHCR-Available-blue?style=flat-square&logo=github" alt="GitHub Container Registry"></a>
+  <img src="https://img.shields.io/badge/Hardware-CPU%20%26%20GPU-flash?style=flat-square" alt="Hardware Support">
+  <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-orange?style=flat-square" alt="OpenAI API">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License">
+</p>
+
 InstantAIGate is the foundational infrastructure developed by independent R&D laboratory Instancium for building autonomous digital products and enterprise-grade AI solutions.
 
 Engineered as a high-throughput gateway, InstantAIGate delivers a compiled, cross-platform .NET 10 architecture with direct memory bindings to native inference engines. This gateway is designed to provide **Architectural Autonomy** and **Vendor Independence**, empowering individuals, professionals, and organizations to host critical AI processes internally. By maintaining absolute control over the infrastructure lifecycle and eliminating forced vendor lock-in, it ensures that both independent creators and businesses can preserve their **Digital Subjectivity**.
