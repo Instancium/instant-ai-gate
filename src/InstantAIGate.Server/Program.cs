@@ -63,17 +63,16 @@ app.UseMiddleware<ApiKeyAuthMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 
-// Маппинг маршрутов диагностики
+// Map diagnostic endpoints
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
-    Predicate = _ => false 
+    Predicate = _ => false
 });
 
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
-    Predicate = check => check.Name == "model_ready" 
+    Predicate = check => check.Name == "model_ready"
 });
-
 
 app.MapHub<InstantAIGate.Server.Hubs.TelemetryHub>("/hub/telemetry");
 app.Run();
