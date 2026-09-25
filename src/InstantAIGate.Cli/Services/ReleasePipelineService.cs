@@ -173,7 +173,7 @@ public class ReleasePipelineService
             // Step 9: Final Publish
             await AnsiConsole.Status().StartAsync("Publishing release...", async ctx =>
             {
-                string finalNotesFile = Path.GetTempFileName(); // <-- Используем новое имя
+                string finalNotesFile = Path.GetTempFileName();
                 await File.WriteAllTextAsync(finalNotesFile, releaseNotes, cancellationToken);
                 string preReleaseFlag = isPreRelease ? "--prerelease" : "--latest";
 
@@ -183,7 +183,7 @@ public class ReleasePipelineService
                 ctx.Status("Uploading Windows asset...");
                 await ExecuteProcessAsync("gh", $"release upload v{newVersion} \"{zipPath}\"", cancellationToken);
 
-                File.Delete(finalNotesFile); // <-- Удаляем финальный файл
+                File.Delete(finalNotesFile);
 
                 ctx.Status("Pushing GHCR images...");
                 await PushDockerImageAsync(newVersion, isPreRelease, cancellationToken);
