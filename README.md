@@ -1,89 +1,24 @@
 <p align="center">
   <img src="media/ig-logo.png" alt="InstantAIGate logo" height="180" />
-  <br />
-  <strong>High-Performance. Self-Hosted. Zero Setup.</strong>
-  <br />
-  A lightweight .NET middleware providing a monitored, shared foundation for local AI applications.
-</p>
-
-<p align="center">
-  <a href="README.md"><b>Overview</b></a> │ 
-  <a href="INSTALLATION.md"><b>Installation Guide</b></a> │ 
-  <a href="DATASHEET.md"><b>Technical Data Sheet</b></a>
 </p>
 
 <p align="center">
   <a href="#-quick-start-60s"><img src="https://img.shields.io/badge/GHCR-Available-blue?style=flat-square&logo=github" alt="GitHub Container Registry"></a>
   <img src="https://img.shields.io/badge/Hardware-CPU%20%26%20GPU-flash?style=flat-square" alt="Hardware Support">
   <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-orange?style=flat-square" alt="OpenAI API">
-  <img src="https://img.shields.io/badge/Architecture-DDD-purple?style=flat-square" alt="DDD">
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License">
 </p>
 
----
+InstantAIGate is the foundational infrastructure developed by independent R&D laboratory Instancium for building autonomous digital products and enterprise-grade AI solutions.
 
-## What is InstantAIGate?
+Engineered as a high-throughput gateway, InstantAIGate delivers a compiled, cross-platform .NET 10 architecture with direct memory bindings to native inference engines. This gateway is designed to provide **Architectural Autonomy** and **Vendor Independence**, empowering individuals, professionals, and organizations to host critical AI processes internally. By maintaining absolute control over the infrastructure lifecycle and eliminating forced lock-in to proprietary cloud providers, it ensures that both independent creators and businesses can preserve their **Digital Subjectivity**.
 
-**InstantAIGate** is an enterprise-grade infrastructure building block (middleware) designed for teams who need to move beyond fragile desktop AI tools (like Ollama or LM Studio) and deploy a highly-concurrent, production-ready server environment.
+## Core Architecture & Engineering Principles
 
-Built entirely in .NET, it provides an isolated server-side runtime, a built-in administration dashboard, and a seamless OpenAI-compatible API bridge. InstantAIGate firmly returns total architectural control over LLM and Embedding inference back into the hands of your infrastructure and security teams, ensuring predictable performance and strict resource management.
-
-<p align="center">
-  <img src="media/dashboard.gif" alt="InstantAIGate Dashboard Demo" width="100%" />
-</p>
-
-## Core Features (Foundation)
-
-* **🛡️ Validated Stability (LTS-First Approach)**
-  We reject the chaos of the AI hype cycle. InstantAIGate guarantees production reliability by supporting a strictly curated, regression-tested matrix of `llama.cpp` versions and model weights. Plan your enterprise infrastructure updates with predictability, free from sudden breaking changes or dependency conflicts.
-
-* **🔌 Drop-In OpenAI Compatibility**
-  Exposes a standardized API fully compatible with the OpenAI specification. Seamlessly route existing application workflows (including LangChain or Dify agents) to your local models by simply updating the `base_url`.
-
-* **📈 Zero-Config Observability**
-  No complex metric stacks required for day-one operations. The built-in web interface provides immediate visibility into multi-GPU health, exact VRAM allocation, and real-time request queues via SignalR streams.
-
-* **⚙️ High-Density Hardware Control**
-  Extract absolute maximum throughput from a single bare-metal server. Explicitly map LLM computational layers between GPU and CPU, and enforce physical memory locking (`mlock`) to guarantee zero system swap latency spikes and prevent Out-Of-Memory (OOM) crashes under heavy load.
-
-* **🔄 Dynamic Weight Pooling & Hot-Swap**
-  Manage highly concurrent workflows across your team. Host embedding models (like BGE-M3) and conversational layers (like Qwen) simultaneously. Hot-swap multi-gigabyte models on the fly via REST API or the Web UI without dropping active client connections.
-
-* **📦 Zero Python Dependency (.NET Native)**
-  Built purely in modern C# and compiled as a standalone binary. Bypass complex virtual environments, dependency hell, and Python runtime overhead. Enjoy predictable, bulletproof deployment across both Windows and Linux servers.
-
-## Technical Architecture & High-Level Design
-
-**InstantAIGate** is built on **Domain-Driven Design (DDD)** principles, cleanly separating core business logic from infrastructural details. This architecture ensures modularity, testability, and high native performance.
-
-The core interaction identifier is the **RepoId** (e.g., `"Qwen/Qwen2.5-7B-Instruct-GGUF"`). The presentation layer and external APIs remain entirely agnostic of physical disk paths, file extensions, or underlying C++ bindings, ensuring a clean, abstraction-first approach to model management.
-
-
-## 🛠️ Tech Stack & Third-Party Licenses
-
-InstantAIGate is built using modern, robust technologies on both the backend and frontend:
-
-* **LLM Engine:** [llama.cpp](https://github.com/ggerganov/llama.cpp) (Native integration and drivers for high-performance GGUF inference)
-* **Backend:** Modern .NET, ASP.NET Core, OpenAI .NET Client, [SharpCompress](https://github.com/adamhathcock/sharpcompress) (for on-the-fly native library extraction)
-* **Frontend:** Vanilla JS, Bootstrap Icons, SignalR
-
-<details>
-<summary>⚖️ <b>View Third-Party License Information</b></summary>
-
-This project complies with all open-source licenses of its dependencies. 
-Major dependencies, including **llama.cpp**, use permissive licenses such as **MIT** and **Apache 2.0**.
-
-For the full, detailed list of third-party components, verification sources, and copyright notices, please refer to our dedicated [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) file.
-</details>
-
-## 📄 License & Trademark
-Copyright (c) 2026 Instancium™ (https://instancium.com). All rights reserved.
-
-This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE.txt) file for details.
-
-### Branding & Logo Trademark
-
-The **InstantAIGate** name, logos, and all branding assets located in any `media` directories are not covered by the Apache 2.0 license. 
-Instead, all branding materials and logos throughout the project are licensed under the [Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)](https://creativecommons.org/licenses/by-nc-nd/4.0/).
-
-You are welcome to use the logo to refer to this project, but you may not modify it or use it for commercial purposes or in a way that implies official endorsement without explicit permission.
+*   **Enterprise-Grade Runtime (.NET 10):** Built as a robust C# application, InstantAIGate provides predictable deployment across platforms and supports native execution as a background Windows Service. The integration relies on direct P/Invoke bindings (`NativeLibraryLoader`) to `llama.cpp` and `mtmd`.
+  
+*   **Dual-Port Security:** To enforce strict security boundaries, the gateway implements `PortRoutingMiddleware`. It isolates the public inference endpoint (OpenAI-compatible) from the administrative endpoint across two distinct network ports on the same running instance. This guarantees that management commands are completely inaccessible from the public-facing API, enforcing a strict **Controlled Data Perimeter** for both personal privacy and corporate secrets.
+*   **Dynamic Queueing:** InstantAIGate features a `DynamicRequestQueue` that enforces strict concurrency limits via semaphore leases. This mechanism prevents VRAM overflow and systematically manages execution slots during traffic spikes, ensuring that critical functions remain available under high load.
+*   **Zero-Downtime Hot-Swapping:** The `ModelManager` supports graceful hot-swapping (`SwapModelAsync`) via the secure admin endpoint. System administrators and individual researchers can dynamically transition the gateway to a different LLM or VLM without dropping active connections or restarting the service, enabling uninterrupted **Technological Coexistence** of different models.
+*   **Interoperability & Right to Exit:** The `/v1/chat/completions` endpoint maps directly to standard OpenAI contracts (`OpenAiChatMessageDto`). Developers, professionals, and enterprises can seamlessly redirect their existing software stack to this local **Sovereign Node** without rewriting client code, ensuring independent deployment and mitigating centralized cloud lock-in risks.
+*   **Unified Infrastructure Mediator:** InstantAIGate is continuously evolving as a central integration layer for diverse AI workloads. Beyond LLMs and VLMs, the architecture is designed to incorporate additional analytical engines, including ONNX, YOLO, and OCR models. By acting as a single infrastructure mediator, it enables creators and enterprises alike to dynamically route workflows and rapidly switch between required technologies.
