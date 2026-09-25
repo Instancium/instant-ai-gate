@@ -196,7 +196,7 @@ public class ReleasePipelineService
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"\n[bold red]Pipeline Error:[/] {ex.Message}");
+            AnsiConsole.MarkupLine($"\n[bold red]Pipeline Error:[/] {Markup.Escape(ex.Message)}");
         }
     }
 
@@ -399,7 +399,7 @@ Commit Log:
         if (process.ExitCode != 0)
         {
             string error = await process.StandardError.ReadToEndAsync(cancellationToken);
-            AnsiConsole.MarkupLine($"[dim red]Process output:[/] {error}");
+            AnsiConsole.MarkupLine($"[dim red]Process output:[/] {Markup.Escape(error)}");
         }
 
         return process.ExitCode;
