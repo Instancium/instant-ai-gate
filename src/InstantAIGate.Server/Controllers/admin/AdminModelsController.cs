@@ -59,8 +59,6 @@ public class AdminModelsController : ControllerBase
         }
 
         string destinationDir = System.IO.Path.Combine(_storageSettings.ModelsDirectory, targetModel.Id);
-
-        // Запуск скачивания в фоновом режиме (Fire-and-Forget)
         _ = Task.Run(async () =>
         {
             try
@@ -70,7 +68,6 @@ public class AdminModelsController : ControllerBase
             }
             catch (System.Exception ex)
             {
-                // Ошибки скачивания будут перехвачены логгером внутри ParallelModelDownloader
             }
         });
 

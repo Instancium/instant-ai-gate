@@ -3,11 +3,9 @@ using InstantAIGate.Native.DependencyInjection;
 using InstantAIGate.Server.Diagnostics;
 using InstantAIGate.Server.Middleware;
 using InstantAIGate.SSR.DependencyInjection;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+
 
 var builder = WebApplication.CreateBuilder(args);
 

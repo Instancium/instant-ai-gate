@@ -38,35 +38,32 @@ public class LoadCommand : IConsoleCommand
             return;
         }
 
-        // Поддержка опционального профиля: /load <modelId> [profileName]
+ 
         var parts = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var modelId = parts[0];
         var profileName = parts.Length > 1 ? parts[1] : "Default";
 
-        // 1. Ищем модель в каталоге
+
         var targetModel = await _catalogService.FindModelByIdAsync(modelId, cancellationToken);
         if (targetModel == null)
         {
             AnsiConsole.MarkupLine($"[red]Model '{modelId}' not found in the catalog. Use /models to see available IDs.[/]");
             return;
         }
-
-        // 2. Читаем аппаратный профиль из appsettings.json
         var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>();
         if (hwProfile == null)
         {
             AnsiConsole.MarkupLine($"[yellow]Warning: Hardware profile '{profileName}' not found. Using safe defaults.[/]");
-            hwProfile = new HardwareProfileSettings(); // Безопасный фолбэк
+            hwProfile = new HardwareProfileSettings(); 
         }
 
-        // 3. Формируем ModelSettings динамически (БЕЗ ModelPath/ProjectorPath)
+
         var modelConfig = new ModelSettings
         {
             RepoId = targetModel.Id,
             VisionSupport = targetModel.RequiresVisionProjector,
             Type = targetModel.RequiresVisionProjector ? ModelType.Vlm : ModelType.Llm,
 
-            // Накатываем настройки из профиля
             GpuLayerCount = hwProfile.GpuLayerCount,
             MainGPU = hwProfile.MainGPU,
             ContextSize = hwProfile.ContextSize,
@@ -86,7 +83,6 @@ public class LoadCommand : IConsoleCommand
                 .SpinnerStyle(Style.Parse("yellow"))
                 .StartAsync($"Loading {targetModel.Name} into VRAM via {profileName} profile...", async ctx =>
                 {
-                    // Локатор сам найдет пути на основе RepoId
                     await _modelManager.LoadModelAsync(modelConfig, cancellationToken);
                 });
 
