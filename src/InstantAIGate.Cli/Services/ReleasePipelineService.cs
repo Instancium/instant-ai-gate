@@ -307,7 +307,17 @@ public class ReleasePipelineService
                     await PushDockerImageAsync(state.NewVersion, isPreRelease, cancellationToken);
 
                     ctx.Status("Cleaning up local release branch...");
+                    // We are currently on main (from Step 7), so we can safely delete the release branch
                     await ExecuteProcessAsync("git", $"branch -d {state.ReleaseBranch}", cancellationToken);
+
+                    // ==========================================
+                    // NEW: Return to original branch and sync
+                    // ==========================================
+                    ctx.Status($"Returning to original branch '{state.SelectedBranch}'...");
+                    await ExecuteProcessAsync("git", $"checkout {state.SelectedBranch}", cancellationToken);
+
+                    ctx.Status($"Syncing '{state.SelectedBranch}' with released version...");
+                    await ExecuteProcessAsync("git", $"--no-pager merge {_settings.TargetBranch} --no-edit", cancellationToken);
                 });
 
                 ClearState();
@@ -522,7 +532,7 @@ Commit Log:
 
     private async Task PushDockerImageAsync(string version, bool isPreRelease, CancellationToken cancellationToken)
     {
-        string imageName = "ghcr.io/your-org/instantaigate-server";
+        string imageName = "ghcr.io/instancium/instantaigate-server";
         await ExecuteProcessAsync("docker", $"push {imageName}:v{version}", cancellationToken);
         if (!isPreRelease)
         {
