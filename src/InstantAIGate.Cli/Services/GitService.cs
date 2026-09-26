@@ -102,6 +102,12 @@ public class GitService : IGitService
         {
             directory = directory.Parent;
         }
-        return directory?.FullName ?? Environment.CurrentDirectory;
+
+        if (directory == null)
+        {
+            throw new DirectoryNotFoundException("Could not locate InstantAIGate.sln in the current directory tree. Please run the CLI from within the repository.");
+        }
+
+        return directory.FullName;
     }
 }
