@@ -12,6 +12,6 @@
   </Folder>
   <Folder Name="/tests/">
     <File Path=".gitkeep" />
-    <Project Path="test/InstantAIGate.Core.Tests/InstantAIGate.Core.Tests.csproj" Id="1abdfb26-4157-486d-ab81-ba85c91b37f7" />
+    <Project Path="tests/InstantAIGate.Core.Tests/InstantAIGate.Core.Tests.csproj" />
   </Folder>
 </Solution>
