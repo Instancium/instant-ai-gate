@@ -19,4 +19,5 @@ public interface IGitService
     Task DeleteLocalBranchAsync(string branchName, CancellationToken ct);
     Task<string> GetLatestTagAsync(CancellationToken ct);
     Task<string> GetGitLogAsync(string fromTag, CancellationToken ct);
+    Task MergeAsync(string sourceBranch, string message, CancellationToken ct);
 }
