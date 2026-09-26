@@ -26,6 +26,9 @@
 		<Content Include="..\..\deploy\windows-service\InstallService.ps1" Link="InstallService.ps1">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
+		<Content Include="..\..\deploy\windows-service\UninstallService.ps1" Link="UninstallService.ps1">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
 	</ItemGroup>
 
 </Project>
