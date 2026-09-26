@@ -27,8 +27,21 @@ public class GitService : IGitService
 
     public async Task CommitAsync(string message, CancellationToken ct)
     {
-        string escapedMessage = message.Replace("\"", "\\\"");
-        await ExecuteCommandAsync("git", $"commit -m \"{escapedMessage}\"", ct);
+        
+        string tempFilePath = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(tempFilePath, message, ct);
+
+            await ExecuteCommandAsync("git", $"commit -F \"{tempFilePath}\"", ct);
+        }
+        finally
+        {
+            if (File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
+            }
+        }
     }
 
     public async Task PushCurrentBranchAsync(CancellationToken ct)

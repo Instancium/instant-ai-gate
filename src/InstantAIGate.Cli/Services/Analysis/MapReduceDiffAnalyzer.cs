@@ -59,14 +59,16 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         return sb.ToString().Trim();
     }
 
+    
     private async Task<string> GenerateFinalCommitAsync(string aggregatedContext, CancellationToken ct)
     {
-        string prompt = $@"Analyze the following context (which may be raw code diffs or aggregated summaries) and generate a single commit message.
+        string prompt = $@"Analyze the following context and generate a complete Conventional Commit message.
             RULES:
             1. MUST be exclusively in English.
-            2. MUST use Conventional Commits format (type(scope): description).
-            3. Keep under 72 characters.
-            4. Output ONLY the commit message.
+            2. First line (Title): Format as `type(scope): description`. Imperative mood. STRICTLY under 72 characters.
+            3. Second line: MUST be completely blank.
+            4. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed and WHY.
+            5. Provide ONLY the raw commit message. Do NOT use markdown code blocks (```) or quotes.
 
             Context:
             {aggregatedContext}";
@@ -78,7 +80,8 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         {
             sb.Append(chunk);
         }
-        return sb.ToString().Trim(' ', '\n', '\r', '"', '\'');
+
+        return sb.ToString().Trim(' ', '\n', '\r', '`', '"', '\''); 
     }
 
     private List<string> ChunkDiffByFiles(string diff, int maxCharsPerChunk)
