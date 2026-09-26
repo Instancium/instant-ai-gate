@@ -23,10 +23,9 @@ public class VersionControlCommand : IConsoleCommand
     private readonly GenerateCommitMessageStep _generateCommitStep;
     private readonly GitCommitAndPushStep _pushStep;
 
-    // Placeholder for Pipeline 2 Steps (Release)
-    // private readonly BumpVersionStep _bumpStep;
-    // private readonly RunUnitTestsStep _testStep;
-    // ...
+    private readonly BumpVersionStep _bumpStep;
+    private readonly RunUnitTestsStep _testStep;
+    private readonly MergeAndPublishStep _publishStep;
 
     public string Name => "/vc";
     public string Description => "Opens the interactive Version Control menu (Auto-Commit & Release).";
@@ -38,7 +37,10 @@ public class VersionControlCommand : IConsoleCommand
         CliSession session,
         GitAddAllStep addStep,
         GenerateCommitMessageStep generateCommitStep,
-        GitCommitAndPushStep pushStep)
+        GitCommitAndPushStep pushStep, 
+        BumpVersionStep bumpStep, 
+        RunUnitTestsStep testStep, 
+        MergeAndPublishStep publishStep)
     {
         _gatewayClient = gatewayClient;
         _runner = runner;
@@ -47,6 +49,9 @@ public class VersionControlCommand : IConsoleCommand
         _addStep = addStep;
         _generateCommitStep = generateCommitStep;
         _pushStep = pushStep;
+        _bumpStep = bumpStep;
+        _testStep = testStep;
+        _publishStep = publishStep;
     }
 
     public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
@@ -84,7 +89,7 @@ public class VersionControlCommand : IConsoleCommand
                     await RunCommitPipelineAsync(cancellationToken);
                     break;
                 case "2. Publish Release (Merge to Main)":
-                    // await RunReleasePipelineAsync(cancellationToken);
+                    await RunReleasePipelineAsync(cancellationToken);
                     AnsiConsole.MarkupLine("[yellow]Release pipeline not fully mapped yet.[/]");
                     break;
                 case "3. Exit to Main CLI":
@@ -112,5 +117,14 @@ public class VersionControlCommand : IConsoleCommand
         var context = new PipelineContext();
 
         await _runner.RunAsync("Auto-Commit Pipeline", steps, context, ct);
+    }
+
+
+    private async Task RunReleasePipelineAsync(CancellationToken ct)
+    {
+        var steps = new IPipelineStep[] { _bumpStep, _testStep, _publishStep };
+        var context = new PipelineContext();
+
+        await _runner.RunAsync("Release Publication Pipeline", steps, context, ct);
     }
 }

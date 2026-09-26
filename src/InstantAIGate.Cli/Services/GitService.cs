@@ -1,111 +1,98 @@
 ﻿namespace InstantAIGate.Cli.Services;
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
 public class GitService : IGitService
 {
+    private readonly IProcessRunner _processRunner;
     private readonly string _workingDirectory;
 
-    public GitService()
+    public GitService(IProcessRunner processRunner)
     {
+        _processRunner = processRunner;
         _workingDirectory = GetSolutionRootDirectory();
     }
 
-    public async Task AddAllAsync(CancellationToken ct)
-    {
+    public async Task AddAllAsync(CancellationToken ct) =>
         await ExecuteCommandAsync("git", "add .", ct);
-    }
 
-    public async Task<string> GetCachedDiffAsync(CancellationToken ct)
-    {
-        return await ExecuteCommandWithOutputAsync("git", "diff --cached", ct);
-    }
+    public async Task<string> GetCachedDiffAsync(CancellationToken ct) =>
+        await _processRunner.ExecuteWithOutputAsync("git", "diff --cached", _workingDirectory, ct);
 
     public async Task CommitAsync(string message, CancellationToken ct)
     {
-        
         string tempFilePath = Path.GetTempFileName();
         try
         {
             await File.WriteAllTextAsync(tempFilePath, message, ct);
-
             await ExecuteCommandAsync("git", $"commit -F \"{tempFilePath}\"", ct);
         }
         finally
         {
-            if (File.Exists(tempFilePath))
-            {
-                File.Delete(tempFilePath);
-            }
+            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
         }
     }
 
+    public async Task PushBranchAsync(string branchName, CancellationToken ct) =>
+        await ExecuteCommandAsync("git", $"push origin {branchName}", ct);
+
     public async Task PushCurrentBranchAsync(CancellationToken ct)
     {
-        string branch = (await ExecuteCommandWithOutputAsync("git", "branch --show-current", ct)).Trim();
-        if (string.IsNullOrWhiteSpace(branch))
-        {
-            throw new InvalidOperationException("Could not determine the current git branch.");
-        }
+        string branch = await GetCurrentBranchAsync(ct);
+        await PushBranchAsync(branch, ct);
+    }
 
-        await ExecuteCommandAsync("git", $"push origin {branch}", ct);
+    public async Task<string> GetCurrentBranchAsync(CancellationToken ct) =>
+        (await _processRunner.ExecuteWithOutputAsync("git", "branch --show-current", _workingDirectory, ct)).Trim();
+
+    public async Task CheckoutAsync(string branchName, CancellationToken ct) =>
+        await ExecuteCommandAsync("git", $"checkout {branchName}", ct);
+
+    public async Task PullAsync(CancellationToken ct) =>
+        await ExecuteCommandAsync("git", "pull origin", ct);
+
+    public async Task MergeNoFastForwardAsync(string sourceBranch, string message, CancellationToken ct)
+    {
+        string tempFilePath = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(tempFilePath, message, ct);
+            await ExecuteCommandAsync("git", $"merge {sourceBranch} --no-ff -F \"{tempFilePath}\"", ct);
+        }
+        finally
+        {
+            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
+        }
+    }
+
+    public async Task CreateAndPushTagAsync(string tagName, CancellationToken ct)
+    {
+        await ExecuteCommandAsync("git", $"tag {tagName}", ct);
+        await ExecuteCommandAsync("git", $"push origin {tagName}", ct);
+    }
+
+    public async Task DeleteLocalBranchAsync(string branchName, CancellationToken ct) =>
+        await ExecuteCommandAsync("git", $"branch -d {branchName}", ct);
+
+    public async Task<string> GetLatestTagAsync(CancellationToken ct) =>
+        (await _processRunner.ExecuteWithOutputAsync("git", "describe --tags --abbrev=0", _workingDirectory, ct)).Trim();
+
+    public async Task<string> GetGitLogAsync(string fromTag, CancellationToken ct)
+    {
+        string range = string.IsNullOrWhiteSpace(fromTag) ? "HEAD~20..HEAD" : $"{fromTag}..HEAD";
+        return await _processRunner.ExecuteWithOutputAsync("git", $"log {range} --oneline", _workingDirectory, ct);
     }
 
     private async Task ExecuteCommandAsync(string fileName, string arguments, CancellationToken ct)
     {
-        int exitCode = await RunProcessAsync(fileName, arguments, false, ct);
+        int exitCode = await _processRunner.ExecuteAsync(fileName, arguments, _workingDirectory, silent: false, ct);
         if (exitCode != 0)
         {
-            throw new InvalidOperationException($"Command '{fileName} {arguments}' failed with exit code {exitCode}.");
+            throw new InvalidOperationException($"Git command failed with exit code {exitCode}.");
         }
-    }
-
-    private async Task<string> ExecuteCommandWithOutputAsync(string fileName, string arguments, CancellationToken ct)
-    {
-        bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = isWindows ? "cmd.exe" : fileName,
-                Arguments = isWindows ? $"/c {fileName} {arguments}" : arguments,
-                WorkingDirectory = _workingDirectory,
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-
-        process.Start();
-        string output = await process.StandardOutput.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
-        return output;
-    }
-
-    private async Task<int> RunProcessAsync(string fileName, string arguments, bool redirectOutput, CancellationToken ct)
-    {
-        bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = isWindows ? "cmd.exe" : fileName,
-                Arguments = isWindows ? $"/c {fileName} {arguments}" : arguments,
-                WorkingDirectory = _workingDirectory,
-                RedirectStandardOutput = redirectOutput,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-
-        process.Start();
-        await process.WaitForExitAsync(ct);
-        return process.ExitCode;
     }
 
     private string GetSolutionRootDirectory()
@@ -118,7 +105,7 @@ public class GitService : IGitService
 
         if (directory == null)
         {
-            throw new DirectoryNotFoundException("Could not locate InstantAIGate.sln in the current directory tree. Please run the CLI from within the repository.");
+            throw new DirectoryNotFoundException("Could not locate InstantAIGate.sln in the current directory tree.");
         }
 
         return directory.FullName;

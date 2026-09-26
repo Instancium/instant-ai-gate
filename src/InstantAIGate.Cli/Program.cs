@@ -39,7 +39,6 @@ public static class Program
             Out = new AnsiConsoleOutput(originalOut)
         });
 
-
         var isRemote = args.Contains("--remote");
         var remoteUrl = isRemote ? args[Array.IndexOf(args, "--remote") + 1] : string.Empty;
         var adminKey = isRemote && args.Contains("--key") ? args[Array.IndexOf(args, "--key") + 1] : "test-admin-secret";
@@ -58,9 +57,12 @@ public static class Program
             .ConfigureServices((context, services) =>
             {
                 services.Configure<StorageSettings>(context.Configuration.GetSection("InstantAIGate:Storage"));
+                services.Configure<ReleasePipelineSettings>(context.Configuration.GetSection("ReleasePipeline"));
+
                 services.AddSingleton<CliSession>();
                 services.AddSingleton(debugState);
 
+                // Core CLI Commands
                 services.AddSingleton<CommandDispatcher>();
                 services.AddTransient<IConsoleCommand, LoadCommand>();
                 services.AddTransient<IConsoleCommand, ImageCommand>();
@@ -69,13 +71,15 @@ public static class Program
                 services.AddTransient<IConsoleCommand, ModelsCommand>();
                 services.AddTransient<IConsoleCommand, DownloadCommand>();
                 services.AddTransient<IConsoleCommand, ConnectCommand>();
+
+                // Unified TUI command (Replaces /commit and /release)
                 services.AddTransient<IConsoleCommand, VersionControlCommand>();
 
+                // Engine & Gateway
                 services.AddHttpClient();
                 services.AddInstantAIGateInference();
                 services.AddInstantAIGateSSR();
                 services.AddSingleton<LocalGatewayClient>();
-
 
                 services.AddSingleton<GatewayClientProxy>(sp =>
                 {
@@ -94,24 +98,26 @@ public static class Program
                     return new GatewayClientProxy(sp, httpClientFactory, initial);
                 });
 
-
                 services.AddSingleton<IGatewayClient>(sp => sp.GetRequiredService<GatewayClientProxy>());
-
                 services.AddHostedService<CliHostedService>();
-                services.Configure<ReleasePipelineSettings>(context.Configuration.GetSection("ReleasePipeline"));
-                services.AddSingleton<ReleasePipelineService>();
-                services.AddTransient<IConsoleCommand, ReleaseCommand>();
 
-
-                services.AddSingleton<IGitService, GitService>();
+                // Version Control Pipeline Infrastructure
                 services.AddSingleton<PipelineRunner>();
+                services.AddSingleton<IProcessRunner, ProcessRunner>();
+                services.AddSingleton<IGitService, GitService>();
+                services.AddTransient<IDotnetService, DotnetService>();
 
+                // Pipeline 1 Steps (Auto-Commit)
                 services.AddTransient<GitAddAllStep>();
                 services.AddTransient<GenerateCommitMessageStep>();
                 services.AddTransient<GitCommitAndPushStep>();
 
-                services.AddTransient<IConsoleCommand, CommitCommand>();
+                // Pipeline 2 Steps (Release)
+                services.AddTransient<BumpVersionStep>();
+                services.AddTransient<RunUnitTestsStep>();
+                services.AddTransient<MergeAndPublishStep>();
 
+                // Map-Reduce Analyzer
                 services.AddTransient<IDiffAnalyzer>(sp =>
                 {
                     var gateway = sp.GetRequiredService<IGatewayClient>();
@@ -121,8 +127,6 @@ public static class Program
                 });
             })
             .Build();
-
-
 
         var storageConfig = host.Services.GetRequiredService<IOptions<StorageSettings>>().Value;
         _ = storageConfig.ModelsDirectory;
