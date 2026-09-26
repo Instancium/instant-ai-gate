@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.SignalR.Client;
+﻿using InstantAIGate.SSR.Dtos;
+using Microsoft.AspNetCore.SignalR.Client;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
@@ -12,6 +13,57 @@ public class TelemetryHubIntegrationTests : IClassFixture<GatewayTestFixture>
     public TelemetryHubIntegrationTests(GatewayTestFixture fixture)
     {
         _fixture = fixture;
+    }
+
+
+    [Fact]
+    public async Task TelemetryHub_ReceivesSsrProgress_DuringModelDownload()
+    {
+       
+        var hubUrl = new Uri("http://localhost:5001/hub/telemetry");
+        var connection = new HubConnectionBuilder()
+            .WithUrl(hubUrl, options =>
+            {
+            
+                options.HttpMessageHandlerFactory = _ => _fixture.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult(_adminToken)!;
+            })
+            .Build();
+
+        var progressReceived = new TaskCompletionSource<DownloadProgress>();
+
+    
+        connection.On<DownloadProgress>("ReceiveSsrProgress", progress =>
+        {
+     
+            progressReceived.TrySetResult(progress);
+        });
+
+        await connection.StartAsync();
+
+
+        var adminClient = _fixture.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("http://localhost:5001")
+        });
+
+        var downloadRequest = new HttpRequestMessage(System.Net.Http.HttpMethod.Post, "/admin/models/download");
+        downloadRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _adminToken);
+        downloadRequest.Content = JsonContent.Create(new { RepoId = "qwen3-vl-8b-instruct" });
+
+        var response = await adminClient.SendAsync(downloadRequest);
+        response.EnsureSuccessStatusCode(); 
+
+        var progressArrived = await Task.WhenAny(progressReceived.Task, Task.Delay(TimeSpan.FromSeconds(5))) == progressReceived.Task;
+
+        Assert.True(progressArrived, "Failed to receive SSR download progress broadcast within 5 seconds.");
+
+        var progressData = await progressReceived.Task;
+        Assert.NotNull(progressData);
+        Assert.Equal("qwen3-vl-8b-instruct", progressData.ModelId);
+        Assert.True(progressData.TotalBytes >= 0, "Total bytes should be initialized.");
+
+        await connection.StopAsync();
     }
 
     [Fact]
