@@ -24,3 +24,13 @@ Engineered as a high-throughput gateway, InstantAIGate delivers a compiled, cros
 *   **Interoperability & Right to Exit:** The `/v1/chat/completions` endpoint maps directly to standard OpenAI contracts (`OpenAiChatMessageDto`). Developers, professionals, and enterprises can seamlessly redirect their existing software stack to this local **Sovereign Node** without rewriting client code, ensuring independent deployment and mitigating centralized cloud lock-in risks.
 *   **Unified Infrastructure Mediator:** InstantAIGate is continuously evolving as a central integration layer for diverse AI workloads. Beyond LLMs and VLMs, the architecture is designed to incorporate additional analytical engines, including ONNX, YOLO, and OCR models. By acting as a single infrastructure mediator, it enables creators and enterprises alike to dynamically route workflows and rapidly switch between required technologies.
 
+
+> **Vulkan-Powered Cross-Platform Acceleration:**
+> Powered by `llama.cpp` with native Vulkan backend integration, InstantAIGate breaks free from vendor lock-in. It delivers hardware-accelerated LLM/VLM inference across a vast spectrum of consumer and enterprise GPUs without requiring heavy proprietary stacks like CUDA. Supported hardware and environments include:
+> * **NVIDIA GPUs** (GeForce, Quadro, Tesla via Vulkan ICD)
+> * **AMD Radeon GPUs** (RX series, Vega, RDNA architectures)
+> * **Intel Arc & Integrated Graphics** (Xe architecture)
+> * **Apple Silicon** (via cross-compilation/Metal-Vulkan translation layers where applicable)
+> * **Cross-Environment:** Seamless execution on Windows, Linux, and edge devices within your private network perimeter.
+> 
+>
