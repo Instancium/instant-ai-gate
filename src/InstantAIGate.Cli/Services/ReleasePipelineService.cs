@@ -317,10 +317,16 @@ public class ReleasePipelineService
                     await ExecuteProcessAsync("git", $"checkout {state.SelectedBranch}", cancellationToken);
 
                     ctx.Status($"Syncing '{state.SelectedBranch}' with released version...");
-                    string diffCheck = await GetCommandOutputAsync("git", $"cherry {_settings.TargetBranch}", cancellationToken);
+
+                    // Use rev-list instead of cherry to detect all new commits, including merge commits
+                    string diffCheck = await GetCommandOutputAsync("git", $"rev-list HEAD..{_settings.TargetBranch}", cancellationToken);
+
                     if (!string.IsNullOrWhiteSpace(diffCheck))
                     {
                         await ExecuteProcessAsync("git", $"--no-pager merge {_settings.TargetBranch} --no-edit", cancellationToken);
+
+                        // Push the synchronized branch to the remote repository so GitHub recognizes the update
+                        await ExecuteProcessAsync("git", $"push origin {state.SelectedBranch}", cancellationToken);
                     }
                     else
                     {

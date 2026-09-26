@@ -18,7 +18,8 @@ public class GitService : IGitService
 
     public async Task MergeAsync(string sourceBranch, string message, CancellationToken ct)
     {
-        string diffCheck = await _processRunner.ExecuteWithOutputAsync("git", $"cherry HEAD {sourceBranch}", _workingDirectory, ct);
+
+        string diffCheck = await _processRunner.ExecuteWithOutputAsync("git", $"rev-list HEAD..{sourceBranch}", _workingDirectory, ct);
 
         if (string.IsNullOrWhiteSpace(diffCheck))
         {
@@ -33,10 +34,7 @@ public class GitService : IGitService
         }
         finally
         {
-            if (File.Exists(tempFilePath))
-            {
-                File.Delete(tempFilePath);
-            }
+            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
         }
     }
 
