@@ -82,8 +82,11 @@ public class GitService : IGitService
 
     public async Task<string> GetGitLogAsync(string fromTag, CancellationToken ct)
     {
-        string range = string.IsNullOrWhiteSpace(fromTag) ? "HEAD~20..HEAD" : $"{fromTag}..HEAD";
-        return await _processRunner.ExecuteWithOutputAsync("git", $"log {range} --oneline", _workingDirectory, ct);
+        string arguments = string.IsNullOrWhiteSpace(fromTag)
+            ? "log -n 20 --oneline"
+            : $"log {fromTag}..HEAD --oneline";
+
+        return await _processRunner.ExecuteWithOutputAsync("git", arguments, _workingDirectory, ct);
     }
 
     private async Task ExecuteCommandAsync(string fileName, string arguments, CancellationToken ct)

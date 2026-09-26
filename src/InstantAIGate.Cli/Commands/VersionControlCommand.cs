@@ -26,6 +26,7 @@ public class VersionControlCommand : IConsoleCommand
     private readonly BumpVersionStep _bumpStep;
     private readonly RunUnitTestsStep _testStep;
     private readonly MergeAndPublishStep _publishStep;
+    private readonly IGitService _gitService;
 
     public string Name => "/vc";
     public string Description => "Opens the interactive Version Control menu (Auto-Commit & Release).";
@@ -40,7 +41,7 @@ public class VersionControlCommand : IConsoleCommand
         GitCommitAndPushStep pushStep, 
         BumpVersionStep bumpStep, 
         RunUnitTestsStep testStep, 
-        MergeAndPublishStep publishStep)
+        MergeAndPublishStep publishStep, IGitService gitService)
     {
         _gatewayClient = gatewayClient;
         _runner = runner;
@@ -52,6 +53,7 @@ public class VersionControlCommand : IConsoleCommand
         _bumpStep = bumpStep;
         _testStep = testStep;
         _publishStep = publishStep;
+        _gitService = gitService;
     }
 
     public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
@@ -86,7 +88,15 @@ public class VersionControlCommand : IConsoleCommand
             switch (choice)
             {
                 case "1. Auto-Commit (Current Branch)":
-                    await RunCommitPipelineAsync(cancellationToken);
+                    string currentBranch = await gitService.GetCurrentBranchAsync(cancellationToken);
+                    if (currentBranch.Equals(_settings.TargetBranch, StringComparison.OrdinalIgnoreCase))
+                    {
+                        AnsiConsole.MarkupLine($"\n[bold red]GUARDRAIL FAULT:[/] Direct auto-commits to '{_settings.TargetBranch}' are strictly prohibited. Switch to a feature branch.");
+                    }
+                    else
+                    {
+                        await RunCommitPipelineAsync(cancellationToken);
+                    }
                     break;
                 case "2. Publish Release (Merge to Main)":
                     await RunReleasePipelineAsync(cancellationToken);
