@@ -1,7 +1,10 @@
 ﻿using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Server.Services.Workers;
 using InstantAIGate.SSR.Contracts;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using System.Threading.Channels;
 
 namespace InstantAIGate.Server.Controllers.admin;
 
@@ -16,19 +19,22 @@ public class AdminModelsController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly IModelDownloader _downloader;
     private readonly StorageSettings _storageSettings;
+    private readonly ChannelWriter<DownloadJob> _downloadQueueWriter;
 
     public AdminModelsController(
             IModelManager modelManager,
             IModelCatalogService catalogService,
             IConfiguration configuration,
             IModelDownloader downloader,
-            Microsoft.Extensions.Options.IOptions<StorageSettings> storageOptions)
+            IOptions<StorageSettings> storageOptions, 
+            ChannelWriter<DownloadJob> downloadQueueWriter)
     {
         _modelManager = modelManager;
         _catalogService = catalogService;
         _configuration = configuration;
         _downloader = downloader;
         _storageSettings = storageOptions.Value;
+        _downloadQueueWriter = downloadQueueWriter;
     }
 
     [HttpGet]
@@ -44,29 +50,17 @@ public class AdminModelsController : ControllerBase
     public async Task<IActionResult> DownloadModel([FromBody] DownloadModelRequest request, CancellationToken ct)
     {
         var targetModel = await _catalogService.FindModelByIdAsync(request.RepoId, ct);
-        if (targetModel == null)
-        {
-            return NotFound(new { error = $"Model '{request.RepoId}' not found in catalog." });
-        }
+        if (targetModel == null) return NotFound(new { error = $"Model '{request.RepoId}' not found in catalog." });
 
-        var urlsToDownload = new System.Collections.Generic.List<string>(targetModel.DownloadUrls);
+        var urlsToDownload = new List<string>(targetModel.DownloadUrls);
         if (targetModel.RequiresVisionProjector && targetModel.VisionProjectorUrls != null)
         {
             urlsToDownload.AddRange(targetModel.VisionProjectorUrls);
         }
 
-        string destinationDir = System.IO.Path.Combine(_storageSettings.ModelsDirectory, targetModel.Id);
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var progress = new System.Progress<InstantAIGate.SSR.Dtos.DownloadProgress>();
-                await _downloader.DownloadModelAsync(targetModel.Id, urlsToDownload, destinationDir, progress, CancellationToken.None);
-            }
-            catch
-            {
-            }
-        });
+        string destinationDir = Path.Combine(_storageSettings.ModelsDirectory, targetModel.Id);
+
+        await _downloadQueueWriter.WriteAsync(new DownloadJob(targetModel.Id, urlsToDownload, destinationDir), ct);
 
         return Accepted(new { message = $"Download initiated for '{targetModel.Id}' into {destinationDir}." });
     }
