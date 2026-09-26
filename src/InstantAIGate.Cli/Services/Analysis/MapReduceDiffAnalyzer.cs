@@ -5,6 +5,7 @@ using InstantAIGate.Core.Dtos.Inference;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,7 +14,7 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
 {
     private readonly IGatewayClient _gatewayClient;
     private readonly string _modelId;
-    private const int SafeCharLimit = 3000; 
+    private const int SafeCharLimit = 3000;
 
     public MapReduceDiffAnalyzer(IGatewayClient gatewayClient, string modelId)
     {
@@ -23,6 +24,9 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
 
     public async Task<string> AnalyzeAndSummarizeAsync(string rawDiff, CancellationToken ct)
     {
+        AnsiConsole.MarkupLine($"[dim]Verifying model '{_modelId}' is loaded in VRAM...[/]");
+        await _gatewayClient.LoadModelAsync(_modelId, ct);
+
         if (rawDiff.Length <= SafeCharLimit)
         {
             return await GenerateFinalCommitAsync(rawDiff, ct);
@@ -59,19 +63,18 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         return sb.ToString().Trim();
     }
 
-    
     private async Task<string> GenerateFinalCommitAsync(string aggregatedContext, CancellationToken ct)
     {
         string prompt = $@"Analyze the following context and generate a complete Conventional Commit message.
-            RULES:
-            1. MUST be exclusively in English.
-            2. First line (Title): Format as `type(scope): description`. Imperative mood. STRICTLY under 72 characters.
-            3. Second line: MUST be completely blank.
-            4. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed and WHY.
-            5. Provide ONLY the raw commit message. Do NOT use markdown code blocks (```) or quotes.
+RULES:
+1. MUST be exclusively in English.
+2. First line (Title): Format as `type(scope): description`. Imperative mood. STRICTLY under 72 characters.
+3. Second line: MUST be completely blank.
+4. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed and WHY.
+5. Provide ONLY the raw commit message. Do NOT use markdown code blocks (```) or quotes.
 
-            Context:
-            {aggregatedContext}";
+Context:
+{aggregatedContext}";
 
         var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
         var sb = new StringBuilder();
@@ -81,7 +84,29 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
             sb.Append(chunk);
         }
 
-        return sb.ToString().Trim(' ', '\n', '\r', '`', '"', '\''); 
+        string rawMessage = sb.ToString().Trim(' ', '\n', '\r', '`', '"', '\'');
+        return EnforceCommitFormat(rawMessage);
+    }
+
+    private string EnforceCommitFormat(string rawMessage)
+    {
+        var lines = rawMessage.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+        if (lines.Count == 0) return "chore: auto-commit updates";
+
+        // 1. Programmatically enforce the 72-character limit on the title line
+        if (lines[0].Length > 72)
+        {
+            lines[0] = lines[0].Substring(0, 69) + "...";
+        }
+
+        // 2. Programmatically enforce the blank second line for Conventional Commits
+        if (lines.Count > 1 && !string.IsNullOrWhiteSpace(lines[1]))
+        {
+            lines.Insert(1, string.Empty);
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     private List<string> ChunkDiffByFiles(string diff, int maxCharsPerChunk)
