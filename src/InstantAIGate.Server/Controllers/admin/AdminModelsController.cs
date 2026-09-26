@@ -63,7 +63,7 @@ public class AdminModelsController : ControllerBase
                 var progress = new System.Progress<InstantAIGate.SSR.Dtos.DownloadProgress>();
                 await _downloader.DownloadModelAsync(targetModel.Id, urlsToDownload, destinationDir, progress, CancellationToken.None);
             }
-            catch (System.Exception ex)
+            catch
             {
             }
         });

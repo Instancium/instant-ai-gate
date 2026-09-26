@@ -9,29 +9,31 @@
 |    \--- model_catalog.json
 +--- deploy
 |    +--- docker
-|    |    +--- .gitkeep
 |    |    +--- docker-compose.yml
 |    |    \--- Dockerfile
 |    \--- windows-service
-|         +--- .gitkeep
 |         \--- InstallService.ps1
 +--- media
 |    +--- dashboard.gif
 |    +--- ig-logo.png
 |    \--- status-ready.png
-+--- scripts
 +--- src
 |    +--- InstantAIGate.Cli
 |    |    +--- Commands
 |    |    |    +--- CommandDispatcher.cs
+|    |    |    +--- ConnectCommand.cs
 |    |    |    +--- DebugCommand.cs
 |    |    |    +--- DownloadCommand.cs
 |    |    |    +--- HelpCommand.cs
 |    |    |    +--- IConsoleCommand.cs
 |    |    |    +--- ImageCommand.cs
 |    |    |    +--- LoadCommand.cs
-|    |    |    \--- ModelsCommand.cs
+|    |    |    +--- ModelsCommand.cs
+|    |    |    \--- ReleaseCommand.cs
+|    |    +--- Configuration
+|    |    |    \--- ReleasePipelineSettings.cs
 |    |    +--- Core
+|    |    |    +--- GatewayClientProxy.cs
 |    |    |    +--- IGatewayClient.cs
 |    |    |    +--- LocalGatewayClient.cs
 |    |    |    \--- RemoteGatewayClient.cs
@@ -39,15 +41,21 @@
 |    |    |    +--- DebugStateLogger.cs
 |    |    |    \--- DebugStateLoggerProvider.cs
 |    |    +--- models
+|    |    +--- Properties
+|    |    |    \--- PublishProfiles
+|    |    |         +--- FolderProfile.pubxml
+|    |    |         \--- FolderProfile.pubxml.user
+|    |    +--- Services
+|    |    |    \--- ReleasePipelineService.cs
 |    |    +--- State
 |    |    |    +--- CliSession.cs.cs
 |    |    |    +--- EngineLogFilter.cs
-|    |    |    \--- TuiDashboardState.cs
-|    |    +--- appsettings.json
+|    |    |    \--- PipelineState.cs
 |    |    +--- CliHostedService.cs
+|    |    +--- cli-settings.json
 |    |    +--- InstantAIGate.Cli.csproj
-|    |    +--- Program.cs
-|    |    \--- TuiHostedService.cs
+|    |    +--- InstantAIGate.Cli.csproj.user
+|    |    \--- Program.cs
 |    +--- InstantAIGate.Core
 |    |    +--- Dtos
 |    |    |    +--- Config
@@ -274,30 +282,33 @@
 |         +--- Services
 |         |    \--- ModelCatalogService.cs
 |         \--- InstantAIGate.SSR.csproj
-+--- test
-|    \--- InstantAIGate.Core.Tests
-|         +--- Downloader
-|         |    +--- ParallelModelDownloaderTests.cs
-|         |    \--- SsrPipelineIntegrationTests.cs
-|         +--- Dtos
-|         |    \--- OpenAiContractTests.cs
-|         +--- Inference
-|         |    +--- Stubs
-|         |    |    +--- StubModelLocator.cs
-|         |    |    \--- StubModelValidator.cs
-|         |    +--- DynamicRequestQueueTests.cs
-|         |    +--- LlamaVisionIntegrationTests.cs
-|         |    \--- NativeModelValidatorIntegrationTests.cs
-|         +--- Infrastructure
-|         |    \--- SyntheticNetworkHandler.cs
-|         +--- Server
-|         |    +--- GatewayInferenceE2ETests.cs
-|         |    +--- GatewaySecurityAndHealthTests.cs
-|         |    +--- GatewayTestFixture.cs
-|         |    \--- TelemetryHubIntegrationTests.cs
-|         +--- appsettings.json
-|         +--- InstantAIGate.Core.Tests.csproj
-|         \--- xunit.runner.json
++--- tests
+|    +--- InstantAIGate.Core.Tests
+|    |    +--- Downloader
+|    |    |    +--- ParallelModelDownloaderTests.cs
+|    |    |    \--- SsrPipelineIntegrationTests.cs
+|    |    +--- Dtos
+|    |    |    \--- OpenAiContractTests.cs
+|    |    +--- Inference
+|    |    |    +--- Stubs
+|    |    |    |    +--- StubModelLocator.cs
+|    |    |    |    \--- StubModelValidator.cs
+|    |    |    +--- DynamicRequestQueueTests.cs
+|    |    |    +--- LlamaVisionIntegrationTests.cs
+|    |    |    \--- NativeModelValidatorIntegrationTests.cs
+|    |    +--- Infrastructure
+|    |    |    \--- SyntheticNetworkHandler.cs
+|    |    +--- Server
+|    |    |    +--- GatewayInferenceE2ETests.cs
+|    |    |    +--- GatewaySecurityAndHealthTests.cs
+|    |    |    +--- GatewayTestFixture.cs
+|    |    |    \--- TelemetryHubIntegrationTests.cs
+|    |    +--- TestData
+|    |    |    \--- test-1.jpeg
+|    |    +--- appsettings.json
+|    |    +--- InstantAIGate.Core.Tests.csproj
+|    |    \--- xunit.runner.json
+|    \--- .gitkeep
 +--- .dockerignore
 +--- .gitattributes
 +--- .gitignore

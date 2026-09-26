@@ -9,7 +9,7 @@
     "TargetBranch": "main",
     "ReleaseBranchPrefix": "release-prep/v",
     "AiModelId": "qwen3-vl-8b-instruct",
-    "AllowedBranchPrefixes": [ "dev", "feat/", "fix/", "hotfix/", "rc/", "rfc/" ]
+    "AllowedBranchPrefixes": [ "develop", "feat/", "fix/", "hotfix/", "rc/", "rfc/" ]
   },
   "InstantAIGate": {
     "Storage": {
