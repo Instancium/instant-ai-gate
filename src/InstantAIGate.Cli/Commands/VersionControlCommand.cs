@@ -88,7 +88,7 @@ public class VersionControlCommand : IConsoleCommand
             switch (choice)
             {
                 case "1. Auto-Commit (Current Branch)":
-                    string currentBranch = await gitService.GetCurrentBranchAsync(cancellationToken);
+                    string currentBranch = await _gitService.GetCurrentBranchAsync(cancellationToken);
                     if (currentBranch.Equals(_settings.TargetBranch, StringComparison.OrdinalIgnoreCase))
                     {
                         AnsiConsole.MarkupLine($"\n[bold red]GUARDRAIL FAULT:[/] Direct auto-commits to '{_settings.TargetBranch}' are strictly prohibited. Switch to a feature branch.");
@@ -100,7 +100,6 @@ public class VersionControlCommand : IConsoleCommand
                     break;
                 case "2. Publish Release (Merge to Main)":
                     await RunReleasePipelineAsync(cancellationToken);
-                    AnsiConsole.MarkupLine("[yellow]Release pipeline not fully mapped yet.[/]");
                     break;
                 case "3. Exit to Main CLI":
                     exitRequested = true;

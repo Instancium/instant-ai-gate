@@ -38,7 +38,8 @@ public class ProcessRunner : IProcessRunner
             process.ErrorDataReceived += (sender, e) =>
             {
                 if (!string.IsNullOrWhiteSpace(e.Data))
-                    AnsiConsole.MarkupLine($"[dim red]{Markup.Escape(e.Data)}[/]");
+                    // Меняем цвет с dim red на neutral/silver
+                    AnsiConsole.MarkupLine($"[silver]{Markup.Escape(e.Data)}[/]");
             };
         }
 
