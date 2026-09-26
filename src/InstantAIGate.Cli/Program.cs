@@ -4,6 +4,7 @@ using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.Logging;
 using InstantAIGate.Cli.Pipeline.Steps;
 using InstantAIGate.Cli.Services;
+using InstantAIGate.Cli.Services.Analysis;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Native.DependencyInjection;
@@ -67,9 +68,8 @@ public static class Program
                 services.AddTransient<IConsoleCommand, DebugCommand>();
                 services.AddTransient<IConsoleCommand, ModelsCommand>();
                 services.AddTransient<IConsoleCommand, DownloadCommand>();
-
-
                 services.AddTransient<IConsoleCommand, ConnectCommand>();
+                services.AddTransient<IConsoleCommand, VersionControlCommand>();
 
                 services.AddHttpClient();
                 services.AddInstantAIGateInference();
@@ -111,6 +111,14 @@ public static class Program
                 services.AddTransient<GitCommitAndPushStep>();
 
                 services.AddTransient<IConsoleCommand, CommitCommand>();
+
+                services.AddTransient<IDiffAnalyzer>(sp =>
+                {
+                    var gateway = sp.GetRequiredService<IGatewayClient>();
+                    var settings = sp.GetRequiredService<IOptions<ReleasePipelineSettings>>().Value;
+
+                    return new MapReduceDiffAnalyzer(gateway, settings.AiModelId);
+                });
             })
             .Build();
 
