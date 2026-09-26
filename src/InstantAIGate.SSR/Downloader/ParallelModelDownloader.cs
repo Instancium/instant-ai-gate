@@ -128,6 +128,11 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
 
                 isDownloadCompletedAndValid = true;
             }
+            catch (Exception ex) when (ex is OperationCanceledException || ex is ObjectDisposedException || ex.InnerException is ObjectDisposedException)
+            {
+                _logger.LogInformation("Download process for model {ModelId} was gracefully cancelled by application shutdown.", modelId);
+                throw new OperationCanceledException("Download aborted due to host shutdown.", ex);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Download process failed or validation was rejected for model {ModelId}.", modelId);
