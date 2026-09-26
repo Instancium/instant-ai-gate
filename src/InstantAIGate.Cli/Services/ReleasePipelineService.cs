@@ -218,7 +218,7 @@ public class ReleasePipelineService
                     await ExecuteProcessAsync("git", "restore .", CancellationToken.None);
                     await ExecuteProcessAsync("git", $"checkout {state.SelectedBranch}", CancellationToken.None);
                     await ExecuteProcessAsync("git", $"branch -D {state.ReleaseBranch}", CancellationToken.None);
-                    ClearState(); // При откате сбрасываем стейт
+                    ClearState();
                 }
                 throw;
             }
@@ -298,11 +298,11 @@ public class ReleasePipelineService
                     await ExecuteProcessAsync("gh", $"release create v{state.NewVersion} -t \"Release v{state.NewVersion}\" -F \"{finalNotesFile}\" {preReleaseFlag}", cancellationToken);
 
                     ctx.Status("Uploading Windows asset...");
-                    // Вот здесь используется zipPath
+       
                     await ExecuteProcessAsync("gh", $"release upload v{state.NewVersion} \"{zipPath}\"", cancellationToken);
                     File.Delete(finalNotesFile);
 
-                    // Если пропустили сборку, то и пушить нечего, но для простоты оставим логику
+
                     ctx.Status("Pushing GHCR images...");
                     await PushDockerImageAsync(state.NewVersion, isPreRelease, cancellationToken);
 
@@ -317,7 +317,15 @@ public class ReleasePipelineService
                     await ExecuteProcessAsync("git", $"checkout {state.SelectedBranch}", cancellationToken);
 
                     ctx.Status($"Syncing '{state.SelectedBranch}' with released version...");
-                    await ExecuteProcessAsync("git", $"--no-pager merge {_settings.TargetBranch} --no-edit", cancellationToken);
+                    string diffCheck = await GetCommandOutputAsync("git", $"cherry {_settings.TargetBranch}", cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(diffCheck))
+                    {
+                        await ExecuteProcessAsync("git", $"--no-pager merge {_settings.TargetBranch} --no-edit", cancellationToken);
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine("[dim]No changes to sync. Skipping merge commit.[/]");
+                    }
                 });
 
                 ClearState();

@@ -2,9 +2,11 @@ using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Native.DependencyInjection;
 using InstantAIGate.Server.Diagnostics;
 using InstantAIGate.Server.Middleware;
+using InstantAIGate.Server.Services.Workers;
 using InstantAIGate.SSR.DependencyInjection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.SignalR;
+using System.Threading.Channels;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -36,6 +38,12 @@ var signalRLoggerProvider = new SignalRLoggerProvider();
 builder.Services.AddSingleton<ILoggerProvider>(signalRLoggerProvider);
 builder.Services.AddHostedService(sp => signalRLoggerProvider);
 builder.Services.AddHostedService<MetricsBroadcasterWorker>();
+
+
+var downloadChannel = Channel.CreateUnbounded<DownloadJob>();
+builder.Services.AddSingleton<ChannelWriter<DownloadJob>>(downloadChannel.Writer);
+builder.Services.AddSingleton<ChannelReader<DownloadJob>>(downloadChannel.Reader);
+builder.Services.AddHostedService<ModelDownloadWorker>();
 
 var app = builder.Build();
 
