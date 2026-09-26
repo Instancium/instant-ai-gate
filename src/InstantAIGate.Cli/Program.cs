@@ -2,6 +2,7 @@
 using InstantAIGate.Cli.Configuration;
 using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.Logging;
+using InstantAIGate.Cli.Pipeline.Steps;
 using InstantAIGate.Cli.Services;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Config;
@@ -100,6 +101,16 @@ public static class Program
                 services.Configure<ReleasePipelineSettings>(context.Configuration.GetSection("ReleasePipeline"));
                 services.AddSingleton<ReleasePipelineService>();
                 services.AddTransient<IConsoleCommand, ReleaseCommand>();
+
+
+                services.AddSingleton<IGitService, GitService>();
+                services.AddSingleton<PipelineRunner>();
+
+                services.AddTransient<GitAddAllStep>();
+                services.AddTransient<GenerateCommitMessageStep>();
+                services.AddTransient<GitCommitAndPushStep>();
+
+                services.AddTransient<IConsoleCommand, CommitCommand>();
             })
             .Build();
 
