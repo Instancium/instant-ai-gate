@@ -1,0 +1,140 @@
+# Native/DLL files
+*.dll
+*.so
+*.dylib
+*.exe
+*.obj
+*.lib
+*.a
+*.o
+
+# ==============================================================================
+# Native Runtimes & Inference Drivers (InstantAIGate)
+# ==============================================================================
+
+# Ignore EVERYTHING inside the platform-specific runtime directories
+/src/InstantAIGate.Native/runtimes/win-x64/*
+/src/InstantAIGate.Native/runtimes/linux-x64/*
+/src/InstantAIGate.Native/runtimes/osx-x64/*
+
+# But explicitly keep the .gitkeep files so the folder structure remains in Git
+!/src/InstantAIGate.Native/runtimes/win-x64/.gitkeep
+!/src/InstantAIGate.Native/runtimes/linux-x64/.gitkeep
+!/src/InstantAIGate.Native/runtimes/osx-x64/.gitkeep
+
+# Ignore llama.cpp source code clones and build artifacts if built locally
+/src/InstantAIGate.Native/runtimes/llama.cpp/
+/src/InstantAIGate.Native/runtimes/build/CMakeCache.txt
+/src/InstantAIGate.Native/runtimes/build/CMakeFiles/
+/src/InstantAIGate.Native/runtimes/build/Makefile
+
+# Build outputs
+runtimes/*/*.dll
+bin/
+obj/
+out/
+build/
+dist/
+
+# Dependencies
+node_modules/
+vendor/
+
+# Logs
+*.log
+
+# Environment
+.vs/
+.env
+.env.local
+*.env.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Package manager caches
+.npm/
+.yarn/
+.pip/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+
+# Java/Gradle
+target/
+.gradle/
+*.class
+*.jar
+*.war
+
+# C#
+*.user
+*.userosscache
+*.sln.docstates
+
+# Go
+*.exe
+*.test
+*.prof
+go.mod
+go.sum
+
+# Rust
+Cargo.lock
+*.lock
+
+# Julia
+julia-*/
+
+# Zig
+zig-out/
+zig-cache/
+
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst

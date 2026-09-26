@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  llama-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llama-cpp-builder
+    # Volume mount is intentionally omitted to prevent symlink corruption on Windows hosts.
+    # Artifacts are extracted via 'docker cp' and 'tar' in the start.sh script.

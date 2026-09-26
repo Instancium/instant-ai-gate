@@ -1,0 +1,42 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+		<!-- Visible="false" hides the files in Visual Studio, Link flattens them to the output root -->
+		<Content Include="runtimes\win-x64\*.dll" Visible="false">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Link>%(Filename)%(Extension)</Link>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">
+		<Content Include="runtimes\linux-x64\*.so*" Visible="false">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Link>%(Filename)%(Extension)</Link>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="runtimes\setup-symlinks.sh">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<Target Name="CreateLinuxSymlinks" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'linux-x64'">
+		<!-- Execute directly in PublishDir since the files are now flattened to the root -->
+		<Exec Command="bash -c 'cd $(PublishDir) &amp;&amp; for f in *.so.*.*.*; do base=$${f%%.so*}.so; v1=$${base}.0; ln -sf $$f $$v1; ln -sf $$v1 $$base; done'" ContinueOnError="true" />
+	</Target>
+</Project>

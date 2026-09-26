@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12.0</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="cli-settings.json" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.12" />
+    <PackageReference Include="SkiaSharp" Version="4.152.1" />
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
+    <ProjectReference Include="..\InstantAIGate.Native\InstantAIGate.Native.csproj" />
+    <ProjectReference Include="..\InstantAIGate.SSR\InstantAIGate.SSR.csproj" />
+    <ProjectReference Include="..\InstantAIGate.Server\InstantAIGate.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>  
+	  <Content Include="..\..\config\model_catalog.json" Link="config\model_catalog.json">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </Content>
+	  
+	  <Content Include="cli-settings.json">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </Content>
+  </ItemGroup>
+
+</Project>

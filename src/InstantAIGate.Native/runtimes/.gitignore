@@ -1,0 +1,11 @@
+# Ignore only the cloned llama.cpp repository (not the build scripts folder)
+llama.cpp/
+
+# Ignore test files (images, GGUF models, etc.)
+test-*
+*_test.*
+
+# Keep directory structure in Git
+!win-x64/.gitkeep
+!linux-x64/.gitkeep
+!build/
