@@ -45,6 +45,17 @@ builder.Services.AddSingleton<ChannelWriter<DownloadJob>>(downloadChannel.Writer
 builder.Services.AddSingleton<ChannelReader<DownloadJob>>(downloadChannel.Reader);
 builder.Services.AddHostedService<ModelDownloadWorker>();
 
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Info.Title = "InstantAIGate";
+        document.Info.Description = "High-Performance On-Premises Inference Runtime";
+        document.Info.Version = "v1";
+        return Task.CompletedTask;
+    });
+});
+
 var app = builder.Build();
 
 // Bind Hub Context to Logger Provider after build

@@ -139,7 +139,7 @@ public class CliHostedService : IHostedService
                 .LeftJustified()
                 .Color(Color.Blue));
 
-        AnsiConsole.MarkupLine("[dim]Gateway CLI - Local & Remote Access Ready[/]");
+        AnsiConsole.MarkupLine("[dim]High-Performance On-Premises Inference Runtime[/]");
         AnsiConsole.MarkupLine("Type [yellow]/help[/] to view available commands.\n");
     }
 }
