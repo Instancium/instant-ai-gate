@@ -1,5 +1,6 @@
 ﻿namespace InstantAIGate.Cli.Services;
 
+using Spectre.Console;
 using System;
 using System.IO;
 using System.Threading;
@@ -24,14 +25,17 @@ public class DotnetService : IDotnetService
 
     public async Task RunUnitTestsAsync(CancellationToken ct)
     {
+        AnsiConsole.MarkupLine("[dim]Starting test discovery and execution...[/]");
+
         string testProject = Path.Combine(_workingDirectory, "tests", "InstantAIGate.Core.Tests", "InstantAIGate.Core.Tests.csproj");
-        string arguments = $"test \"{testProject}\" -c Release --no-restore";
+
+        string arguments = $"test \"{testProject}\" -c Release --no-restore --logger \"console;verbosity=normal\"";
 
         int exitCode = await _processRunner.ExecuteAsync("dotnet", arguments, _workingDirectory, silent: false, ct);
 
         if (exitCode != 0)
         {
-            throw new InvalidOperationException($"Unit tests failed with exit code {exitCode}. Pipeline halted.");
+            throw new InvalidOperationException($"Unit tests failed with exit code {exitCode}. Pipeline halted to protect the target branch.");
         }
     }
 }

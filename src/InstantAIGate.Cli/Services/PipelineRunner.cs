@@ -13,25 +13,23 @@ public class PipelineRunner
     public async Task RunAsync(string pipelineName, IEnumerable<IPipelineStep> steps, PipelineContext context, CancellationToken ct)
     {
         AnsiConsole.MarkupLine($"\n[bold cyan]Starting: {pipelineName}[/]");
+        AnsiConsole.Write(new Rule().RuleStyle("grey"));
 
         foreach (var step in steps)
         {
-            await AnsiConsole.Status()
-                .Spinner(Spinner.Known.Dots)
-                .StartAsync($"Executing: {step.Name}...", async ctx =>
-                {
-                    try
-                    {
-                        await step.ExecuteAsync(context, ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        AnsiConsole.MarkupLine($"[red]Error during '{step.Name}':[/] {ex.Message}");
-                        throw; // Halt pipeline execution
-                    }
-                });
-
-            AnsiConsole.MarkupLine($"[green]v[/] {step.Name}");
+            try
+            {
+                // Шаги теперь сами управляют своим UI (спиннеры, меню или прямой текст)
+                await step.ExecuteAsync(context, ct);
+                AnsiConsole.MarkupLine($"[green]v[/] {step.Name}\n");
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"\n[bold red]Pipeline Halted at '{step.Name}':[/] {ex.Message}");
+                throw;
+            }
         }
+
+        AnsiConsole.MarkupLine($"[bold green]Pipeline '{pipelineName}' completed successfully![/]");
     }
 }

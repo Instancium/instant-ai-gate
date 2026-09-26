@@ -6,6 +6,7 @@ using InstantAIGate.Cli.Services;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Inference;
 using Microsoft.Extensions.Options;
+using Spectre.Console;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -36,39 +37,40 @@ public class MergeAndPublishStep : IPipelineStep
 
     public async Task ExecuteAsync(PipelineContext context, CancellationToken cancellationToken)
     {
-        string originalBranch = await _gitService.GetCurrentBranchAsync(cancellationToken);
-        string targetBranch = _settings.TargetBranch;
-        string versionTag = $"v{context.NewVersion}";
+        await Spectre.Console.AnsiConsole.Status()
+            .Spinner(Spectre.Console.Spinner.Known.Dots)
+            .StartAsync("Executing Git Merge and GitHub Release...", async ctx =>
+            {
+                string originalBranch = await _gitService.GetCurrentBranchAsync(cancellationToken);
+                string targetBranch = _settings.TargetBranch;
+                string versionTag = $"v{context.NewVersion}";
 
-        await _gitService.AddAllAsync(cancellationToken);
-        await _gitService.CommitAsync($"chore(release): prepare version {versionTag}", cancellationToken);
-        await _gitService.PushBranchAsync(originalBranch, cancellationToken);
+                ctx.Status("Committing version bump...");
+                await _gitService.AddAllAsync(cancellationToken);
+                await _gitService.CommitAsync($"chore(release): prepare version {versionTag}", cancellationToken);
+                await _gitService.PushBranchAsync(originalBranch, cancellationToken);
 
-        await _gitService.CheckoutAsync(targetBranch, cancellationToken);
-        await _gitService.PullAsync(cancellationToken);
-        await _gitService.MergeNoFastForwardAsync(originalBranch, $"chore(release): merge {originalBranch} into {targetBranch} for {versionTag}", cancellationToken);
-        await _gitService.PushBranchAsync(targetBranch, cancellationToken);
+                ctx.Status($"Merging into {targetBranch}...");
+                await _gitService.CheckoutAsync(targetBranch, cancellationToken);
+                await _gitService.PullAsync(cancellationToken);
+                await _gitService.MergeNoFastForwardAsync(originalBranch, $"chore(release): merge {originalBranch} into {targetBranch} for {versionTag}", cancellationToken);
+                await _gitService.PushBranchAsync(targetBranch, cancellationToken);
 
-        string lastTag = string.Empty;
-        try
-        {
-            lastTag = await _gitService.GetLatestTagAsync(cancellationToken);
-        }
-        catch
-        {
-            // Initial release fallback
-        }
+                ctx.Status("Generating AI Release Notes...");
+                string lastTag = string.Empty;
+                try { lastTag = await _gitService.GetLatestTagAsync(cancellationToken); } catch { }
+                string gitLog = await _gitService.GetGitLogAsync(lastTag, cancellationToken);
+                string releaseNotes = await GenerateChangelogAsync(gitLog, cancellationToken);
 
-        string gitLog = await _gitService.GetGitLogAsync(lastTag, cancellationToken);
-        string releaseNotes = await GenerateChangelogAsync(gitLog, cancellationToken);
+                ctx.Status("Publishing Release to GitHub...");
+                await _gitService.CreateAndPushTagAsync(versionTag, cancellationToken);
+                await CreateGitHubReleaseAsync(versionTag, releaseNotes, context.NewVersion.Contains('-'), cancellationToken);
 
-        await _gitService.CreateAndPushTagAsync(versionTag, cancellationToken);
-
-        await CreateGitHubReleaseAsync(versionTag, releaseNotes, context.NewVersion.Contains('-'), cancellationToken);
-
-        await _gitService.CheckoutAsync(originalBranch, cancellationToken);
-        await _gitService.MergeNoFastForwardAsync(targetBranch, $"chore(sync): merge {targetBranch} back to {originalBranch}", cancellationToken);
-        await _gitService.PushBranchAsync(originalBranch, cancellationToken);
+                ctx.Status("Syncing working branch...");
+                await _gitService.CheckoutAsync(originalBranch, cancellationToken);
+                await _gitService.MergeNoFastForwardAsync(targetBranch, $"chore(sync): merge {targetBranch} back to {originalBranch}", cancellationToken);
+                await _gitService.PushBranchAsync(originalBranch, cancellationToken);
+            });
     }
 
     private async Task<string> GenerateChangelogAsync(string gitLog, CancellationToken ct)
