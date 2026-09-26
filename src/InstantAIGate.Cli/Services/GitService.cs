@@ -56,6 +56,13 @@ public class GitService : IGitService
 
     public async Task MergeNoFastForwardAsync(string sourceBranch, string message, CancellationToken ct)
     {
+
+        string logCheck = await _processRunner.ExecuteWithOutputAsync("git", $"log HEAD..{sourceBranch} --oneline", _workingDirectory, ct);
+        if (string.IsNullOrWhiteSpace(logCheck))
+        {
+            return;
+        }
+
         string tempFilePath = Path.GetTempFileName();
         try
         {

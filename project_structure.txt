@@ -12,7 +12,8 @@
 |    |    +--- docker-compose.yml
 |    |    \--- Dockerfile
 |    \--- windows-service
-|         \--- InstallService.ps1
+|         +--- InstallService.ps1
+|         \--- UninstallService.ps1
 +--- media
 |    +--- dashboard.gif
 |    +--- ig-logo.png
@@ -285,10 +286,15 @@
 |    |    |    +--- GatewayExceptionMiddleware.cs
 |    |    |    \--- PortRoutingMiddleware.cs
 |    |    +--- Properties
+|    |    |    +--- PublishProfiles
+|    |    |    |    +--- FolderProfile.pubxml
+|    |    |    |    \--- FolderProfile.pubxml.user
 |    |    |    \--- launchSettings.json
 |    |    +--- appsettings.Development.json
 |    |    +--- appsettings.json
+|    |    +--- dotnet-tools.json
 |    |    +--- InstantAIGate.Server.csproj
+|    |    +--- InstantAIGate.Server.csproj.user
 |    |    \--- Program.cs
 |    \--- InstantAIGate.SSR
 |         +--- Contracts
