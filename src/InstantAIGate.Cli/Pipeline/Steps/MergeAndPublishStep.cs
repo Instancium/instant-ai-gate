@@ -68,7 +68,7 @@ public class MergeAndPublishStep : IPipelineStep
 
                 ctx.Status("Syncing working branch...");
                 await _gitService.CheckoutAsync(originalBranch, cancellationToken);
-                await _gitService.MergeNoFastForwardAsync(targetBranch, $"chore(sync): merge {targetBranch} back to {originalBranch}", cancellationToken);
+                await _gitService.MergeAsync(targetBranch, $"chore(sync): merge {targetBranch} back to {originalBranch}", cancellationToken);
                 await _gitService.PushBranchAsync(originalBranch, cancellationToken);
             });
     }

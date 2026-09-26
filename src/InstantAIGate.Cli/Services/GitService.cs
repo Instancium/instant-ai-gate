@@ -16,6 +16,30 @@ public class GitService : IGitService
         _workingDirectory = GetSolutionRootDirectory();
     }
 
+    public async Task MergeAsync(string sourceBranch, string message, CancellationToken ct)
+    {
+        string diffCheck = await _processRunner.ExecuteWithOutputAsync("git", $"cherry HEAD {sourceBranch}", _workingDirectory, ct);
+
+        if (string.IsNullOrWhiteSpace(diffCheck))
+        {
+            return;
+        }
+
+        string tempFilePath = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(tempFilePath, message, ct);
+            await ExecuteCommandAsync("git", $"merge {sourceBranch} -F \"{tempFilePath}\"", ct);
+        }
+        finally
+        {
+            if (File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
+            }
+        }
+    }
+
     public async Task AddAllAsync(CancellationToken ct) =>
         await ExecuteCommandAsync("git", "add .", ct);
 
