@@ -100,7 +100,7 @@ public class ParallelModelDownloaderTests : IDisposable
 
         // Strict Physics Validation: Ensure the FileStream was disposed properly.
         // If the stream is still locked by a background thread, File.Delete will throw IOException.
-        string expectedFile = Path.Combine(_tempTestDir, "large.gguf");
+        string expectedFile = Path.Combine(_tempTestDir, "large.gguf.tmp");
         var exception = Record.Exception(() => File.Delete(expectedFile));
         Assert.Null(exception); // Should cleanly delete without I/O lock errors
     }

@@ -65,7 +65,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                 if (string.IsNullOrEmpty(fileName)) fileName = Guid.NewGuid().ToString("N") + ".bin";
 
                 string destPath = Path.Combine(destinationDirectory, fileName);
-                string tempPath = destPath + ".tmp"; // <--- ВРЕМЕННЫЙ ФАЙЛ
+                string tempPath = destPath + ".tmp"; 
 
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
@@ -87,7 +87,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
             {
                 foreach (var file in fileTasks)
                 {
-                    // ПЕРЕДАЕМ tempPath ВМЕСТО destPath
+        
                     if (file.TotalBytes > MinimumParallelSize && file.AcceptRanges)
                     {
                         await DownloadParallelAsync(modelId, file.Url, file.TempPath, file.TotalBytes,
@@ -110,7 +110,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                     }
                 }
 
-                // ВАЛИДИРУЕМ ВРЕМЕННЫЕ ФАЙЛЫ ДО ПЕРЕИМЕНОВАНИЯ
+
                 var downloadedFiles = fileTasks.Select(f => f.TempPath).ToList();
                 bool isValid = await _modelValidator.ValidateIntegrityAsync(downloadedFiles, linkedCts.Token);
 
@@ -120,7 +120,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                     throw new ModelIntegrityException(modelId, downloadedFiles.First());
                 }
 
-                // АТОМАРНАЯ ПОДМЕНА: Переименовываем .tmp в .gguf только после успешной проверки!
+ 
                 foreach (var file in fileTasks)
                 {
                     File.Move(file.TempPath, file.DestinationPath, overwrite: true);
@@ -135,14 +135,13 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
             }
             finally
             {
-                // ОЧИСТКА: Удаляем только мусорные .tmp файлы, если тест прервался
                 if (!isDownloadCompletedAndValid)
                 {
                     foreach (var file in fileTasks)
                     {
                         if (File.Exists(file.TempPath))
                         {
-                            try { File.Delete(file.TempPath); } catch { }
+                            File.Delete(file.TempPath);
                         }
                     }
                 }
