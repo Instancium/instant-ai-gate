@@ -5,6 +5,7 @@ using InstantAIGate.Core.Dtos.Inference;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -27,9 +28,12 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         AnsiConsole.MarkupLine($"[dim]Verifying model '{_modelId}' is loaded in VRAM...[/]");
         await _gatewayClient.LoadModelAsync(_modelId, ct);
 
+   
+        var changedFiles = ExtractChangedFiles(rawDiff);
+
         if (rawDiff.Length <= SafeCharLimit)
         {
-            return await GenerateFinalCommitAsync(rawDiff, ct);
+            return await GenerateFinalCommitAsync(rawDiff, changedFiles, ct);
         }
 
         AnsiConsole.MarkupLine($"\n[dim]Diff is too large ({rawDiff.Length} chars). Engaging Map-Reduce processing...[/]");
@@ -41,91 +45,55 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         {
             ct.ThrowIfCancellationRequested();
             AnsiConsole.MarkupLine($"[dim]Analyzing part {i + 1}/{chunks.Count}...[/]");
-
-            string summary = await SummarizeChunkAsync(chunks[i], ct);
+            string summary = await SummarizeChunkAsync(chunks[i], changedFiles, ct);
             partialSummaries.AppendLine($"- {summary}");
         }
 
         AnsiConsole.MarkupLine("[dim]Aggregating partial summaries into final commit message...[/]");
-        return await GenerateFinalCommitAsync(partialSummaries.ToString(), ct);
+        return await GenerateFinalCommitAsync(partialSummaries.ToString(), changedFiles, ct);
     }
 
-    private async Task<string> SummarizeChunkAsync(string diffChunk, CancellationToken ct)
+    private List<string> ExtractChangedFiles(string rawDiff)
     {
-        string prompt = $"Briefly summarize the following code changes in 1-2 sentences. Ignore formatting changes.\n\n{diffChunk}";
-        var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
+        var files = new List<string>();
+        using var reader = new StringReader(rawDiff);
+        string? line;
 
-        var sb = new StringBuilder();
-        await foreach (var chunk in _gatewayClient.StreamChatAsync(_modelId, messages, ct))
+        while ((line = reader.ReadLine()) != null)
         {
-            sb.Append(chunk);
+            if (line.StartsWith("diff --git a/"))
+            {
+                var parts = line.Split(' ');
+      
+                if (parts.Length >= 3 && parts[2].StartsWith("a/"))
+                {
+                    files.Add(parts[2].Substring(2));
+                }
+            }
         }
-        return sb.ToString().Trim();
+
+        return files.Distinct().ToList();
     }
 
-    private async Task<string> GenerateFinalCommitAsync(string aggregatedContext, CancellationToken ct)
+    private List<string> ChunkDiffByFiles(string rawDiff, int maxLength)
     {
-        string prompt = $@"Analyze the following context and generate a complete Conventional Commit message.
-RULES:
-1. MUST be exclusively in English.
-2. First line (Title): Format as `type(scope): description`. Imperative mood. STRICTLY under 72 characters.
-3. Second line: MUST be completely blank.
-4. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed and WHY.
-5. Provide ONLY the raw commit message. Do NOT use markdown code blocks (```) or quotes.
-
-Context:
-{aggregatedContext}";
-
-        var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
-        var sb = new StringBuilder();
-
-        await foreach (var chunk in _gatewayClient.StreamChatAsync(_modelId, messages, ct))
-        {
-            sb.Append(chunk);
-        }
-
-        string rawMessage = sb.ToString().Trim(' ', '\n', '\r', '`', '"', '\'');
-        return EnforceCommitFormat(rawMessage);
-    }
-
-    private string EnforceCommitFormat(string rawMessage)
-    {
-        var lines = rawMessage.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
-
-        if (lines.Count == 0) return "chore: auto-commit updates";
-
-        // 1. Programmatically enforce the 72-character limit on the title line
-        if (lines[0].Length > 72)
-        {
-            lines[0] = lines[0].Substring(0, 69) + "...";
-        }
-
-        // 2. Programmatically enforce the blank second line for Conventional Commits
-        if (lines.Count > 1 && !string.IsNullOrWhiteSpace(lines[1]))
-        {
-            lines.Insert(1, string.Empty);
-        }
-
-        return string.Join(Environment.NewLine, lines);
-    }
-
-    private List<string> ChunkDiffByFiles(string diff, int maxCharsPerChunk)
-    {
-        var fileBlocks = diff.Split(new[] { "diff --git a/" }, StringSplitOptions.RemoveEmptyEntries);
         var chunks = new List<string>();
         var currentChunk = new StringBuilder();
+        using var reader = new StringReader(rawDiff);
+        string? line;
 
-        foreach (var block in fileBlocks)
+        while ((line = reader.ReadLine()) != null)
         {
-            string formattedBlock = "diff --git a/" + block;
-
-            if (currentChunk.Length + formattedBlock.Length > maxCharsPerChunk && currentChunk.Length > 0)
+            if (line.StartsWith("diff --git a/") && currentChunk.Length > 0)
             {
-                chunks.Add(currentChunk.ToString());
-                currentChunk.Clear();
+                if (currentChunk.Length + line.Length > maxLength)
+                {
+                    chunks.Add(currentChunk.ToString());
+                    currentChunk.Clear();
+                }
             }
 
-            currentChunk.Append(formattedBlock);
+            currentChunk.AppendLine(line);
         }
 
         if (currentChunk.Length > 0)
@@ -134,5 +102,46 @@ Context:
         }
 
         return chunks;
+    }
+
+    private async Task<string> SummarizeChunkAsync(string diffChunk, List<string> changedFiles, CancellationToken ct)
+    {
+        string filesList = string.Join(", ", changedFiles);
+        string prompt = $"You are analyzing a partial diff for the following files: [{filesList}]. Briefly summarize the code changes in 1-2 sentences. Ignore formatting changes.\n\n{diffChunk}";
+
+        var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
+        var sb = new StringBuilder();
+
+        await foreach (var chunk in _gatewayClient.StreamChatAsync(_modelId, messages, ct))
+        {
+            sb.Append(chunk);
+        }
+
+        return sb.ToString().Trim();
+    }
+
+    private async Task<string> GenerateFinalCommitAsync(string aggregatedContext, List<string> changedFiles, CancellationToken ct)
+    {
+        string filesList = string.Join(", ", changedFiles);
+        string prompt = $@"Analyze the following diff context and generate a complete Conventional Commit message. RULES:
+1. MUST be exclusively in English.
+2. First line (Title): Format as type(scope): description. STRICTLY under 72 characters.
+3. CRITICAL FILE TYPE RULE: You MUST base the 'type' and 'scope' on the actual files changed: [{filesList}]. 
+   - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs' regardless of the technical terms in the text.
+   - Do not guess the architectural scope based on the text if the file name dictates otherwise.
+4. Second line: MUST be completely blank.
+5. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed.
+
+Context: {aggregatedContext}";
+
+        var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
+        var sb = new StringBuilder();
+
+        await foreach (var chunk in _gatewayClient.StreamChatAsync(_modelId, messages, ct))
+        {
+            sb.Append(chunk);
+        }
+
+        return sb.ToString().Trim();
     }
 }
