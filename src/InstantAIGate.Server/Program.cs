@@ -1,5 +1,6 @@
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Native.DependencyInjection;
+using InstantAIGate.Server.Configuration;
 using InstantAIGate.Server.Diagnostics;
 using InstantAIGate.Server.Middleware;
 using InstantAIGate.Server.Services.Workers;
@@ -55,6 +56,10 @@ builder.Services.AddOpenApi(options =>
         return Task.CompletedTask;
     });
 });
+
+
+builder.Services.Configure<StartupModelSettings>(
+    builder.Configuration.GetSection("InstantAIGate:StartupModel"));
 
 var app = builder.Build();
 
