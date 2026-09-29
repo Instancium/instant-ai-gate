@@ -70,7 +70,7 @@
 |    |    |    +--- ProcessRunner.cs
 |    |    |    \--- ReleasePipelineService.cs
 |    |    +--- State
-|    |    |    +--- CliSession.cs.cs
+|    |    |    +--- CliSession.cs
 |    |    |    +--- EngineLogFilter.cs
 |    |    |    +--- PipelineContext.cs
 |    |    |    \--- PipelineState.cs
@@ -263,6 +263,8 @@
 |    |    |    \--- setup-symlinks.sh
 |    |    \--- InstantAIGate.Native.csproj
 |    +--- InstantAIGate.Server
+|    |    +--- Configuration
+|    |    |    \--- StartupModelSettings.cs
 |    |    +--- Controllers
 |    |    |    +--- admin
 |    |    |    |    +--- AdminModelsController.cs
@@ -290,6 +292,10 @@
 |    |    |    |    +--- FolderProfile.pubxml
 |    |    |    |    \--- FolderProfile.pubxml.user
 |    |    |    \--- launchSettings.json
+|    |    +--- Services
+|    |    |    \--- Workers
+|    |    |         +--- ModelDownloadWorker.cs
+|    |    |         \--- ModelStartupWorker.cs
 |    |    +--- appsettings.Development.json
 |    |    +--- appsettings.json
 |    |    +--- dotnet-tools.json
@@ -330,7 +336,12 @@
 |    |    |    +--- GatewayInferenceE2ETests.cs
 |    |    |    +--- GatewaySecurityAndHealthTests.cs
 |    |    |    +--- GatewayTestFixture.cs
+|    |    |    +--- ModelStartupWorkerIntegrationTests.cs
 |    |    |    \--- TelemetryHubIntegrationTests.cs
+|    |    +--- TestConfiguration
+|    |    |    +--- TestConfig.cs
+|    |    |    +--- TestModelOptions.cs
+|    |    |    \--- TestServerOptions.cs
 |    |    +--- TestData
 |    |    |    \--- test-1.jpeg
 |    |    +--- appsettings.json

@@ -1,5 +1,6 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
+using InstantAIGate.Core.Tests.TestConfiguration;
 
 namespace InstantAIGate.Core.Tests.Server;
 
@@ -7,20 +8,17 @@ public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>
 {
     private readonly HttpClient _publicClient;
     private readonly HttpClient _adminClient;
+    private readonly TestServerOptions _serverOptions;
 
     public GatewaySecurityAndHealthTests(GatewayTestFixture fixture)
     {
-        // Client emulating requests to port 5000
-        _publicClient = fixture.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
-        {
-            BaseAddress = new Uri("http://localhost:5000")
-        });
+        _serverOptions = fixture.ServerOptions;
 
-        // Client emulating requests to port 5001
-        _adminClient = fixture.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
-        {
-            BaseAddress = new Uri("http://localhost:5001")
-        });
+        // Client emulating requests to the public port (from test configuration)
+        _publicClient = fixture.CreatePublicClient();
+
+        // Client emulating requests to the admin port (from test configuration)
+        _adminClient = fixture.CreateAdminClient();
     }
 
     [Fact]
@@ -54,11 +52,11 @@ public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>
     public async Task AdminApi_ShouldReturn403_WhenAccessedViaPublicPort()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "test-admin-secret");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.AdminApiKey);
 
         var response = await _publicClient.SendAsync(request);
 
-        // PortRoutingMiddleware should block requests to /admin via port 5000
+        // PortRoutingMiddleware should block requests to /admin via the public port
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -66,11 +64,11 @@ public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>
     public async Task PublicApi_ShouldReturn403_WhenAccessedViaAdminPort()
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "any-tenant-key");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.TenantApiKey);
 
         var response = await _adminClient.SendAsync(request);
 
-        // PortRoutingMiddleware should block requests to /v1 via port 5001
+        // PortRoutingMiddleware should block requests to /v1 via the admin port
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
@@ -78,7 +76,7 @@ public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>
     public async Task AdminApi_ShouldReturn200_WithValidAdminKey()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "test-admin-secret");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.AdminApiKey);
 
         var response = await _adminClient.SendAsync(request);
 
@@ -89,7 +87,7 @@ public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>
     public async Task AdminApi_ShouldReturn401_WithInvalidAdminKey()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "wrong-secret");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.InvalidApiKey);
 
         var response = await _adminClient.SendAsync(request);
 

@@ -1,7 +1,8 @@
-﻿namespace InstantAIGate.Core.Tests.Downloader;
+namespace InstantAIGate.Core.Tests.Downloader;
 
 using InstantAIGate.Core.Tests.Inference.Stubs;
 using InstantAIGate.Core.Tests.Infrastructure;
+using InstantAIGate.Core.Tests.TestConfiguration;
 using InstantAIGate.SSR.Downloader;
 using InstantAIGate.SSR.Dtos;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -16,6 +17,9 @@ using Xunit;
 
 public class ParallelModelDownloaderTests : IDisposable
 {
+    // Synthetic sizes and URLs come from the test project appsettings.json.
+    private static readonly TestSyntheticDownloadOptions SynthOptions = TestConfig.Model.SyntheticDownload;
+
     private readonly string _tempTestDir;
 
     public ParallelModelDownloaderTests()
@@ -30,7 +34,7 @@ public class ParallelModelDownloaderTests : IDisposable
     {
         // Arrange
         var stubValidator = new StubModelValidator { ShouldPass = true };
-        var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: 1024 * 1024 * 50, supportRanges: true);
+        var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: SynthOptions.ParallelDownloadFileSizeBytes, supportRanges: true);
         var downloader = new ParallelModelDownloader(
             new HttpClient(handler),
             NullLogger<ParallelModelDownloader>.Instance,
@@ -39,7 +43,7 @@ public class ParallelModelDownloaderTests : IDisposable
         var progress = new Progress<DownloadProgress>(progressList.Add);
 
         // Act
-        await downloader.DownloadModelAsync("test-model", new[] { "http://synth/model.gguf" }, _tempTestDir, progress);
+        await downloader.DownloadModelAsync("test-model", new[] { SynthOptions.BaseUrl + "model.gguf" }, _tempTestDir, progress);
 
         // Assert
         Assert.NotEmpty(progressList);
@@ -50,7 +54,7 @@ public class ParallelModelDownloaderTests : IDisposable
 
         string expectedFile = Path.Combine(_tempTestDir, "model.gguf");
         Assert.True(File.Exists(expectedFile));
-        Assert.Equal(1024 * 1024 * 50, new FileInfo(expectedFile).Length);
+        Assert.Equal(SynthOptions.ParallelDownloadFileSizeBytes, new FileInfo(expectedFile).Length);
     }
 
     [Fact]
@@ -58,14 +62,14 @@ public class ParallelModelDownloaderTests : IDisposable
     {
         // Arrange: server explicitly rejects Range requests
         var stubValidator = new StubModelValidator { ShouldPass = true };
-        var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: 1024 * 1024 * 20, supportRanges: false);
+        var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: SynthOptions.SequentialFallbackFileSizeBytes, supportRanges: false);
         var downloader = new ParallelModelDownloader(new HttpClient(handler),
             NullLogger<ParallelModelDownloader>.Instance, stubValidator);
         var progressList = new List<DownloadProgress>();
         var progress = new Progress<DownloadProgress>(progressList.Add);
 
         // Act
-        await downloader.DownloadModelAsync("fallback-model", new[] { "http://synth/sequential.gguf" }, _tempTestDir, progress);
+        await downloader.DownloadModelAsync("fallback-model", new[] { SynthOptions.BaseUrl + "sequential.gguf" }, _tempTestDir, progress);
 
         // Assert
         Assert.NotEmpty(progressList);
@@ -73,7 +77,7 @@ public class ParallelModelDownloaderTests : IDisposable
 
         string expectedFile = Path.Combine(_tempTestDir, "sequential.gguf");
         Assert.True(File.Exists(expectedFile));
-        Assert.Equal(1024 * 1024 * 20, new FileInfo(expectedFile).Length);
+        Assert.Equal(SynthOptions.SequentialFallbackFileSizeBytes, new FileInfo(expectedFile).Length);
     }
 
     [Fact]
@@ -81,7 +85,7 @@ public class ParallelModelDownloaderTests : IDisposable
     {
         // Arrange: massive virtual file to ensure it doesn't finish before cancellation
         var stubValidator = new StubModelValidator { ShouldPass = true };
-        var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: 1024L * 1024 * 1024 * 5); // 5 GB
+        var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: SynthOptions.CancellationTestFileSizeBytes);
         var downloader = new ParallelModelDownloader(new HttpClient(handler),
             NullLogger<ParallelModelDownloader>.Instance, stubValidator);
 
@@ -95,7 +99,7 @@ public class ParallelModelDownloaderTests : IDisposable
         // Act & Assert
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
-            await downloader.DownloadModelAsync("cancel-test", new[] { "http://synth/large.gguf" }, _tempTestDir, progress, cts.Token);
+            await downloader.DownloadModelAsync("cancel-test", new[] { SynthOptions.BaseUrl + "large.gguf" }, _tempTestDir, progress, cts.Token);
         });
 
         // Strict Physics Validation: Ensure the FileStream was disposed properly.
