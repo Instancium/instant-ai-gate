@@ -3,8 +3,10 @@
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Server.Configuration;
+using InstantAIGate.Server.Hubs;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -22,6 +24,7 @@ public sealed class ModelStartupWorker : IHostedService
     private readonly StartupModelSettings _startupSettings;
     private readonly StorageSettings _storageSettings;
     private readonly IConfiguration _configuration;
+    private readonly IHubContext<TelemetryHub, ITelemetryClient> _hubContext;
     private readonly ILogger<ModelStartupWorker> _logger;
 
     public ModelStartupWorker(
@@ -29,12 +32,14 @@ public sealed class ModelStartupWorker : IHostedService
         IOptions<StartupModelSettings> startupOptions,
         IOptions<StorageSettings> storageOptions,
         IConfiguration configuration,
+        IHubContext<TelemetryHub, ITelemetryClient> hubContext,
         ILogger<ModelStartupWorker> logger)
     {
         _serviceProvider = serviceProvider;
         _startupSettings = startupOptions.Value;
         _storageSettings = storageOptions.Value;
         _configuration = configuration;
+        _hubContext = hubContext;
         _logger = logger;
     }
 
@@ -87,10 +92,18 @@ public sealed class ModelStartupWorker : IHostedService
             }
 
             string destinationDir = Path.Combine(_storageSettings.ModelsDirectory, targetModel.Id);
-            var progress = new Progress<DownloadProgress>(p =>
+
+            var progress = new Progress<DownloadProgress>(async p =>
             {
-                _logger.LogInformation("Downloading '{ModelId}': {Percentage:F1}% ({SpeedMB:F2} MB/s)",
-                    p.ModelId, p.Percentage, p.SpeedBytesPerSecond / (1024.0 * 1024.0));
+                try
+                {
+                    // Broadcast structured progress to UI clients via SignalR
+                    await _hubContext.Clients.All.ReceiveSsrProgress(p);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogTrace(ex, "Failed to broadcast startup download progress.");
+                }
             });
 
             await downloader.DownloadModelAsync(
@@ -128,6 +141,8 @@ public sealed class ModelStartupWorker : IHostedService
             MaxContexts = hwProfile.MaxContexts
         };
 
+        // UI clients will receive real-time memory allocation logs via SignalR ReceiveLog 
+        // intercepted by SignalRLoggerProvider from the native engine
         _logger.LogInformation("Loading startup model '{RepoId}' into memory using profile '{Profile}'...", targetModel.Id, profileName);
         await modelManager.LoadModelAsync(config, cancellationToken);
         _logger.LogInformation("Startup model '{RepoId}' loaded successfully.", targetModel.Id);
