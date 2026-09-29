@@ -127,6 +127,14 @@ public class GitService : IGitService
         }
     }
 
+
+    public async Task<string> GetGitLogWithStatusAsync(string fromTag, CancellationToken ct)
+    {
+        string range = string.IsNullOrWhiteSpace(fromTag) ? "-n 20" : $"{fromTag}..HEAD";
+        string arguments = $"log {range} --oneline --name-status";
+        return await _processRunner.ExecuteWithOutputAsync("git", arguments, _workingDirectory, ct);
+    }
+
     private string GetSolutionRootDirectory()
     {
         var directory = new DirectoryInfo(Environment.CurrentDirectory);

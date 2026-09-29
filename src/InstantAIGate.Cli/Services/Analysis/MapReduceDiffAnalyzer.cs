@@ -11,6 +11,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+public record FileDiffStatus(string Path, string Status);
+
 public class MapReduceDiffAnalyzer : IDiffAnalyzer
 {
     private readonly IGatewayClient _gatewayClient;
@@ -28,15 +30,17 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         AnsiConsole.MarkupLine($"[dim]Verifying model '{_modelId}' is loaded in VRAM...[/]");
         await _gatewayClient.LoadModelAsync(_modelId, ct);
 
-   
-        var changedFiles = ExtractChangedFiles(rawDiff);
+        var totalFileStatuses = ExtractFileStatuses(rawDiff);
 
         if (rawDiff.Length <= SafeCharLimit)
         {
-            return await GenerateFinalCommitAsync(rawDiff, changedFiles, ct);
+            return await GenerateFinalCommitAsync(rawDiff, totalFileStatuses, ct);
         }
 
-        AnsiConsole.MarkupLine($"\n[dim]Diff is too large ({rawDiff.Length} chars). Engaging Map-Reduce processing...[/]");
+        AnsiConsole.MarkupLine($"""
+
+            [dim]Diff is too large ({rawDiff.Length} chars). Engaging Map-Reduce processing...[/]
+            """);
 
         var chunks = ChunkDiffByFiles(rawDiff, SafeCharLimit);
         var partialSummaries = new StringBuilder();
@@ -45,37 +49,67 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         {
             ct.ThrowIfCancellationRequested();
             AnsiConsole.MarkupLine($"[dim]Analyzing part {i + 1}/{chunks.Count}...[/]");
-            string summary = await SummarizeChunkAsync(chunks[i], changedFiles, ct);
+            string summary = await SummarizeChunkAsync(chunks[i], ct);
             partialSummaries.AppendLine($"- {summary}");
         }
 
         AnsiConsole.MarkupLine("[dim]Aggregating partial summaries into final commit message...[/]");
-        return await GenerateFinalCommitAsync(partialSummaries.ToString(), changedFiles, ct);
+        return await GenerateFinalCommitAsync(partialSummaries.ToString(), totalFileStatuses, ct);
     }
 
-    private List<string> ExtractChangedFiles(string rawDiff)
+    private static List<FileDiffStatus> ExtractFileStatuses(string diffText)
     {
-        var files = new List<string>();
-        using var reader = new StringReader(rawDiff);
+        var result = new List<FileDiffStatus>();
+        using var reader = new StringReader(diffText);
         string? line;
+        string? currentFile = null;
+        string currentStatus = "MODIFIED";
 
         while ((line = reader.ReadLine()) != null)
         {
             if (line.StartsWith("diff --git a/"))
             {
-                var parts = line.Split(' ');
-      
-                if (parts.Length >= 3 && parts[2].StartsWith("a/"))
+                if (currentFile != null)
                 {
-                    files.Add(parts[2].Substring(2));
+                    result.Add(new FileDiffStatus(currentFile, currentStatus));
                 }
+
+                var parts = line.Split(' ');
+                if (parts.Length >= 4 && parts[3].StartsWith("b/"))
+                {
+                    currentFile = parts[3][2..];
+                }
+                else if (parts.Length >= 3 && parts[2].StartsWith("a/"))
+                {
+                    currentFile = parts[2][2..];
+                }
+                currentStatus = "MODIFIED";
+                continue;
+            }
+
+            if (line.StartsWith("new file mode"))
+            {
+                currentStatus = "ADDED";
+            }
+            else if (line.StartsWith("deleted file mode"))
+            {
+                currentStatus = "DELETED";
+            }
+            else if (line.StartsWith("similarity index") || line.StartsWith("rename from"))
+            {
+                currentStatus = "RENAMED";
             }
         }
 
-        return files.Distinct().ToList();
+        if (currentFile != null)
+        {
+            result.Add(new FileDiffStatus(currentFile, currentStatus));
+        }
+
+        return result.DistinctBy(f => f.Path).ToList();
     }
 
-    private List<string> ChunkDiffByFiles(string rawDiff, int maxLength)
+    private static List<string> ChunkDiffByFiles(string rawDiff, int maxLength)
     {
         var chunks = new List<string>();
         var currentChunk = new StringBuilder();
@@ -104,10 +138,30 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         return chunks;
     }
 
-    private async Task<string> SummarizeChunkAsync(string diffChunk, List<string> changedFiles, CancellationToken ct)
+    private async Task<string> SummarizeChunkAsync(string diffChunk, CancellationToken ct)
     {
-        string filesList = string.Join(", ", changedFiles);
-        string prompt = $"You are analyzing a partial diff for the following files: [{filesList}]. Briefly summarize the code changes in 1-2 sentences. Ignore formatting changes.\n\n{diffChunk}";
+        var chunkStatuses = ExtractFileStatuses(diffChunk);
+        string filesHeader = chunkStatuses.Count > 0
+            ? string.Join("\n", chunkStatuses.Select(f => $"- [{f.Status}] {f.Path}"))
+            : "- [MODIFIED] Unknown files";
+
+        string prompt = $"""
+            You are an expert source code reviewer analyzing a partial git diff.
+
+            FILES IN THIS CHUNK WITH PRECISE STATUS:
+            {filesHeader}
+
+            INSTRUCTIONS:
+            1. Summarize what was modified, added, or deleted in 1-2 concise sentences.
+            2. CRITICAL ACCURACY RULE:
+               - If a file is marked [MODIFIED], describe updates, fixes, or extensions to existing code. NEVER state that the file is created or added, even if lines are inserted (+).
+               - Only describe a file as new or created if it is explicitly marked [ADDED].
+               - Describe files marked [DELETED] as removed.
+            3. Do NOT output markdown code fences, headers, or quotes.
+
+            DIFF:
+            {diffChunk}
+            """;
 
         var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
         var sb = new StringBuilder();
@@ -117,22 +171,37 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
             sb.Append(chunk);
         }
 
-        return sb.ToString().Trim();
+        return sb.ToString().Trim(' ', '\r', '\n', '`', '"');
     }
 
-    private async Task<string> GenerateFinalCommitAsync(string aggregatedContext, List<string> changedFiles, CancellationToken ct)
+    private async Task<string> GenerateFinalCommitAsync(string aggregatedContext, List<FileDiffStatus> fileStatuses, CancellationToken ct)
     {
-        string filesList = string.Join(", ", changedFiles);
-        string prompt = $@"Analyze the following diff context and generate a complete Conventional Commit message. RULES:
-1. MUST be exclusively in English.
-2. First line (Title): Format as type(scope): description. STRICTLY under 72 characters.
-3. CRITICAL FILE TYPE RULE: You MUST base the 'type' and 'scope' on the actual files changed: [{filesList}]. 
-   - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs' regardless of the technical terms in the text.
-   - Do not guess the architectural scope based on the text if the file name dictates otherwise.
-4. Second line: MUST be completely blank.
-5. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed.
+        string fileListText = string.Join("\n", fileStatuses.Select(f => $"- [{f.Status.ToUpperInvariant()}] {f.Path}"));
 
-Context: {aggregatedContext}";
+        string prompt = $"""
+            You are an expert developer generating a Conventional Commit message.
+            Strictly adhere to the provided file statuses and diff context.
+
+            FILE CHANGE REGISTRY:
+            {fileListText}
+
+            RULES:
+            1. MUST be exclusively in English.
+            2. First line (Title): Format as type(scope): description. STRICTLY under 72 characters.
+            3. CRITICAL STATUS ACCURACY RULES:
+               - NEVER label a file as 'created', 'introduced', or 'added' if its status is [MODIFIED]. Use verbs like 'update', 'refactor', 'enhance', 'fix'.
+               - ONLY treat files with status [ADDED] as newly created files.
+               - Files with status [DELETED] must be described as removed or deleted.
+               - If diff chunks show added lines (+) inside a [MODIFIED] file, it means code was appended or updated, NOT that the file is new.
+            4. FILE TYPE AND SCOPE RULE:
+               - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs'.
+               - Do not guess the architectural scope from code terms if file paths indicate another layer.
+            5. Second line: MUST be completely blank.
+            6. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed, preserving exact file statuses.
+
+            Context:
+            {aggregatedContext}
+            """;
 
         var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
         var sb = new StringBuilder();

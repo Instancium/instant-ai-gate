@@ -59,7 +59,7 @@ public class MergeAndPublishStep : IPipelineStep
                 ctx.Status("Generating AI Release Notes...");
                 string lastTag = string.Empty;
                 try { lastTag = await _gitService.GetLatestTagAsync(cancellationToken); } catch { }
-                string gitLog = await _gitService.GetGitLogAsync(lastTag, cancellationToken);
+                string gitLog = await _gitService.GetGitLogWithStatusAsync(lastTag, cancellationToken);
                 string releaseNotes = await GenerateChangelogAsync(gitLog, cancellationToken);
 
                 ctx.Status("Publishing Release to GitHub...");
