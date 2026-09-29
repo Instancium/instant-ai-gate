@@ -23,15 +23,14 @@ public class GenerateCommitMessageStep : IPipelineStep
     public async Task ExecuteAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         string diff = await _gitService.GetCachedDiffAsync(cancellationToken);
-
         if (string.IsNullOrWhiteSpace(diff))
         {
             context.CommitMessage = "chore: auto-commit updates";
             return;
         }
 
-        context.CommitMessage = await _diffAnalyzer.AnalyzeAndSummarizeAsync(diff, cancellationToken);
-
+        string diffStat = await _gitService.GetCachedDiffStatAsync(cancellationToken);
+        context.CommitMessage = await _diffAnalyzer.AnalyzeAndSummarizeAsync(diff, diffStat, cancellationToken);
         Spectre.Console.AnsiConsole.MarkupLine($"[green]Generated Message:[/] {context.CommitMessage}");
     }
 }

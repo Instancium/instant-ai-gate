@@ -19,13 +19,35 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
     private readonly string _modelId;
     private const int SafeCharLimit = 3000;
 
+    private static readonly HashSet<string> IgnoredExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".lock", ".min.js", ".min.css", ".map", ".svg", ".png", ".jpg", ".jpeg",
+        ".gif", ".ico", ".pdf", ".dll", ".so", ".exe", ".bin", ".gguf", ".zip",
+        ".tar", ".gz", ".wasm", ".bundle.js", ".Designer.cs", ".g.cs"
+    };
+
+    private static readonly string[] IgnoredFileSubstrings =
+    {
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "obj/Debug/",
+        "obj/Release/",
+        "bin/Debug/",
+        "bin/Release/",
+        ".min."
+    };
+
     public MapReduceDiffAnalyzer(IGatewayClient gatewayClient, string modelId)
     {
         _gatewayClient = gatewayClient;
         _modelId = modelId;
     }
 
-    public async Task<string> AnalyzeAndSummarizeAsync(string rawDiff, CancellationToken ct)
+    public Task<string> AnalyzeAndSummarizeAsync(string rawDiff, CancellationToken ct) =>
+        AnalyzeAndSummarizeAsync(rawDiff, string.Empty, ct);
+
+    public async Task<string> AnalyzeAndSummarizeAsync(string rawDiff, string diffStat, CancellationToken ct)
     {
         AnsiConsole.MarkupLine($"[dim]Verifying model '{_modelId}' is loaded in VRAM...[/]");
         await _gatewayClient.LoadModelAsync(_modelId, ct);
@@ -34,7 +56,7 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
 
         if (rawDiff.Length <= SafeCharLimit)
         {
-            return await GenerateFinalCommitAsync(rawDiff, totalFileStatuses, ct);
+            return await GenerateFinalCommitAsync(rawDiff, diffStat, totalFileStatuses, ct);
         }
 
         AnsiConsole.MarkupLine($"""
@@ -50,11 +72,27 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
             ct.ThrowIfCancellationRequested();
             AnsiConsole.MarkupLine($"[dim]Analyzing part {i + 1}/{chunks.Count}...[/]");
             string summary = await SummarizeChunkAsync(chunks[i], ct);
-            partialSummaries.AppendLine($"- {summary}");
+            if (!string.IsNullOrWhiteSpace(summary))
+            {
+                partialSummaries.AppendLine($"- {summary}");
+            }
         }
 
         AnsiConsole.MarkupLine("[dim]Aggregating partial summaries into final commit message...[/]");
-        return await GenerateFinalCommitAsync(partialSummaries.ToString(), totalFileStatuses, ct);
+        return await GenerateFinalCommitAsync(partialSummaries.ToString(), diffStat, totalFileStatuses, ct);
+    }
+
+    private static bool IsGeneratedOrBinary(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return false;
+
+        string extension = Path.GetExtension(filePath);
+        if (!string.IsNullOrEmpty(extension) && IgnoredExtensions.Contains(extension))
+        {
+            return true;
+        }
+
+        return IgnoredFileSubstrings.Any(sub => filePath.Contains(sub, StringComparison.OrdinalIgnoreCase));
     }
 
     private static List<FileDiffStatus> ExtractFileStatuses(string diffText)
@@ -115,19 +153,37 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         var currentChunk = new StringBuilder();
         using var reader = new StringReader(rawDiff);
         string? line;
+        bool isCurrentFileIgnored = false;
 
         while ((line = reader.ReadLine()) != null)
         {
-            if (line.StartsWith("diff --git a/") && currentChunk.Length > 0)
+            if (line.StartsWith("diff --git a/"))
             {
-                if (currentChunk.Length + line.Length > maxLength)
+                var parts = line.Split(' ');
+                string detectedPath = parts.Length >= 4 && parts[3].StartsWith("b/")
+                    ? parts[3][2..]
+                    : (parts.Length >= 3 && parts[2].StartsWith("a/") ? parts[2][2..] : string.Empty);
+
+                isCurrentFileIgnored = IsGeneratedOrBinary(detectedPath);
+
+                if (currentChunk.Length > 0 && currentChunk.Length + line.Length > maxLength)
                 {
                     chunks.Add(currentChunk.ToString());
                     currentChunk.Clear();
                 }
+
+                if (isCurrentFileIgnored)
+                {
+                    currentChunk.AppendLine(line);
+                    currentChunk.AppendLine($"[SKIPPED: Auto-generated/binary payload for {detectedPath}]");
+                    continue;
+                }
             }
 
-            currentChunk.AppendLine(line);
+            if (!isCurrentFileIgnored)
+            {
+                currentChunk.AppendLine(line);
+            }
         }
 
         if (currentChunk.Length > 0)
@@ -148,15 +204,17 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         string prompt = $"""
             You are an expert source code reviewer analyzing a partial git diff.
 
-            FILES IN THIS CHUNK WITH PRECISE STATUS:
+            FILES IN THIS CHUNK WITH STATUS:
             {filesHeader}
 
             INSTRUCTIONS:
             1. Summarize what was modified, added, or deleted in 1-2 concise sentences.
-            2. CRITICAL ACCURACY RULE:
-               - If a file is marked [MODIFIED], describe updates, fixes, or extensions to existing code. NEVER state that the file is created or added, even if lines are inserted (+).
+            2. CRITICAL ACCURACY RULES:
+               - If a file is marked [MODIFIED], describe changes/fixes to existing code. NEVER state that the file is created or added, even if lines are inserted (+).
                - Only describe a file as new or created if it is explicitly marked [ADDED].
                - Describe files marked [DELETED] as removed.
+               - Describe files marked [RENAMED] as renamed or moved.
+               - Ignore lines mentioning [SKIPPED: Auto-generated/binary payload].
             3. Do NOT output markdown code fences, headers, or quotes.
 
             DIFF:
@@ -174,16 +232,27 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         return sb.ToString().Trim(' ', '\r', '\n', '`', '"');
     }
 
-    private async Task<string> GenerateFinalCommitAsync(string aggregatedContext, List<FileDiffStatus> fileStatuses, CancellationToken ct)
+    private async Task<string> GenerateFinalCommitAsync(
+        string aggregatedContext,
+        string diffStat,
+        List<FileDiffStatus> fileStatuses,
+        CancellationToken ct)
     {
         string fileListText = string.Join("\n", fileStatuses.Select(f => $"- [{f.Status.ToUpperInvariant()}] {f.Path}"));
+        string statSection = string.IsNullOrWhiteSpace(diffStat)
+            ? string.Empty
+            : $"""
+            
+            DIFF VOLUME STATISTICS:
+            {diffStat}
+            """;
 
         string prompt = $"""
             You are an expert developer generating a Conventional Commit message.
-            Strictly adhere to the provided file statuses and diff context.
+            Strictly adhere to the provided file statuses, diff volume statistics, and context.
 
             FILE CHANGE REGISTRY:
-            {fileListText}
+            {fileListText}{statSection}
 
             RULES:
             1. MUST be exclusively in English.
@@ -192,6 +261,7 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
                - NEVER label a file as 'created', 'introduced', or 'added' if its status is [MODIFIED]. Use verbs like 'update', 'refactor', 'enhance', 'fix'.
                - ONLY treat files with status [ADDED] as newly created files.
                - Files with status [DELETED] must be described as removed or deleted.
+               - Files with status [RENAMED] must be described as renamed or moved.
                - If diff chunks show added lines (+) inside a [MODIFIED] file, it means code was appended or updated, NOT that the file is new.
             4. FILE TYPE AND SCOPE RULE:
                - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs'.
@@ -205,12 +275,10 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
 
         var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
         var sb = new StringBuilder();
-
         await foreach (var chunk in _gatewayClient.StreamChatAsync(_modelId, messages, ct))
         {
             sb.Append(chunk);
         }
-
         return sb.ToString().Trim();
     }
 }
