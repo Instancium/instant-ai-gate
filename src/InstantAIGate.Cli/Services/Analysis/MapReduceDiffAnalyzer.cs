@@ -239,46 +239,91 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         CancellationToken ct)
     {
         string fileListText = string.Join("\n", fileStatuses.Select(f => $"- [{f.Status.ToUpperInvariant()}] {f.Path}"));
-        string statSection = string.IsNullOrWhiteSpace(diffStat)
-            ? string.Empty
-            : $"""
-            
-            DIFF VOLUME STATISTICS:
-            {diffStat}
-            """;
+        string statSection = string.IsNullOrWhiteSpace(diffStat) ? string.Empty : $"""
+
+    DIFF VOLUME STATISTICS:
+    {diffStat}
+    """;
 
         string prompt = $"""
-            You are an expert developer generating a Conventional Commit message.
-            Strictly adhere to the provided file statuses, diff volume statistics, and context.
+    You are an expert developer generating a Conventional Commit message.
+    Strictly adhere to the provided file statuses, diff volume statistics, and context.
 
-            FILE CHANGE REGISTRY:
-            {fileListText}{statSection}
+    FILE CHANGE REGISTRY:
+    {fileListText}{statSection}
 
-            RULES:
-            1. MUST be exclusively in English.
-            2. First line (Title): Format as type(scope): description. STRICTLY under 72 characters.
-            3. CRITICAL STATUS ACCURACY RULES:
-               - NEVER label a file as 'created', 'introduced', or 'added' if its status is [MODIFIED]. Use verbs like 'update', 'refactor', 'enhance', 'fix'.
-               - ONLY treat files with status [ADDED] as newly created files.
-               - Files with status [DELETED] must be described as removed or deleted.
-               - Files with status [RENAMED] must be described as renamed or moved.
-               - If diff chunks show added lines (+) inside a [MODIFIED] file, it means code was appended or updated, NOT that the file is new.
-            4. FILE TYPE AND SCOPE RULE:
-               - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs'.
-               - Do not guess the architectural scope from code terms if file paths indicate another layer.
-            5. Second line: MUST be completely blank.
-            6. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed, preserving exact file statuses.
+    RULES:
+    1. MUST be exclusively in English.
+    2. First line (Title): Format as type(scope): description.
+       - HARD LIMIT: Target 50-65 characters. Absolute maximum is 72 characters.
+       - Be concise, direct, and imperative (e.g., 'feat(server): add startup worker tests').
+    3. CRITICAL STATUS ACCURACY RULES:
+       - NEVER label a file as 'created', 'introduced', or 'added' if its status is [MODIFIED]. Use verbs like 'update', 'refactor', 'enhance', 'fix'.
+       - ONLY treat files with status [ADDED] as newly created files.
+       - Files with status [DELETED] must be described as removed or deleted.
+       - Files with status [RENAMED] must be described as renamed or moved.
+       - If diff chunks show added lines (+) inside a [MODIFIED] file, it means code was appended or updated, NOT that the file is new.
+    4. FILE TYPE AND SCOPE RULE:
+       - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs'.
+       - Do not guess the architectural scope from code terms if file paths indicate another layer.
+    5. Second line: MUST be completely blank.
+    6. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed, preserving exact file statuses.
 
-            Context:
-            {aggregatedContext}
-            """;
+    Context:
+    {aggregatedContext}
+    """;
 
         var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
         var sb = new StringBuilder();
+
         await foreach (var chunk in _gatewayClient.StreamChatAsync(_modelId, messages, ct))
         {
             sb.Append(chunk);
         }
-        return sb.ToString().Trim();
+
+        string rawMessage = sb.ToString().Trim(' ', '\r', '\n', '`', '"');
+        return SanitizeCommitMessage(rawMessage);
+    }
+
+    private static string SanitizeCommitMessage(string rawMessage)
+    {
+        if (string.IsNullOrWhiteSpace(rawMessage))
+            return rawMessage;
+
+        var lines = rawMessage.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+        string title = lines[0].Trim();
+
+        const int maxHeaderLength = 72;
+        const int truncateAt = 69;
+
+        if (title.Length > maxHeaderLength)
+        {
+            title = string.Concat(title.AsSpan(0, truncateAt), "...");
+        }
+
+        if (lines.Length <= 1)
+            return title;
+
+        var bodyLines = lines.Skip(1).ToList();
+
+        // Ensure standard Git commit convention: exactly one blank line after title
+        while (bodyLines.Count > 0 && string.IsNullOrWhiteSpace(bodyLines[0]))
+        {
+            bodyLines.RemoveAt(0);
+        }
+
+        if (bodyLines.Count == 0)
+            return title;
+
+        var builder = new StringBuilder();
+        builder.AppendLine(title);
+        builder.AppendLine();
+
+        for (int i = 0; i < bodyLines.Count; i++)
+        {
+            builder.AppendLine(bodyLines[i]);
+        }
+
+        return builder.ToString().TrimEnd();
     }
 }

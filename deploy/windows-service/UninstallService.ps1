@@ -1,70 +1,54 @@
-<#
-.SYNOPSIS
-    Uninstalls the InstantAIGate Windows Service and optionally removes application files.
-#>
-param (
-    [string]$ServiceName = "InstantAIGate.Server",
-    [switch]$RemoveFiles,
-    [switch]$RemoveShortcut = $true
-)
+# Auto-elevate to Administrator
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Start-Process powershell.exe -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
 
-$ErrorActionPreference = "Stop"
-$InstallDir = $PSScriptRoot
+$ErrorActionPreference = "Continue"
 
-Write-Host "Starting uninstallation for $ServiceName..." -ForegroundColor Yellow
+# Hardcoded settings
+$ServiceName = "InstantAIGate.Server"
+$InstallDir  = "C:\ProgramData\InstantAIGate\Server"
 
-# 1. Stop and remove the Windows Service
-$existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-if ($existingService) {
-    if ($existingService.Status -eq 'Running') {
-        Write-Host "Stopping service $ServiceName..."
-        Stop-Service -Name $ServiceName -Force
-        Start-Sleep -Seconds 2
-    }
-    
-    Write-Host "Removing service from Windows Service Control Manager..."
+Write-Host ">>> Stopping and removing Windows Service: $ServiceName..." -ForegroundColor Cyan
+
+# 1. Stop and remove the service
+if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+    Write-Host "Stopping service..."
+    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+
+    Write-Host "Deleting service..."
     sc.exe delete $ServiceName
     Start-Sleep -Seconds 2
-    Write-Host "Service successfully removed." -ForegroundColor Green
 } else {
-    Write-Host "Service $ServiceName is not installed on this system." -ForegroundColor Yellow
+    Write-Host "Service $ServiceName is not installed." -ForegroundColor Yellow
 }
 
-# 2. Remove Desktop Shortcut
-if ($RemoveShortcut) {
-    $DesktopPath = [Environment]::GetFolderPath("Desktop")
-    $ShortcutPath = Join-Path $DesktopPath "InstantAIGate API.url"
-    
-    if (Test-Path $ShortcutPath) {
-        Remove-Item -Path $ShortcutPath -Force
-        Write-Host "Desktop shortcut removed: $ShortcutPath" -ForegroundColor Green
-    }
+# 2. Terminate any orphaned processes if still running
+$process = Get-Process -Name "InstantAIGate.Server" -ErrorAction SilentlyContinue
+if ($process) {
+    Write-Host "Killing running process..."
+    Stop-Process -Name "InstantAIGate.Server" -Force -ErrorAction SilentlyContinue
 }
 
-# 3. Optional: Remove application files from the installation directory
-if ($RemoveFiles) {
-    # Safety check: prevent accidental deletion of root or critical system directories
-    if ($InstallDir -and $InstallDir.Length -gt 3) {
-        Write-Host "Cleaning up application files from $InstallDir..." -ForegroundColor Yellow
-        
-        $CurrentScript = $MyInvocation.MyCommand.Name
-        
-        # Exclude the uninstaller script itself and the 'logs' directory if it exists
-        $itemsToDelete = Get-ChildItem -Path $InstallDir -Force | Where-Object { 
-            $_.Name -ne $CurrentScript -and $_.Name -ne 'logs' 
-        }
-        
-        foreach ($item in $itemsToDelete) {
-            Write-Host "Deleting: $($item.Name)"
-            Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        
-        Write-Host "Application files cleaned up successfully." -ForegroundColor Green
-    } else {
-        Write-Host "Skipping file removal to prevent accidental deletion of system directories." -ForegroundColor Red
-    }
+# 3. Clean up the installation directory
+if (Test-Path $InstallDir) {
+    Write-Host ">>> Removing installation directory: $InstallDir..." -ForegroundColor Cyan
+    Remove-Item -Path $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "================================================================" -ForegroundColor Yellow
-Write-Host "SERVICE UNINSTALLATION COMPLETED" -ForegroundColor Green
-Write-Host "================================================================" -ForegroundColor Yellow
+# 4. Remove desktop shortcut if present
+$DesktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "InstantAIGate API.url"
+if (Test-Path $DesktopShortcut) {
+    Write-Host "Removing desktop shortcut..."
+    Remove-Item -Path $DesktopShortcut -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host ""
+Write-Host "=== SERVICE UNINSTALLED AND CLEANED SUCCESSFULLY ===" -ForegroundColor Green
+Write-Host "===================================================" -ForegroundColor Green
+Write-Host ""
+
+# Keep the window open
+Read-Host "Press Enter to exit"
