@@ -16,7 +16,9 @@ public class GatewayTestFixture : WebApplicationFactory<Program>
             {
                 { "InstantAIGate:AdminApiKey", "test-admin-secret" },
                 { "Kestrel:Endpoints:PublicEndpoint:Url", "http://0.0.0.0:5000" },
-                { "Kestrel:Endpoints:AdminEndpoint:Url", "http://0.0.0.0:5001" }
+                { "Kestrel:Endpoints:AdminEndpoint:Url", "http://0.0.0.0:5001" },
+                // FIX: Disable background worker to prevent shared state mutation during tests
+                { "InstantAIGate:StartupModel:Enabled", "false" }
             });
         });
 
