@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using InstantAIGate.SSR.Contracts;
+using InstantAIGate.SSR.Dtos;
 
 namespace InstantAIGate.Core.Tests.Server;
 
@@ -17,7 +19,7 @@ public class GatewayTestFixture : WebApplicationFactory<Program>
                 { "InstantAIGate:AdminApiKey", "test-admin-secret" },
                 { "Kestrel:Endpoints:PublicEndpoint:Url", "http://0.0.0.0:5000" },
                 { "Kestrel:Endpoints:AdminEndpoint:Url", "http://0.0.0.0:5001" },
-                // FIX: Disable background worker to prevent shared state mutation during tests
+                // Disable background startup autoload during tests
                 { "InstantAIGate:StartupModel:Enabled", "false" }
             });
         });
@@ -25,7 +27,28 @@ public class GatewayTestFixture : WebApplicationFactory<Program>
         builder.ConfigureServices(services =>
         {
             services.AddSingleton<IStartupFilter, TestServerPortEmulatorFilter>();
+
+            // Mock model downloader to avoid real external HTTP traffic during integration tests
+            services.AddSingleton<IModelDownloader, TestModelDownloaderStub>();
         });
+    }
+
+    private sealed class TestModelDownloaderStub : IModelDownloader
+    {
+        public async Task DownloadModelAsync(
+            string modelId,
+            IReadOnlyList<string> downloadUrls,
+            string destinationDirectory,
+            IProgress<DownloadProgress> progress,
+            CancellationToken ct = default)
+        {
+            // Emulate instant progress broadcasts
+            progress.Report(new DownloadProgress(modelId, 50_000_000, 100_000_000, 25_000_000, 50.0f));
+            await Task.Delay(50, ct);
+            progress.Report(new DownloadProgress(modelId, 100_000_000, 100_000_000, 25_000_000, 100.0f));
+        }
+
+        public Task CancelDownloadAsync(string modelId) => Task.CompletedTask;
     }
 }
 
