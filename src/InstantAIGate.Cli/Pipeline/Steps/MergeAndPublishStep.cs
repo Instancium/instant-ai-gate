@@ -56,10 +56,17 @@ public class MergeAndPublishStep : IPipelineStep
                 await _gitService.MergeNoFastForwardAsync(originalBranch, $"chore(release): merge {originalBranch} into {targetBranch} for {versionTag}", cancellationToken);
                 await _gitService.PushBranchAsync(targetBranch, cancellationToken);
 
+           
                 ctx.Status("Generating AI Release Notes...");
                 string lastTag = string.Empty;
-                try { lastTag = await _gitService.GetLatestTagAsync(cancellationToken); } catch { }
-                string gitLog = await _gitService.GetGitLogAsync(lastTag, cancellationToken);
+                try
+                {
+                    lastTag = await _gitService.GetLatestTagAsync(cancellationToken);
+                }
+                catch { }
+
+              
+                string gitLog = await _gitService.GetGitLogWithStatusAsync(lastTag, cancellationToken);
                 string releaseNotes = await GenerateChangelogAsync(gitLog, cancellationToken);
 
                 ctx.Status("Publishing Release to GitHub...");
@@ -68,22 +75,30 @@ public class MergeAndPublishStep : IPipelineStep
 
                 ctx.Status("Syncing working branch...");
                 await _gitService.CheckoutAsync(originalBranch, cancellationToken);
-                await _gitService.MergeAsync(targetBranch, $"chore(sync): merge {targetBranch} back to {originalBranch}", cancellationToken);
+                await _gitService.MergeNoFastForwardAsync(targetBranch, $"chore(sync): merge {targetBranch} back to {originalBranch}", cancellationToken);
                 await _gitService.PushBranchAsync(originalBranch, cancellationToken);
             });
     }
 
     private async Task<string> GenerateChangelogAsync(string gitLog, CancellationToken ct)
     {
-        string prompt = $@"Analyze the following git commit log and generate a professional release changelog.
-RULES:
-1. MUST be exclusively in English.
-2. Group changes logically (e.g., Features, Bug Fixes, Chores).
-3. Keep descriptions concise.
-4. Provide ONLY the changelog text. Do not use markdown code blocks or quotes.
+        string prompt = $"""
+        Analyze the following git commit log with file status flags and generate a professional release changelog.
 
-Commit Log:
-{gitLog}";
+        RULES:
+        1. MUST be exclusively in English.
+        2. Group changes logically (e.g., Features, Bug Fixes, Chores, Refactoring).
+        3. CRITICAL STATUS ACCURACY RULES:
+           - Status marker 'A' indicates a newly created file.
+           - Status marker 'M' indicates an existing file was modified/updated. NEVER describe 'M' as new or added.
+           - Status marker 'D' indicates a file was deleted.
+           - Status marker 'R' indicates a file was renamed or moved.
+        4. Keep descriptions concise and high-level.
+        5. Provide ONLY the changelog text. Do NOT use markdown code blocks or outer quotes.
+
+        Commit Log with File Changes:
+        {gitLog}
+        """;
 
         var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
         var sb = new StringBuilder();

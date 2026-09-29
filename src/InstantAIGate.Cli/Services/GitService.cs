@@ -16,33 +16,15 @@ public class GitService : IGitService
         _workingDirectory = GetSolutionRootDirectory();
     }
 
-    public async Task MergeAsync(string sourceBranch, string message, CancellationToken ct)
-    {
+    public async Task AddAllAsync(CancellationToken ct) => await ExecuteCommandAsync("git", "add .", ct);
 
-        string diffCheck = await _processRunner.ExecuteWithOutputAsync("git", $"rev-list HEAD..{sourceBranch}", _workingDirectory, ct);
-
-        if (string.IsNullOrWhiteSpace(diffCheck))
-        {
-            return;
-        }
-
-        string tempFilePath = Path.GetTempFileName();
-        try
-        {
-            await File.WriteAllTextAsync(tempFilePath, message, ct);
-            await ExecuteCommandAsync("git", $"merge {sourceBranch} -F \"{tempFilePath}\"", ct);
-        }
-        finally
-        {
-            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
-        }
-    }
-
-    public async Task AddAllAsync(CancellationToken ct) =>
-        await ExecuteCommandAsync("git", "add .", ct);
 
     public async Task<string> GetCachedDiffAsync(CancellationToken ct) =>
-        await _processRunner.ExecuteWithOutputAsync("git", "diff --cached", _workingDirectory, ct);
+        await _processRunner.ExecuteWithOutputAsync("git", "diff --cached -M", _workingDirectory, ct);
+
+
+    public async Task<string> GetCachedDiffStatAsync(CancellationToken ct) =>
+        await _processRunner.ExecuteWithOutputAsync("git", "diff --cached -M --stat", _workingDirectory, ct);
 
     public async Task CommitAsync(string message, CancellationToken ct)
     {
@@ -78,7 +60,6 @@ public class GitService : IGitService
 
     public async Task MergeNoFastForwardAsync(string sourceBranch, string message, CancellationToken ct)
     {
- 
         string diffCheck = await _processRunner.ExecuteWithOutputAsync("git", $"diff HEAD..{sourceBranch}", _workingDirectory, ct);
         if (string.IsNullOrWhiteSpace(diffCheck))
         {
@@ -111,10 +92,15 @@ public class GitService : IGitService
 
     public async Task<string> GetGitLogAsync(string fromTag, CancellationToken ct)
     {
-        string arguments = string.IsNullOrWhiteSpace(fromTag)
-            ? "log -n 20 --oneline"
-            : $"log {fromTag}..HEAD --oneline";
+        string arguments = string.IsNullOrWhiteSpace(fromTag) ? "log -n 20 --oneline" : $"log {fromTag}..HEAD --oneline";
+        return await _processRunner.ExecuteWithOutputAsync("git", arguments, _workingDirectory, ct);
+    }
 
+  
+    public async Task<string> GetGitLogWithStatusAsync(string fromTag, CancellationToken ct)
+    {
+        string range = string.IsNullOrWhiteSpace(fromTag) ? "-n 20" : $"{fromTag.Trim()}..HEAD";
+        string arguments = $"log {range} --oneline --name-status -M";
         return await _processRunner.ExecuteWithOutputAsync("git", arguments, _workingDirectory, ct);
     }
 

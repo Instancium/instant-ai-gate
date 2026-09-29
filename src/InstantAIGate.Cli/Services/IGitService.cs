@@ -7,9 +7,9 @@ public interface IGitService
 {
     Task AddAllAsync(CancellationToken ct);
     Task<string> GetCachedDiffAsync(CancellationToken ct);
+    Task<string> GetCachedDiffStatAsync(CancellationToken ct);
     Task CommitAsync(string message, CancellationToken ct);
     Task PushCurrentBranchAsync(CancellationToken ct);
-
     Task<string> GetCurrentBranchAsync(CancellationToken ct);
     Task CheckoutAsync(string branchName, CancellationToken ct);
     Task PullAsync(CancellationToken ct);
@@ -19,5 +19,5 @@ public interface IGitService
     Task DeleteLocalBranchAsync(string branchName, CancellationToken ct);
     Task<string> GetLatestTagAsync(CancellationToken ct);
     Task<string> GetGitLogAsync(string fromTag, CancellationToken ct);
-    Task MergeAsync(string sourceBranch, string message, CancellationToken ct);
+    Task<string> GetGitLogWithStatusAsync(string fromTag, CancellationToken ct);
 }

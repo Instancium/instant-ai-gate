@@ -487,17 +487,18 @@ public class ReleasePipelineService
     private async Task<string> GenerateReleaseNotesAsync(CancellationToken cancellationToken)
     {
         string lastTag = await GetCommandOutputAsync("git", "describe --tags --abbrev=0", cancellationToken);
-        string gitLog = string.IsNullOrWhiteSpace(lastTag)
-            ? await GetCommandOutputAsync("git", "log --oneline -n 20", cancellationToken)
-            : await GetCommandOutputAsync("git", $"log {lastTag.Trim()}..HEAD --oneline", cancellationToken);
+        string arguments = string.IsNullOrWhiteSpace(lastTag)
+            ? "log -n 20 --oneline --name-status"
+            : $"log {lastTag.Trim()}..HEAD --oneline --name-status";
+        string gitLog = await GetCommandOutputAsync("git", arguments, cancellationToken);
 
         if (string.IsNullOrWhiteSpace(gitLog)) return "Maintenance and dependency updates.";
 
         string prompt = $@"Analyze the following git commit log and generate a professional release description in English.
-Group the changes logically (e.g., Features, Bug Fixes, Chores).
-Keep it concise and professional. Do not use markdown headers larger than h3.
-Commit Log:
-{gitLog}";
+            Group the changes logically (e.g., Features, Bug Fixes, Chores).
+            Keep it concise and professional. Do not use markdown headers larger than h3.
+            Commit Log:
+            {gitLog}";
 
         var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
         var sb = new StringBuilder();
