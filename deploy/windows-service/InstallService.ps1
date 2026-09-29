@@ -1,154 +1,99 @@
-<#
-.SYNOPSIS
-    Installs and configures the InstantAIGate Windows Service.
-#>
-param (
-    [string]$ServiceName = "InstantAIGate.Server",
-    [string]$DisplayName = "InstantAIGate AI Inference Server",
-    [int]$PublicPort = 0,
-    [int]$AdminPort = 0,
-    [string]$AdminApiKey = "",
-    [bool]$CreateDesktopShortcut = $true
-)
-
-# Helper function to find a free port
-function Get-FreePort {
-    param([int]$StartPort = 5000, [int]$EndPort = 5100)
-    for ($i = $StartPort; $i -le $EndPort; $i++) {
-        $inUse = Get-NetTCPConnection -LocalPort $i -ErrorAction SilentlyContinue
-        if (-not $inUse) {
-            return $i
-        }
-    }
-    throw "No free ports found in range $StartPort-$EndPort"
-}
-
-# Helper function to extract port from URL
-function Get-PortFromUrl {
-    param([string]$Url)
-    if ($Url -match ':(\d+)$') {
-        return [int]$matches[1]
-    }
-    return 0
+# Auto-elevate to Administrator
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Start-Process powershell.exe -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
 }
 
 $ErrorActionPreference = "Stop"
-$InstallDir = $PSScriptRoot
-$ExePath = Join-Path $InstallDir "InstantAIGate.Server.exe"
-$AppSettingsPath = Join-Path $InstallDir "appsettings.json"
 
-# Determine if ports were explicitly provided
-$explicitPublicPort = $PSBoundParameters.ContainsKey('PublicPort')
-$explicitAdminPort = $PSBoundParameters.ContainsKey('AdminPort')
-$explicitApiKey = $PSBoundParameters.ContainsKey('AdminApiKey')
+# Hardcoded settings
+$ServiceName = "InstantAIGate.Server"
+$DisplayName = "InstantAIGate AI Inference Server"
+$PublicPort  = 5000
+$AdminPort   = 5001
+$AdminApiKey = "ChangeMeSuperSecureAdminApiKey123"
 
-# Check if service already exists and read existing config
-$existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-$existingConfig = $null
-if (Test-Path $AppSettingsPath) {
-    $existingConfig = Get-Content $AppSettingsPath -Raw | ConvertFrom-Json
-}
+# Installation target directory
+$InstallDir  = "C:\ProgramData\InstantAIGate\Server"
+$ExePath     = Join-Path $InstallDir "InstantAIGate.Server.exe"
+$ConfigPath  = Join-Path $InstallDir "appsettings.json"
 
-# Resolve Public Port
-if ($existingService -and -not $explicitPublicPort -and $existingConfig) {
-    $PublicPort = Get-PortFromUrl $existingConfig.Kestrel.Endpoints.PublicEndpoint.Url
-} elseif (-not $explicitPublicPort -or $PublicPort -eq 0) {
-    $PublicPort = Get-FreePort -StartPort 5000
-}
+# Search for .csproj or .sln
+$SearchDir  = $PSScriptRoot
+$TargetFile = $null
 
-# Resolve Admin Port
-if ($existingService -and -not $explicitAdminPort -and $existingConfig) {
-    $AdminPort = Get-PortFromUrl $existingConfig.Kestrel.Endpoints.AdminEndpoint.Url
-} elseif (-not $explicitAdminPort -or $AdminPort -eq 0) {
-    $startAdminPort = if ($PublicPort -gt 0) { $PublicPort + 1 } else { 5000 }
-    $AdminPort = Get-FreePort -StartPort $startAdminPort
-}
-
-# Dynamically construct the description using the provided ports
-$Description = "Enterprise-grade local AI gateway providing secure, autonomous inference with OpenAI-compatible endpoints, robust request queuing, and strict administrative isolation. Public API: port $PublicPort | Admin API: port $AdminPort."
-
-Write-Host "Starting installation for $ServiceName..."
-Write-Host "Using Public Port: $PublicPort, Admin Port: $AdminPort"
-
-# 1. Generate secure API key if not provided
-if ([string]::IsNullOrWhiteSpace($AdminApiKey)) {
-    if ($existingConfig -and $existingConfig.InstantAIGate -and $existingConfig.InstantAIGate.AdminApiKey) {
-        $AdminApiKey = $existingConfig.InstantAIGate.AdminApiKey
-    } else {
-        $rngBytes = New-Object Byte[] 32
-        [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rngBytes)
-        
-        # Generate a clean 32-character alphanumeric string
-        $AdminApiKey = [System.Convert]::ToBase64String($rngBytes) -replace "[^a-zA-Z0-9]", ""
-        $AdminApiKey = $AdminApiKey.Substring(0, 32)
+while ($SearchDir) {
+    $found = Get-ChildItem -Path $SearchDir -Filter "InstantAIGate.Server.csproj" -File -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $found) {
+        $found = Get-ChildItem -Path $SearchDir -Filter "*.sln" -File -ErrorAction SilentlyContinue | Select-Object -First 1
     }
+    if ($found) {
+        $TargetFile = $found.FullName
+        break
+    }
+    $parent = Split-Path -Path $SearchDir -Parent
+    if ($parent -eq $SearchDir) { break }
+    $SearchDir = $parent
 }
 
-# 2. Generate a pristine production configuration
-Write-Host "Generating pristine production appsettings.json..."
-$prodConfig = @{
-    Logging = @{
-        LogLevel = @{
-            Default = "Information"
-            "Microsoft.AspNetCore" = "Warning"
-        }
-    }
-    Kestrel = @{
-        Endpoints = @{
-            PublicEndpoint = @{
-                Url = "http://0.0.0.0:$PublicPort"
-            }
-            AdminEndpoint = @{
-                Url = "http://0.0.0.0:$AdminPort"
-            }
-        }
-    }
-    InstantAIGate = @{
-        AdminApiKey = $AdminApiKey
-    }
-    AllowedHosts = "*"
+if (-not $TargetFile) {
+    Write-Error "Project or solution file could not be found automatically. Please check directory structure."
+    Read-Host "Press Enter to exit"
+    exit 1
 }
 
-# Overwrite the configuration
-$prodConfig | ConvertTo-Json -Depth 10 | Set-Content $AppSettingsPath -Encoding UTF8
-Write-Host "Clean production configuration generated and saved."
+# Ensure destination directory exists
+if (-not (Test-Path $InstallDir)) {
+    Write-Host ">>> Creating directory $InstallDir..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+}
 
-# 3. Register Windows Service
-if ($existingService) {
-    Write-Host "Service $ServiceName already exists. Stopping and removing..."
+# Stop existing service before publishing
+if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+    Write-Host ">>> Stopping existing service before build/publish..." -ForegroundColor Cyan
     Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
     sc.exe delete $ServiceName
     Start-Sleep -Seconds 2
 }
 
-Write-Host "Registering service in Windows Service Control Manager..."
+Write-Host ">>> Found target: $TargetFile" -ForegroundColor Cyan
+Write-Host ">>> Building and publishing project to $InstallDir..." -ForegroundColor Cyan
+dotnet publish "$TargetFile" -c Release -o "$InstallDir" --nologo
+
+# Patch existing full appsettings.json without dropping other properties
+if (Test-Path $ConfigPath) {
+    Write-Host ">>> Updating ports and API key in appsettings.json..." -ForegroundColor Cyan
+    $settings = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+
+    if (-not $settings.Kestrel) { $settings | Add-Member -MemberType NoteProperty -Name "Kestrel" -Value ([PSCustomObject]@{}) }
+    if (-not $settings.Kestrel.Endpoints) { $settings.Kestrel | Add-Member -MemberType NoteProperty -Name "Endpoints" -Value ([PSCustomObject]@{}) }
+    if (-not $settings.Kestrel.Endpoints.PublicEndpoint) { $settings.Kestrel.Endpoints | Add-Member -MemberType NoteProperty -Name "PublicEndpoint" -Value ([PSCustomObject]@{}) }
+    if (-not $settings.Kestrel.Endpoints.AdminEndpoint) { $settings.Kestrel.Endpoints | Add-Member -MemberType NoteProperty -Name "AdminEndpoint" -Value ([PSCustomObject]@{}) }
+    if (-not $settings.InstantAIGate) { $settings | Add-Member -MemberType NoteProperty -Name "InstantAIGate" -Value ([PSCustomObject]@{}) }
+
+    $settings.Kestrel.Endpoints.PublicEndpoint.Url = "http://0.0.0.0:$PublicPort"
+    $settings.Kestrel.Endpoints.AdminEndpoint.Url = "http://0.0.0.0:$AdminPort"
+    $settings.InstantAIGate.AdminApiKey = $AdminApiKey
+
+    $settings | ConvertTo-Json -Depth 20 | Set-Content -Path $ConfigPath -Encoding UTF8
+}
+
+Write-Host ">>> Registering Windows Service..." -ForegroundColor Cyan
 New-Service -Name $ServiceName `
     -BinaryPathName "`"$ExePath`"" `
     -DisplayName $DisplayName `
-    -Description $Description `
     -StartupType Automatic
 
-# 4. Start the Service
-Write-Host "Starting $ServiceName..."
+Write-Host ">>> Starting service..." -ForegroundColor Cyan
 Start-Service -Name $ServiceName
 
-# 5. Create Desktop Shortcut
-if ($CreateDesktopShortcut) {
-    Write-Host "Creating desktop shortcut for the API..."
-    $DesktopPath = [Environment]::GetFolderPath("Desktop")
-    $ShortcutPath = Join-Path $DesktopPath "InstantAIGate API.url"
-    
-    # We point to the health/live endpoint so the browser immediately verifies the API is up
-    $ShortcutContent = @"
-[InternetShortcut]
-URL=http://localhost:$PublicPort/health/live
-"@
-    Set-Content -Path $ShortcutPath -Value $ShortcutContent
-    Write-Host "Shortcut created successfully at: $ShortcutPath"
-}
+Write-Host ""
+Write-Host "=== SERVICE INSTALLED AND STARTED SUCCESSFULLY ===" -ForegroundColor Green
+Write-Host "Install Path : $InstallDir"
+Write-Host "Public Port  : $PublicPort"
+Write-Host "Admin Port   : $AdminPort"
+Write-Host "Admin Key    : $AdminApiKey"
+Write-Host "=================================================" -ForegroundColor Green
+Write-Host ""
 
-Write-Host "================================================================" -ForegroundColor Yellow
-Write-Host "SERVICE INSTALLATION SUCCESSFUL" -ForegroundColor Green
-Write-Host "IMPORTANT: Please save your Admin API Key below:" -ForegroundColor Yellow
-Write-Host "Admin API Key: $AdminApiKey" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Yellow
+Read-Host "Press Enter to exit"
