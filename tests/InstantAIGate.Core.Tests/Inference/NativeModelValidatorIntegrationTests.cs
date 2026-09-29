@@ -1,8 +1,8 @@
-﻿namespace InstantAIGate.Core.Tests.Inference;
+namespace InstantAIGate.Core.Tests.Inference;
 
+using InstantAIGate.Core.Tests.TestConfiguration;
 using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.Inference;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.IO;
@@ -13,8 +13,7 @@ public class NativeModelValidatorIntegrationTests : IDisposable
 {
     private readonly NativeModelValidator _validator;
     private readonly string _tempDirectory;
-    private readonly string _testModelsDir;
-    private readonly string _testRepoId;
+    private readonly TestModelOptions _modelOptions;
 
     public NativeModelValidatorIntegrationTests()
     {
@@ -27,18 +26,9 @@ public class NativeModelValidatorIntegrationTests : IDisposable
             NativeLibraryLoader.Load();
         }
 
-        var configuration = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsettings.json", optional: true)
-            .AddEnvironmentVariables()
-            .Build();
-
-        _testModelsDir = configuration["TEST_MODELS_DIR"]
-            ?? configuration["InstantAIGate:Storage:ModelsDirectory"]
-            ?? @"C:\models";
-
-        _testRepoId = configuration["InstantAIGate:TestData:VisionRepoId"]
-            ?? "qwen3-vl-8b-instruct";
+        // All model parameters are read from the test project appsettings.json
+        // (section \"InstantAIGate:TestData\"), no hardcoded names or paths.
+        _modelOptions = TestConfig.Model;
     }
 
 
@@ -104,9 +94,9 @@ public class NativeModelValidatorIntegrationTests : IDisposable
     [Fact]
     public async Task ValidateIntegrityAsync_WithRealGguf_ReturnsTrue()
     {
-        // Model directory is taken from TEST_MODELS_DIR, defaulting to C:\models
-        string modelsDir = Environment.GetEnvironmentVariable("TEST_MODELS_DIR") ?? @"C:\models";
-        string realModelPath = Path.Combine(modelsDir, "qwen3-vl-8b-instruct", "Qwen3VL-8B-Instruct-Q4_K_M.gguf");
+        // Model catalog directory and GGUF file name come from the test configuration
+        // (section \"InstantAIGate:TestData\" in appsettings.json), targeting the lightweight model.
+        string realModelPath = Path.Combine(_modelOptions.ModelsDirectory, _modelOptions.RepoId, _modelOptions.GgufFileName);
 
         // The test fails when the real model file is absent so it never passes silently
         if (!File.Exists(realModelPath))

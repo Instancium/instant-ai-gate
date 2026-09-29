@@ -1,11 +1,11 @@
-﻿namespace InstantAIGate.Core.Tests.Inference;
+namespace InstantAIGate.Core.Tests.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Tests.TestConfiguration;
 using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.DependencyInjection;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -24,9 +24,10 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
     private ServiceProvider _serviceProvider = null!;
     private IModelManager _modelManager = null!;
     private IInferenceEngine _inferenceEngine = null!;
-    private string _testModelsDir = string.Empty;
-    private string _testRepoId = string.Empty;
     private string _testImagePath = string.Empty;
+
+    // All model/inference parameters are read from the test project appsettings.json.
+    private static readonly TestModelOptions ModelOptions = TestConfig.Model;
 
     public LlamaVisionIntegrationTests(ITestOutputHelper output)
     {
@@ -38,20 +39,6 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         bool isNativeLoaded = NativeLibraryLoader.Load();
         Assert.True(isNativeLoaded, "Failed to load llama/mtmd native libraries.");
 
-        var configuration = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsettings.json", optional: true)
-            .AddEnvironmentVariables()
-            .Build();
-
-        _testModelsDir = configuration["TEST_MODELS_DIR"]
-            ?? configuration["InstantAIGate:Storage:ModelsDirectory"]
-            ?? @"C:\models";
-
-        _testRepoId = configuration["InstantAIGate:TestData:VisionRepoId"]
-            ?? "qwen3-vl-8b-instruct";
-
-      
         _testImagePath = Path.Combine(AppContext.BaseDirectory, "TestData", "test-1.jpeg");
 
         var services = new ServiceCollection();
@@ -63,7 +50,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
 
         var storageSettings = new StorageSettings
         {
-            ModelsDirectory = _testModelsDir
+            ModelsDirectory = ModelOptions.ModelsDirectory
         };
 
         services.AddSingleton<IOptions<StorageSettings>>(Options.Create(storageSettings));
@@ -86,7 +73,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Should_Load_Vision_Model_And_Analyze_Image_Successfully()
     {
-        string expectedModelDirectory = Path.Combine(_testModelsDir, _testRepoId);
+        string expectedModelDirectory = Path.Combine(ModelOptions.ModelsDirectory, ModelOptions.RepoId);
 
         Assert.True(Directory.Exists(expectedModelDirectory),
             $"FATAL: Model directory not found. Expected path: '{expectedModelDirectory}'");
@@ -98,12 +85,12 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
 
         var config = new ModelSettings
         {
-            RepoId = _testRepoId,
-            VisionSupport = true,
-            GpuLayerCount = 99,
-            ContextSize = 4096,
-            BatchSize = 512,
-            Threads = 8,
+            RepoId = ModelOptions.RepoId,
+            VisionSupport = ModelOptions.ModelLoad.VisionSupport,
+            GpuLayerCount = ModelOptions.ModelLoad.GpuLayerCount,
+            ContextSize = ModelOptions.ModelLoad.ContextSize,
+            BatchSize = ModelOptions.ModelLoad.BatchSize,
+            Threads = ModelOptions.ModelLoad.Threads,
             Type = ModelType.Vlm
         };
 
@@ -116,7 +103,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         var parts = new List<MessageContent>
         {
             new ImageFileContent(_testImagePath),
-            new TextContent("Please extract the main headline printed in large letters on this newspaper.")
+            new TextContent(ModelOptions.Inference.VisionPrompt)
         };
 
         var chatHistory = new List<ChatMessage>
@@ -133,7 +120,11 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
 
         _output.WriteLine("Starting Inference...");
 
-        var settings = new InferenceSettings { MaxTokens = 200, Temperature = 0.5f };
+        var settings = new InferenceSettings
+        {
+            MaxTokens = ModelOptions.Inference.MaxTokens,
+            Temperature = ModelOptions.Inference.Temperature
+        };
         var responseBuilder = new StringBuilder();
 
         var mediaParts = parts.Where(p => p is not TextContent).ToList();
@@ -148,7 +139,11 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         Assert.False(string.IsNullOrWhiteSpace(fullResponse), "The model returned an empty response.");
         _output.WriteLine($"\nFinal Response:\n{fullResponse}");
 
-        Assert.Contains("MEN WALK ON MOON", fullResponse, StringComparison.OrdinalIgnoreCase);
+        // Expected answer keywords come from the test configuration
+        foreach (var keyword in ModelOptions.Inference.ExpectedKeywords)
+        {
+            Assert.Contains(keyword, fullResponse, StringComparison.OrdinalIgnoreCase);
+        }
 
         await _modelManager.UnloadModelAsync(config.RepoId, cts.Token);
     }

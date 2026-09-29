@@ -1,6 +1,5 @@
-﻿using InstantAIGate.Server.Dtos.OpenAi;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
+using InstantAIGate.Core.Tests.TestConfiguration;
+using InstantAIGate.Server.Dtos.OpenAi;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -11,25 +10,21 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
 {
     private readonly HttpClient _publicClient;
     private readonly HttpClient _adminClient;
+    private readonly TestServerOptions _serverOptions;
+    private readonly TestInferenceRequestOptions _inferenceOptions;
+
+    // Target model identifier comes from the test project appsettings.json.
     private readonly string _testRepoId;
 
     public GatewayInferenceE2ETests(GatewayTestFixture fixture)
     {
-        _publicClient = fixture.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            BaseAddress = new Uri("http://localhost:5000")
-        });
+        _serverOptions = fixture.ServerOptions;
+        _inferenceOptions = fixture.ModelOptions.Inference;
+        _testRepoId = fixture.ModelOptions.RepoId;
 
-        _adminClient = fixture.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            BaseAddress = new Uri("http://localhost:5001")
-        });
-
-        var config = new ConfigurationBuilder()
-            .AddJsonFile("appsettings.json", optional: true)
-            .Build();
-
-        _testRepoId = config["InstantAIGate:TestData:VisionRepoId"] ?? "qwen3-vl-8b-instruct";
+        // Base addresses are provided by the fixture helpers (ports come from config).
+        _publicClient = fixture.CreatePublicClient();
+        _adminClient = fixture.CreateAdminClient();
 
         // Native libraries must be loaded into the test process memory space
         // before the TestServer initializes the backend facade.
@@ -41,7 +36,7 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
     {
         // 1. Issue load command to the Admin API
         var loadRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/models/load");
-        loadRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "test-admin-secret");
+        loadRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.AdminApiKey);
         loadRequest.Content = JsonContent.Create(new { RepoId = _testRepoId });
 
         var loadResponse = await _adminClient.SendAsync(loadRequest);
@@ -53,19 +48,19 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
 
         // 3. Issue a non-streaming chat completion request to the Public API
         var chatRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
-        chatRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "test-tenant-123");
+        chatRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.TenantApiKey);
 
         var payload = new ChatCompletionRequest(
             Model: _testRepoId,
             Messages: new List<OpenAiChatMessageDto>
             {
-                new OpenAiChatMessageDto("user", "Respond with exactly one word: 'Acknowledged'.")
+                new OpenAiChatMessageDto("user", _inferenceOptions.E2ePrompt)
             },
-            Temperature: 0.1f,
+            Temperature: _inferenceOptions.E2eTemperature,
             TopP: null,
-            MaxTokens: 10,
+            MaxTokens: _inferenceOptions.E2eMaxTokens,
             Stream: false,
-            Seed: 42
+            Seed: (uint)_inferenceOptions.Seed
         );
 
         chatRequest.Content = JsonContent.Create(payload);
@@ -88,7 +83,7 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
     public async Task Should_Initiate_Download_And_Return_Accepted()
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/admin/models/download");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "test-admin-secret");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.AdminApiKey);
         request.Content = JsonContent.Create(new { RepoId = _testRepoId });
 
         var response = await _adminClient.SendAsync(request);

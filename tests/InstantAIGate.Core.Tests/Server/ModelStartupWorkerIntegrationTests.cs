@@ -1,17 +1,21 @@
-﻿namespace InstantAIGate.Core.Tests.Server;
+namespace InstantAIGate.Core.Tests.Server;
 
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Tests.TestConfiguration;
 using System.Threading.Tasks;
 using Xunit;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 public class ModelStartupWorkerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory;
+
+    // Target test model identifier comes from the test project appsettings.json.
+    private static readonly TestModelOptions ModelOptions = TestConfig.Model;
 
     public ModelStartupWorkerIntegrationTests(WebApplicationFactory<Program> factory)
     {
@@ -22,7 +26,7 @@ public class ModelStartupWorkerIntegrationTests : IClassFixture<WebApplicationFa
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     { "InstantAIGate:StartupModel:Enabled", "true" },
-                    { "InstantAIGate:StartupModel:RepoId", "qwen3-vl-8b-instruct" },
+                    { "InstantAIGate:StartupModel:RepoId", ModelOptions.RepoId },
                     { "InstantAIGate:StartupModel:Profile", "Default" }
                 });
             });
@@ -41,6 +45,6 @@ public class ModelStartupWorkerIntegrationTests : IClassFixture<WebApplicationFa
         var activeConfig = modelManager.GetActiveSettings();
 
         Assert.NotNull(activeConfig);
-        Assert.Equal("qwen3-vl-8b-instruct", activeConfig.RepoId);
+        Assert.Equal(ModelOptions.RepoId, activeConfig.RepoId);
     }
 }
