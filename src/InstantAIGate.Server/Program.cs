@@ -58,8 +58,10 @@ builder.Services.AddOpenApi(options =>
 });
 
 
-builder.Services.Configure<StartupModelSettings>(
+builder.Services.Configure<InstantAIGate.Server.Configuration.StartupModelSettings>(
     builder.Configuration.GetSection("InstantAIGate:StartupModel"));
+
+builder.Services.AddHostedService<ModelStartupWorker>();
 
 var app = builder.Build();
 
