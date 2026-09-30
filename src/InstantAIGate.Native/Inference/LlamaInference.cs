@@ -23,11 +23,12 @@ public class LlamaInference : IInferenceEngine, IDisposable
     private readonly IMediaResolver _mediaResolver;
     private bool _disposed;
     private readonly ISessionInferenceManager _sessionManager;
-
+    private readonly IBackendFacade _backendFacade;
 
     public LlamaInference(
         IModelManager modelManager,
         ILogger<LlamaInference> logger,
+        IBackendFacade backendFacade,
         IMediaResolver mediaResolver, 
         ISessionInferenceManager sessionManager)
     {
@@ -35,6 +36,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
         _logger = logger;
         _mediaResolver = mediaResolver;
         _sessionManager = sessionManager;
+        _backendFacade = backendFacade;
     }
 
     // HELPER: Safely unbox opaque handles to native pointers
@@ -377,11 +379,11 @@ public class LlamaInference : IInferenceEngine, IDisposable
         }
     }
 
-    public async IAsyncEnumerable<string> StreamDeltaGenerationAsync(
-     string sessionId,
-     ChatMessage deltaMessage,
-     InferenceSettings? overrideSettings = null,
-     [EnumeratorCancellation] CancellationToken ct = default)
+
+    public async IAsyncEnumerable<string> StreamDeltaGenerationAsync(string sessionId,
+        ChatMessage deltaMessage,
+        InferenceSettings? overrideSettings = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         if (!_sessionManager.TryGetSessionRepoId(sessionId, out var repoId) || repoId == null)
         {
@@ -410,20 +412,18 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
         int pinnedTokensCount = 0;
 
-
+        // Calculate required space and perform mathematical KV cache shifting if necessary
         if (pastTokens + deltaTokens.Length >= maxContextLimit - reserveForGeneration)
         {
             _logger.LogWarning("Context limit approaching for session {SessionId}. Executing KV-Shift.", sessionId);
 
             int requiredSpace = (pastTokens + deltaTokens.Length + reserveForGeneration) - maxContextLimit;
-            int evictionChunk = Math.Max(requiredSpace, maxContextLimit / 4); 
+            int evictionChunk = Math.Max(requiredSpace, maxContextLimit / 4);
 
             IntPtr memPtr = LlamaNative.llama_get_memory(ctxHandle);
             if (memPtr != IntPtr.Zero && LlamaNative.llama_memory_can_shift(memPtr))
             {
-            
                 LlamaNative.llama_memory_seq_rm(memPtr, 0, pinnedTokensCount, pinnedTokensCount + evictionChunk);
-            
                 LlamaNative.llama_memory_seq_add(memPtr, 0, pinnedTokensCount + evictionChunk, pastTokens, -evictionChunk);
 
                 pastTokens -= evictionChunk;
@@ -431,10 +431,10 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 _logger.LogInformation("Successfully shifted KV cache. Freed {Tokens} tokens.", evictionChunk);
             }
         }
-   
 
         int currentPos = pastTokens;
 
+        // Process multimodal content if present
         if (mtmdCtxHandle != IntPtr.Zero && deltaMessage.Parts.Any(p => p is not TextContent))
         {
             using var mediaContext = await _mediaResolver.ResolveMediaAsync(deltaMessage.Parts, ct);
@@ -499,7 +499,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
         }
         else
         {
-         
+            // Process text-only content
             int[] tokens = deltaTokens;
 
             unsafe
@@ -523,7 +523,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
                         for (int j = 0; j < evalBatchSize; j++)
                         {
                             tokenPtr[j] = tokens[i + j];
-                            posPtr[j] = pastTokens + i + j; // pastTokens содержит правильное значение (со сдвигом)
+                            posPtr[j] = pastTokens + i + j;
                             nSeqIdPtr[j] = 1;
                             seqIdPtr[j][0] = 0;
                             logitsPtr[j] = (byte)((i + j == tokens.Length - 1) ? 1 : 0);
@@ -546,6 +546,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
             }
         }
 
+        // Initialize sampler and begin token generation
         var chainParams = LlamaNative.llama_sampler_chain_default_params();
         IntPtr sampler = LlamaNative.llama_sampler_chain_init(chainParams);
         try
@@ -621,7 +622,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
             LlamaNative.llama_sampler_free(sampler);
         }
     }
-
 
     public void Dispose()
     {

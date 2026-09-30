@@ -154,6 +154,30 @@ public sealed class SessionInferenceManager : ISessionInferenceManager
         }
     }
 
+    public void EnqueueTurnTokens(string sessionId, int tokenCount)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_sessions.TryGetValue(sessionId, out var entry))
+        {
+            entry.TurnTokenLengths.Enqueue(tokenCount);
+        }
+    }
+
+    public bool TryDequeueOldestTurnTokens(string sessionId, out int tokenCount)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        tokenCount = 0;
+
+        if (_sessions.TryGetValue(sessionId, out var entry) && entry.TurnTokenLengths.Count > 0)
+        {
+            tokenCount = entry.TurnTokenLengths.Dequeue();
+            return true;
+        }
+
+        return false;
+    }
+
+
     private sealed class StatefulSessionEntry : IAsyncDisposable
     {
         public SessionStartRequest Request { get; }
@@ -162,6 +186,7 @@ public sealed class SessionInferenceManager : ISessionInferenceManager
         public InferenceContext? Context { get; private set; }
         public DateTimeOffset LastActivityUtc { get; private set; }
         public int PastTokensCount { get; set; }
+        public Queue<int> TurnTokenLengths { get; } = new Queue<int>();
 
         public StatefulSessionEntry(SessionStartRequest request, DateTimeOffset createdUtc)
         {

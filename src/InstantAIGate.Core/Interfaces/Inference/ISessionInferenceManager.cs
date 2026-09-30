@@ -6,6 +6,8 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+
+
 public interface ISessionInferenceManager : IDisposable
 {
     Task CreateSessionAsync(SessionStartRequest request, CancellationToken ct = default);
@@ -20,4 +22,7 @@ public interface ISessionInferenceManager : IDisposable
     int GetPastTokensCount(string sessionId);
 
     void UpdatePastTokensCount(string sessionId, int count);
+
+    void EnqueueTurnTokens(string sessionId, int tokenCount);
+    bool TryDequeueOldestTurnTokens(string sessionId, out int tokenCount);
 }
