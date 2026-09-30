@@ -34,7 +34,8 @@
 |    |    |    +--- ReleaseCommand.cs
 |    |    |    \--- VersionControlCommand.cs
 |    |    +--- Configuration
-|    |    |    \--- ReleasePipelineSettings.cs
+|    |    |    +--- ReleasePipelineSettings.cs
+|    |    |    \--- RemoteGatewaySettings.cs
 |    |    +--- Core
 |    |    |    +--- GatewayClientProxy.cs
 |    |    |    +--- IGatewayClient.cs
@@ -103,6 +104,10 @@
 |    |    |    |    +--- ModelWeights.cs
 |    |    |    |    +--- TextContent.cs
 |    |    |    |    \--- VisionContext.cs
+|    |    |    +--- Session
+|    |    |    |    +--- SessionPromptDelta.cs
+|    |    |    |    +--- SessionStartRequest.cs
+|    |    |    |    \--- SessionTokenDelta.cs
 |    |    |    \--- Status
 |    |    |         +--- ModelRegistryStatus.cs
 |    |    |         \--- NativeModelDetails.cs
@@ -121,6 +126,7 @@
 |    |    |    |    +--- IModelValidator.cs
 |    |    |    |    +--- IQueueLease.cs
 |    |    |    |    +--- IQueueManager.cs
+|    |    |    |    +--- ISessionInferenceManager.cs
 |    |    |    |    \--- IVisionFacade.cs
 |    |    |    +--- Infrastructure
 |    |    |    |    \--- IMediaContext.cs
@@ -131,7 +137,8 @@
 |    |    |    |    +--- DynamicRequestQueue.cs
 |    |    |    |    +--- ModelManager.cs
 |    |    |    |    +--- ModelProvider.cs
-|    |    |    |    \--- QueueLease.cs
+|    |    |    |    +--- QueueLease.cs
+|    |    |    |    \--- SessionInferenceManager.cs
 |    |    |    \--- Infrastructure
 |    |    |         +--- LocalTempMediaResolver.cs
 |    |    |         \--- MemoryAssetManager.cs
@@ -280,7 +287,9 @@
 |    |    |         +--- OpenAiChatModels.cs
 |    |    |         \--- OpenAiStreamModels.cs
 |    |    +--- Hubs
-|    |    |    \--- ITelemetryClient.cs
+|    |    |    +--- ISessionChatClient.cs
+|    |    |    +--- ITelemetryClient.cs
+|    |    |    \--- SessionChatHub.cs
 |    |    +--- Mapping
 |    |    |    \--- ChatContractMapper.cs
 |    |    +--- Middleware
@@ -322,14 +331,16 @@
 |    |    |    +--- ParallelModelDownloaderTests.cs
 |    |    |    \--- SsrPipelineIntegrationTests.cs
 |    |    +--- Dtos
-|    |    |    \--- OpenAiContractTests.cs
+|    |    |    +--- OpenAiContractTests.cs
+|    |    |    \--- SessionDeltaContractTests.cs
 |    |    +--- Inference
 |    |    |    +--- Stubs
 |    |    |    |    +--- StubModelLocator.cs
 |    |    |    |    \--- StubModelValidator.cs
 |    |    |    +--- DynamicRequestQueueTests.cs
 |    |    |    +--- LlamaVisionIntegrationTests.cs
-|    |    |    \--- NativeModelValidatorIntegrationTests.cs
+|    |    |    +--- NativeModelValidatorIntegrationTests.cs
+|    |    |    \--- SessionInferenceManagerTests.cs
 |    |    +--- Infrastructure
 |    |    |    \--- SyntheticNetworkHandler.cs
 |    |    +--- Server
@@ -337,6 +348,7 @@
 |    |    |    +--- GatewaySecurityAndHealthTests.cs
 |    |    |    +--- GatewayTestFixture.cs
 |    |    |    +--- ModelStartupWorkerIntegrationTests.cs
+|    |    |    +--- SessionChatHubIntegrationTests.cs
 |    |    |    \--- TelemetryHubIntegrationTests.cs
 |    |    +--- TestConfiguration
 |    |    |    +--- TestConfig.cs

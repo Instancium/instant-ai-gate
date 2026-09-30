@@ -21,5 +21,9 @@ namespace InstantAIGate.Core.Interfaces.Inference
         void ClearContextMemory(IContextHandle contextHandle, bool clearKvCache);
 
         void SetLogCallback(BackendLogCallback callback);
+
+        bool CanShiftContextMemory(IContextHandle contextHandle);
+        bool RemoveContextMemoryRange(IContextHandle contextHandle, int seqId, int p0, int p1);
+        void ShiftContextMemoryRange(IContextHandle contextHandle, int seqId, int p0, int p1, int delta);
     }
 }

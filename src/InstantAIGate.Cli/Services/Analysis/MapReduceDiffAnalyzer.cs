@@ -221,62 +221,73 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
             {diffChunk}
             """;
 
-        var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
+       
+        var deltaMessage = new ChatMessage("user", prompt);
         var sb = new StringBuilder();
+        string chunkSessionId = $"diff-chunk-{Guid.NewGuid():N}";
 
-        await foreach (var chunk in _gatewayClient.StreamChatAsync(_modelId, messages, ct))
+        try
         {
-            sb.Append(chunk);
+            await foreach (var chunk in _gatewayClient.StreamChatAsync(chunkSessionId, _modelId, deltaMessage, ct))
+            {
+                sb.Append(chunk);
+            }
+            return sb.ToString().Trim(' ', '\n', '\r', '`', '\'', '"');
         }
-
-        return sb.ToString().Trim(' ', '\r', '\n', '`', '"');
+        finally
+        {
+            await _gatewayClient.EndSessionAsync(chunkSessionId, CancellationToken.None);
+        }
     }
 
     private async Task<string> GenerateFinalCommitAsync(
-        string aggregatedContext,
-        string diffStat,
-        List<FileDiffStatus> fileStatuses,
-        CancellationToken ct)
+            string aggregatedContext,
+            string diffStat,
+            List<FileDiffStatus> fileStatuses,
+            CancellationToken ct)
     {
         string fileListText = string.Join("\n", fileStatuses.Select(f => $"- [{f.Status.ToUpperInvariant()}] {f.Path}"));
         string statSection = string.IsNullOrWhiteSpace(diffStat) ? string.Empty : $"""
 
-    DIFF VOLUME STATISTICS:
-    {diffStat}
-    """;
+            DIFF VOLUME STATISTICS:
+            {diffStat}
+            """;
 
         string prompt = $"""
-    You are an expert developer generating a Conventional Commit message.
-    Strictly adhere to the provided file statuses, diff volume statistics, and context.
+            You are an expert developer generating a Conventional Commit message.
+            Strictly adhere to the provided file statuses, diff volume statistics, and context.
 
-    FILE CHANGE REGISTRY:
-    {fileListText}{statSection}
+            FILE CHANGE REGISTRY:
+            {fileListText}{statSection}
 
-    RULES:
-    1. MUST be exclusively in English.
-    2. First line (Title): Format as type(scope): description.
-       - HARD LIMIT: Target 50-65 characters. Absolute maximum is 72 characters.
-       - Be concise, direct, and imperative (e.g., 'feat(server): add startup worker tests').
-    3. CRITICAL STATUS ACCURACY RULES:
-       - NEVER label a file as 'created', 'introduced', or 'added' if its status is [MODIFIED]. Use verbs like 'update', 'refactor', 'enhance', 'fix'.
-       - ONLY treat files with status [ADDED] as newly created files.
-       - Files with status [DELETED] must be described as removed or deleted.
-       - Files with status [RENAMED] must be described as renamed or moved.
-       - If diff chunks show added lines (+) inside a [MODIFIED] file, it means code was appended or updated, NOT that the file is new.
-    4. FILE TYPE AND SCOPE RULE:
-       - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs'.
-       - Do not guess the architectural scope from code terms if file paths indicate another layer.
-    5. Second line: MUST be completely blank.
-    6. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed, preserving exact file statuses.
+            RULES:
+            1. MUST be exclusively in English.
+            2. First line (Title): Format as type(scope): description.
+               - HARD LIMIT: Target 50-65 characters. Absolute maximum is 72 characters.
+               - Be concise, direct, and imperative (e.g., 'feat(server): add startup worker tests').
+            3. CRITICAL STATUS ACCURACY RULES:
+               - NEVER label a file as 'created', 'introduced', or 'added' if its status is [MODIFIED]. Use verbs like 'update', 'refactor', 'enhance', 'fix'.
+               - ONLY treat files with status [ADDED] as newly created files.
+               - Files with status [DELETED] must be described as removed or deleted.
+               - Files with status [RENAMED] must be described as renamed or moved.
+               - If diff chunks show added lines (+) inside a [MODIFIED] file, it means code was appended or updated, NOT that the file is new.
+            4. FILE TYPE AND SCOPE RULE:
+               - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs'.
+               - Do not guess the architectural scope from code terms if file paths indicate another layer.
+            5. Second line: MUST be completely blank.
+            6. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed, preserving exact file statuses.
 
-    Context:
-    {aggregatedContext}
-    """;
+            Context:
+            {aggregatedContext}
+            """;
 
-        var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
+       
+        var deltaMessage = new ChatMessage("user", prompt);
         var sb = new StringBuilder();
+        string commitSessionId = $"diff-commit-{Guid.NewGuid():N}";
 
-        await foreach (var chunk in _gatewayClient.StreamChatAsync(_modelId, messages, ct))
+       
+        await foreach (var chunk in _gatewayClient.StreamChatAsync(commitSessionId, _modelId, deltaMessage, ct))
         {
             sb.Append(chunk);
         }

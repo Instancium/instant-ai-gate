@@ -38,13 +38,20 @@ public class GatewayClientProxy : IGatewayClient
         _activeClient = new RemoteGatewayClient(remoteClient, publicUrl, adminHubUrl, adminKey);
     }
 
+
+    public Task EndSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        // Forward the release command to whichever client (Local or Remote) is currently active
+        return _activeClient.EndSessionAsync(sessionId, ct);
+    }
+
     public void SwitchToLocal()
     {
         _activeClient = _serviceProvider.GetRequiredService<LocalGatewayClient>();
     }
 
-    public IAsyncEnumerable<string> StreamChatAsync(string repoId, IEnumerable<ChatMessage> messages, CancellationToken ct)
-        => _activeClient.StreamChatAsync(repoId, messages, ct);
+    public IAsyncEnumerable<string> StreamChatAsync(string sessionId, string repoId, ChatMessage deltaMessage, CancellationToken ct)
+        => _activeClient.StreamChatAsync(sessionId, repoId, deltaMessage, ct);
 
     public Task ConnectTelemetryAsync(Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct)
         => _activeClient.ConnectTelemetryAsync(onMetrics, onSsrProgress, ct);

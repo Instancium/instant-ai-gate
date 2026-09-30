@@ -99,6 +99,8 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 });
 
 app.MapHub<InstantAIGate.Server.Hubs.TelemetryHub>("/hub/telemetry");
+app.MapHub<InstantAIGate.Server.Hubs.SessionChatHub>("/hub/chat");
+
 app.Run();
 
 public partial class Program { }

@@ -2,23 +2,20 @@
 
 using System.Collections.Generic;
 using System.Linq;
-
+using System.Text.Json.Serialization;
 public record ChatMessage
 {
     public string Role { get; init; }
-
     public IReadOnlyList<MessageContent> Parts { get; init; }
-
-    // Computed property for convenience of simple text clients
     public string Content => string.Join("\n", Parts.OfType<TextContent>().Select(p => p.Text));
 
+    [JsonConstructor]
     public ChatMessage(string role, IReadOnlyList<MessageContent> parts)
     {
         Role = role;
         Parts = parts;
     }
 
-    // Kept solely as a shorthand for text-only messages
     public ChatMessage(string role, string content)
     {
         Role = role;
