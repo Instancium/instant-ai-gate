@@ -5,6 +5,11 @@
       "Microsoft.Hosting.Lifetime": "Information"
     }
   },
+  "RemoteGateway": {
+    "PublicUrl": "http://localhost:5000",
+    "AdminHubUrl": "http://localhost:5001/hub/telemetry",
+    "AdminKey": "ChangeMeSuperSecureAdminApiKey123"
+  },
   "ReleasePipeline": {
     "TargetBranch": "main",
     "ReleaseBranchPrefix": "release-prep/v",

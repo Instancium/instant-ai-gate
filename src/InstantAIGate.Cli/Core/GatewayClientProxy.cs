@@ -25,10 +25,17 @@ public class GatewayClientProxy : IGatewayClient
         _activeClient = initialClient;
     }
 
-    public void SwitchToRemote(string url, string key)
+    public async Task SwitchToRemoteAsync(string publicUrl, string adminHubUrl, string adminKey, CancellationToken ct = default)
     {
-        var httpClient = _httpClientFactory.CreateClient();
-        _activeClient = new RemoteGatewayClient(httpClient, url, key);
+        using var probeClient = _httpClientFactory.CreateClient();
+        probeClient.Timeout = TimeSpan.FromSeconds(3);
+
+        string healthEndpoint = $"{publicUrl.TrimEnd('/')}/health/live";
+        using var response = await probeClient.GetAsync(healthEndpoint, ct);
+        response.EnsureSuccessStatusCode();
+
+        var remoteClient = _httpClientFactory.CreateClient();
+        _activeClient = new RemoteGatewayClient(remoteClient, publicUrl, adminHubUrl, adminKey);
     }
 
     public void SwitchToLocal()
