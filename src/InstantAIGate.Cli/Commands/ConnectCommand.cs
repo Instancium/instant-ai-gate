@@ -1,61 +1,76 @@
 ﻿namespace InstantAIGate.Cli.Commands;
 
+using InstantAIGate.Cli.Configuration;
 using InstantAIGate.Cli.Core;
+using InstantAIGate.Cli.State;
+using Microsoft.Extensions.Options;
 using Spectre.Console;
 using System;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
 public class ConnectCommand : IConsoleCommand
 {
     private readonly GatewayClientProxy _proxy;
+    private readonly RemoteGatewaySettings _settings;
+    private readonly CliSession _session;
 
-    public ConnectCommand(GatewayClientProxy proxy)
+    public ConnectCommand(GatewayClientProxy proxy, IOptions<RemoteGatewaySettings> settings, CliSession session)
     {
         _proxy = proxy;
+        _settings = settings.Value;
+        _session = session;
     }
 
     public string Name => "/connect";
-    public string Description => "Switches between Local and Remote modes (e.g., /connect local OR /connect http://localhost:5000 [key]).";
+    public string Description => "Connects to server using config defaults, custom URL, or switches to local. Usage: /connect OR /connect <url> [[key]] OR /connect local";
 
-    public Task ExecuteAsync(string argument, CancellationToken cancellationToken)
+    public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(argument))
-        {
-            AnsiConsole.MarkupLine("[red]Usage: /connect local OR /connect <url> [key][/]");
-            return Task.CompletedTask;
-        }
+        var trimmed = (argument ?? string.Empty).Trim();
 
-        var parts = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var target = parts[0].ToLowerInvariant();
-
-        if (target == "local")
+        if (string.Equals(trimmed, "local", StringComparison.OrdinalIgnoreCase))
         {
             try
             {
                 _proxy.SwitchToLocal();
-                AnsiConsole.MarkupLine("[green]Successfully switched to Local Inference Engine (Vulkan).[/]");
+                _session.IsRemoteMode = false;
+                AnsiConsole.MarkupLine("[green]Switched to Local Inference Engine.[/]");
             }
             catch (Exception ex)
             {
-                AnsiConsole.MarkupLine($"[red]Failed to switch to local mode:[/] {ex.Message}");
+                AnsiConsole.MarkupLine($"[red]Failed to switch to local mode:[/] {Markup.Escape(ex.Message)}");
             }
-        }
-        else
-        {
-            var url = parts[0];
-            var key = parts.Length > 1 ? parts[1] : "test-admin-secret";
-            try
-            {
-                _proxy.SwitchToRemote(url, key);
-                AnsiConsole.MarkupLine($"[green]Successfully connected to Remote Gateway at {url}[/]");
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLine($"[red]Failed to connect to remote gateway:[/] {ex.Message}");
-            }
+            return;
         }
 
-        return Task.CompletedTask;
+        string publicUrl = _settings.PublicUrl;
+        string adminHubUrl = _settings.AdminHubUrl;
+        string key = _settings.AdminKey;
+
+        if (!string.IsNullOrWhiteSpace(trimmed))
+        {
+            var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            publicUrl = parts[0];
+            key = parts.Length > 1 ? parts[1] : _settings.AdminKey;
+            adminHubUrl = $"{publicUrl.TrimEnd('/')}/hub/telemetry".Replace("5000", "5001");
+        }
+
+        try
+        {
+            await _proxy.SwitchToRemoteAsync(publicUrl, adminHubUrl, key, cancellationToken);
+            _session.IsRemoteMode = true;
+            AnsiConsole.MarkupLine($"[green]Successfully connected to Remote Gateway at[/] [cyan]{publicUrl}[/]");
+        }
+        catch (HttpRequestException ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Connection failed:[/] Service at [cyan]{publicUrl}[/] is not reachable.");
+            AnsiConsole.MarkupLine($"[dim red]Details:[/] {Markup.Escape(ex.Message)}");
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Failed to connect:[/] {Markup.Escape(ex.Message)}");
+        }
     }
 }

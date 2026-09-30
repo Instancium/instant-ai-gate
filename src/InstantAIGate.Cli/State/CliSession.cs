@@ -6,12 +6,11 @@ using System.Collections.Generic;
 
 public class CliSession
 {
+    public bool IsRemoteMode { get; set; }
     public string? ActiveModelId { get; set; }
     public ModelSettings? ActiveModelConfig { get; set; }
     public List<ChatMessage> ChatHistory { get; } = new();
-
     public List<MessageContent> PendingMedia { get; } = new();
-
     public bool IsExitRequested { get; set; }
 
     public void ClearHistory()

@@ -4,7 +4,11 @@ using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Inference;
 using Microsoft.Extensions.Hosting;
 using Spectre.Console;
+using System;
+using System.Collections.Generic;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace InstantAIGate.Cli;
 
@@ -53,22 +57,26 @@ public class CliHostedService : IHostedService
         try
         {
             RenderHeader();
+
             while (!cancellationToken.IsCancellationRequested && !_session.IsExitRequested)
             {
                 try
                 {
                     AnsiConsole.Markup("\n[bold cyan]👤 User:[/] ");
                     var input = Console.ReadLine();
-                    if (string.IsNullOrWhiteSpace(input)) continue;
+
+                    if (string.IsNullOrWhiteSpace(input))
+                        continue;
 
                     var isCommand = await _commandDispatcher.TryExecuteAsync(input, cancellationToken);
-                    if (isCommand) continue;
+                    if (isCommand)
+                        continue;
 
                     await HandleChatInferenceAsync(input, cancellationToken);
                 }
                 catch (Exception ex)
                 {
-                    AnsiConsole.MarkupLine($"\n[red]CLI Error:[/] {ex.Message}");
+                    AnsiConsole.MarkupLine($"\n[red]CLI Error:[/] {Markup.Escape(ex.Message)}");
                 }
             }
         }
@@ -80,9 +88,11 @@ public class CliHostedService : IHostedService
 
     private async Task HandleChatInferenceAsync(string input, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(_session.ActiveModelId))
+        // Enforce /load only when running against the local in-process engine.
+        // In Remote mode, the Windows Service manages the active model lifecycle.
+        if (!_session.IsRemoteMode && string.IsNullOrEmpty(_session.ActiveModelId))
         {
-            AnsiConsole.MarkupLine("[red]No model is currently loaded. Use /connect and /load <id> first.[/]");
+            AnsiConsole.MarkupLine("[red]No model is currently loaded. Use /load <id> first.[/]");
             return;
         }
 
@@ -96,29 +106,24 @@ public class CliHostedService : IHostedService
         var userMessage = new ChatMessage("user", parts);
         _session.ChatHistory.Add(userMessage);
 
-
         AnsiConsole.WriteLine();
-        ///AnsiConsole.MarkupLine("[bold blue]🤖 AI:[/]");
 
         try
         {
             var fullResponse = new StringBuilder();
-
+            string modelToRequest = _session.ActiveModelId ?? string.Empty;
 
             await foreach (var chunk in _gatewayClient.StreamChatAsync(
-                _session.ActiveModelId,
+                modelToRequest,
                 _session.ChatHistory,
                 cancellationToken))
             {
-
                 AnsiConsole.Markup($"[silver]{Markup.Escape(chunk)}[/]");
                 fullResponse.Append(chunk);
             }
 
             AnsiConsole.WriteLine();
             AnsiConsole.WriteLine();
-
-
             AnsiConsole.Write(new Rule().RuleStyle("grey").LeftJustified());
 
             _session.ChatHistory.Add(new ChatMessage("assistant", fullResponse.ToString()));
@@ -126,7 +131,7 @@ public class CliHostedService : IHostedService
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"\n[red]Fatal Inference Error:[/] {ex.Message}");
+            AnsiConsole.MarkupLine($"\n[red]Fatal Inference Error:[/] {Markup.Escape(ex.Message)}");
             _session.ChatHistory.RemoveAt(_session.ChatHistory.Count - 1);
         }
     }
@@ -138,7 +143,6 @@ public class CliHostedService : IHostedService
             new FigletText("InstantAIGate")
                 .LeftJustified()
                 .Color(Color.Blue));
-
         AnsiConsole.MarkupLine("[dim]High-Performance On-Premises Inference Runtime[/]");
         AnsiConsole.MarkupLine("Type [yellow]/help[/] to view available commands.\n");
     }

@@ -58,6 +58,7 @@ public static class Program
             {
                 services.Configure<StorageSettings>(context.Configuration.GetSection("InstantAIGate:Storage"));
                 services.Configure<ReleasePipelineSettings>(context.Configuration.GetSection("ReleasePipeline"));
+                services.Configure<RemoteGatewaySettings>(context.Configuration.GetSection("RemoteGateway"));
 
                 services.AddSingleton<CliSession>();
                 services.AddSingleton(debugState);
@@ -83,16 +84,32 @@ public static class Program
 
                 services.AddSingleton<GatewayClientProxy>(sp =>
                 {
-                    IGatewayClient initial;
+                    var config = sp.GetRequiredService<IConfiguration>();
+                    var remoteSettings = config.GetSection("RemoteGateway").Get<RemoteGatewaySettings>() ?? new RemoteGatewaySettings();
+                    var session = sp.GetRequiredService<CliSession>();
                     var httpClientFactory = sp.GetRequiredService<System.Net.Http.IHttpClientFactory>();
 
-                    if (isRemote)
+                    IGatewayClient initial;
+                    if (args.Contains("--remote"))
                     {
-                        initial = new RemoteGatewayClient(httpClientFactory.CreateClient(), remoteUrl, adminKey);
+                        int urlIndex = Array.IndexOf(args, "--remote") + 1;
+                        string url = urlIndex < args.Length ? args[urlIndex] : remoteSettings.PublicUrl;
+
+                        string key = remoteSettings.AdminKey;
+                        if (args.Contains("--key"))
+                        {
+                            int keyIndex = Array.IndexOf(args, "--key") + 1;
+                            if (keyIndex < args.Length) key = args[keyIndex];
+                        }
+
+                        string hubUrl = remoteSettings.AdminHubUrl;
+                        initial = new RemoteGatewayClient(httpClientFactory.CreateClient(), url, hubUrl, key);
+                        session.IsRemoteMode = true;
                     }
                     else
                     {
                         initial = sp.GetRequiredService<LocalGatewayClient>();
+                        session.IsRemoteMode = false;
                     }
 
                     return new GatewayClientProxy(sp, httpClientFactory, initial);
@@ -125,6 +142,7 @@ public static class Program
 
                     return new MapReduceDiffAnalyzer(gateway, settings.AiModelId);
                 });
+
             })
             .Build();
 
