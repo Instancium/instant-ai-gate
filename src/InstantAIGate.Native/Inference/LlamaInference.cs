@@ -125,14 +125,14 @@ public class LlamaInference : IInferenceEngine, IDisposable
         return Encoding.UTF8.GetString(buffer, 0, finalSize);
     }
 
+
     public async IAsyncEnumerable<string> StreamDeltaGenerationAsync(
-            string sessionId,
-            ChatMessage deltaMessage,
-            InferenceSettings? overrideSettings = null,
-            [EnumeratorCancellation] CancellationToken ct = default)
+    string sessionId,
+    ChatMessage deltaMessage,
+    InferenceSettings? overrideSettings = null,
+    [EnumeratorCancellation] CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-
         if (!_sessionManager.TryGetSessionRepoId(sessionId, out var repoId) || string.IsNullOrEmpty(repoId))
         {
             throw new InvalidOperationException($"Active session '{sessionId}' was not found.");
@@ -140,6 +140,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
         using var sessionGate = await _sessionManager.AcquireSessionExecutionGateAsync(sessionId, ct);
         var inferenceCtx = await _sessionManager.GetOrCreateContextAsync(sessionId, ct);
+
         using var model = await _modelManager.AcquireModelAsync(repoId, ct);
 
         IntPtr ctxHandle = UnwrapContext(inferenceCtx.TextContext);
@@ -151,26 +152,41 @@ public class LlamaInference : IInferenceEngine, IDisposable
         string formattedDelta = await ApplyChatTemplateAsync(repoId, new[] { deltaMessage }, ct);
         int[] deltaTokens = await TokenizeDataAsync(repoId, formattedDelta, ct);
 
+        // --- ИСПРАВЛЕНИЕ 1: Изолированное удаление BOS-токена ---
+        if (pastTokens > 0 && deltaTokens.Length > 0)
+        {
+            int bosTokenId = LlamaNative.llama_vocab_bos(vocab);
+            if (deltaTokens[0] == bosTokenId)
+            {
+                var slicedTokens = new int[deltaTokens.Length - 1];
+                Array.Copy(deltaTokens, 1, slicedTokens, 0, slicedTokens.Length);
+                deltaTokens = slicedTokens;
+            }
+        }
+        // --------------------------------------------------------
+
         var activeConfig = _modelManager.GetActiveSettings();
         uint maxContextLimit = activeConfig != null ? (uint)activeConfig.ContextSize : LlamaNative.llama_n_ctx(ctxHandle);
         int maxBatchSize = activeConfig?.BatchSize > 0 ? activeConfig.BatchSize : 512;
-        int requiredReserve = overrideSettings?.MaxTokens > 0
-            ? Math.Min(overrideSettings.MaxTokens, (int)(maxContextLimit * 0.5))
-            : 256;
 
+        int requiredReserve = overrideSettings?.MaxTokens > 0 ? Math.Min(overrideSettings.MaxTokens, (int)(maxContextLimit * 0.5)) : 256;
         var mediaParts = deltaMessage.Parts?.Where(p => p is not TextContent).ToList() ?? new List<MessageContent>();
         using var mediaContext = mediaParts.Count > 0 ? await _mediaResolver.ResolveMediaAsync(mediaParts, ct) : null;
         var localImagePaths = mediaContext?.LocalFilePaths;
 
-        // Fail-Safe Guard: Deterministic Context Overflow Check (including heuristic image token estimation)
         int estimatedTokens = deltaTokens.Length + ((localImagePaths?.Count ?? 0) * 1024);
         if (pastTokens + estimatedTokens + requiredReserve > maxContextLimit)
         {
             throw new ContextOverflowException(
-                sessionId, pastTokens, estimatedTokens, requiredReserve, (int)maxContextLimit);
+                sessionId,
+                pastTokens,
+                estimatedTokens,
+                requiredReserve,
+                (int)maxContextLimit);
         }
 
         _sessionManager.AppendSessionTokens(sessionId, deltaTokens);
+
         int currentPos = pastTokens;
 
         if (mtmdCtxHandle != IntPtr.Zero && localImagePaths != null && localImagePaths.Count > 0)
@@ -185,7 +201,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 {
                     var bmpWrapper = MtmdNative.mtmd_helper_bitmap_init_from_file(mtmdCtxHandle, localImagePaths[i], false, opt);
                     if (bmpWrapper.Bitmap == IntPtr.Zero) throw new InvalidOperationException("Failed to load image.");
-
                     var handle = new MtmdNative.MtmdBitmapHandle(bmpWrapper.Bitmap);
                     bitmapHandles.Add(handle);
                     bitmapPtrs[i] = handle.DangerousGetHandle();
@@ -231,7 +246,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
         }
         else
         {
-            // Pure text evaluation via unsafe batch injection
             unsafe
             {
                 var batch = LlamaNative.llama_batch_init(maxBatchSize, 0, 1);
@@ -256,8 +270,8 @@ public class LlamaInference : IInferenceEngine, IDisposable
                             seqIdPtr[j][0] = 0;
                             logitsPtr[j] = (byte)((i + j == deltaTokens.Length - 1) ? 1 : 0);
                         }
-                        batch.NTokens = evalBatchSize;
 
+                        batch.NTokens = evalBatchSize;
                         int decodeRes = LlamaNative.llama_decode(ctxHandle, batch);
                         if (decodeRes != 0)
                         {
@@ -275,7 +289,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
         _sessionManager.UpdatePastTokensCount(sessionId, currentPos);
 
-        // Autoregressive token generation
         var samplerParams = LlamaNative.llama_sampler_chain_default_params();
         IntPtr samplerChain = LlamaNative.llama_sampler_chain_init(samplerParams);
 
@@ -288,6 +301,12 @@ public class LlamaInference : IInferenceEngine, IDisposable
             int maxTokensToGenerate = overrideSettings?.MaxTokens ?? requiredReserve;
             int generatedCount = 0;
             var generatedTokens = new List<int>();
+
+            // --- ИСПРАВЛЕНИЕ 2: Инициализация потокового декодера ---
+            var utf8Decoder = Encoding.UTF8.GetDecoder();
+            char[] charBuffer = new char[64];
+            byte[] tokenPieceBuffer = new byte[64];
+            // --------------------------------------------------------
 
             while (generatedCount < maxTokensToGenerate)
             {
@@ -304,7 +323,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 generatedTokens.Add(newTokenId);
                 generatedCount++;
 
-                byte[] tokenPieceBuffer = new byte[64];
                 int nPieces = LlamaNative.llama_token_to_piece(vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length, 0, true);
                 if (nPieces < 0)
                 {
@@ -312,10 +330,19 @@ public class LlamaInference : IInferenceEngine, IDisposable
                     nPieces = LlamaNative.llama_token_to_piece(vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length, 0, true);
                 }
 
-                string piece = Encoding.UTF8.GetString(tokenPieceBuffer, 0, nPieces);
-                yield return piece;
+                if (charBuffer.Length < nPieces)
+                {
+                    charBuffer = new char[nPieces];
+                }
 
-                // Decode next step token into KV cache
+      
+                int charsDecoded = utf8Decoder.GetChars(tokenPieceBuffer, 0, nPieces, charBuffer, 0, flush: false);
+                if (charsDecoded > 0)
+                {
+                    yield return new string(charBuffer, 0, charsDecoded);
+                }
+                // ---------------------------------------------------------
+
                 unsafe
                 {
                     var batch = LlamaNative.llama_batch_init(1, 0, 1);
@@ -341,6 +368,14 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 }
             }
 
+   
+            int finalChars = utf8Decoder.GetChars(Array.Empty<byte>(), 0, 0, charBuffer, 0, flush: true);
+            if (finalChars > 0)
+            {
+                yield return new string(charBuffer, 0, finalChars);
+            }
+            // -------------------------------------------------------------
+
             _sessionManager.UpdatePastTokensCount(sessionId, currentPos);
             if (generatedTokens.Count > 0)
             {
@@ -350,9 +385,9 @@ public class LlamaInference : IInferenceEngine, IDisposable
         finally
         {
             LlamaNative.llama_sampler_free(samplerChain);
-            // Zero-Mutation Policy: Do NOT call ClearContextMemory
         }
     }
+
 
     public void Dispose()
     {

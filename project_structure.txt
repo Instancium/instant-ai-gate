@@ -335,7 +335,8 @@
 |    |    |    +--- LlamaInferenceProtectionTests.cs
 |    |    |    +--- LlamaVisionIntegrationTests.cs
 |    |    |    +--- NativeModelValidatorIntegrationTests.cs
-|    |    |    \--- SessionInferenceManagerTests.cs
+|    |    |    +--- SessionInferenceManagerTests.cs
+|    |    |    \--- SessionInferenceMemoryManagementTests.cs
 |    |    +--- Infrastructure
 |    |    |    \--- SyntheticNetworkHandler.cs
 |    |    +--- Server
