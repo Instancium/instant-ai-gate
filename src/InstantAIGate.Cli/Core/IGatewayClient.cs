@@ -1,6 +1,7 @@
 ﻿namespace InstantAIGate.Cli.Core;
 
 using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.SSR.Dtos;
 using System;
 using System.Collections.Generic;
@@ -13,4 +14,9 @@ public interface IGatewayClient
     Task ConnectTelemetryAsync(Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct);
     Task LoadModelAsync(string repoId, CancellationToken ct = default);
     Task EndSessionAsync(string sessionId, CancellationToken ct = default);
+
+    Task<NativeModelDetails> GetActiveModelDetailsAsync(CancellationToken ct = default);
+    Task<int> GetSessionTokenCountAsync(string sessionId, CancellationToken ct = default);
+    Task RollbackSessionAsync(string sessionId, int targetPosition, CancellationToken ct = default);
+    Task ShiftSessionMemoryAsync(string sessionId, int startPos, int count, CancellationToken ct = default);
 }

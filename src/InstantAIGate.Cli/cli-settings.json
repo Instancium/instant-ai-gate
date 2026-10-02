@@ -8,14 +8,16 @@
   "RemoteGateway": {
     "PublicUrl": "http://localhost:5000",
     "AdminHubUrl": "http://localhost:5001/hub/telemetry",
-    "AdminKey": "ChangeMeSuperSecureAdminApiKey123"
+    "AdminKey": "test-admin-secret"
   },
+
   "ReleasePipeline": {
     "TargetBranch": "main",
     "ReleaseBranchPrefix": "release-prep/v",
     "AiModelId": "qwen3-vl-8b-instruct",
     "AllowedBranchPrefixes": [ "develop", "feat/", "fix/", "hotfix/", "rc/", "rfc/" ]
   },
+
   "InstantAIGate": {
     "Storage": {
       "ModelsDirectory": "C:\\models"
@@ -26,8 +28,8 @@
         "ContextSize": 4096,
         "BatchSize": 512,
         "Threads": 8,
-        "MainGPU": 0,
-        "UseMemoryLock": true
+        "FlashAttention": true,
+        "KvCacheQuantization": "Q4_0"
       },
       "CpuOnly": {
         "GpuLayerCount": 0,
