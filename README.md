@@ -10,9 +10,9 @@
 </p>
 
 
-**InstantAIGate** is a high-throughput, deterministic AI inference gateway developed by **Instancium**. Engineered as a compiled, cross-platform **.NET 10** architecture with direct memory bindings to native inference engines, it enables **Architectural Autonomy** and **Vendor Independence**.
+**InstantAIGate** is a high-throughput, deterministic AI inference gateway developed by **Instancium**, an independent R&D laboratory. Engineered as the laboratory's foundational platform for powering next-generation sovereign applications and intelligent systems, it delivers a compiled, cross-platform **.NET 10** architecture with direct native memory bindings to inference engines, establishing **Architectural Autonomy** and **Structural Resilience**.
 
-By deploying InstantAIGate internally, organizations and individual creators maintain absolute control over their infrastructure lifecycle, eliminating forced lock-in to proprietary cloud AI providers and preserving vital Digital Subjectivity.
+By serving as the laboratory's core inference gateway, InstantAIGate enables Instancium's ecosystem and downstream applications to orchestrate local models within a **Controlled Data Perimeter**. This foundation empowers engineering teams and enterprises to deploy production-grade AI solutions without forced dependencies on proprietary cloud APIs, guaranteeing **Vendor Independence** and uncompromised **Digital Subjectivity**.
 
 > **Note:** Unlike stateless proxies, InstantAIGate operates as a **stateful inference orchestration gateway**. It anchors inference sessions directly to hardware resources in VRAM, eliminating redundant serialization layers and providing fine-grained, low-level control over KV-cache allocations.
 
@@ -35,12 +35,7 @@ High-performance, full-duplex transport (`/hub/chat`):
 - **Session Persistence:** Context handles remain leased in VRAM across turns for minimal Time-To-First-Token (TTFT).
 - **Single-Pass Media Tokenization:** Image embeddings are computed once and pinned in the KV cache, enabling multi-turn conversations without repeated binary transfers.
 
-### 4. Vulkan-Powered Cross-Platform Acceleration
-Built on direct memory bindings to native runtimes like `llama.cpp` and `mtmd`. Support for:
-- Vulkan-accelerated GPU offloading.
-- Unified CPU and hardware compute layers across diverse operating systems and heterogeneous GPU environments.
-
-### 5. Real-Time Observability & Telemetry
+### 4. Real-Time Observability & Telemetry
 Dedicated, secure telemetry hub (`/hub/telemetry`) streaming high-fidelity data at 1Hz:
 - VRAM context leases and request queue backpressure (`InferenceMetrics`).
 - Live server-side download progress.
@@ -48,11 +43,31 @@ Dedicated, secure telemetry hub (`/hub/telemetry`) streaming high-fidelity data 
 
 ## Architecture
 
-InstantAIGate utilizes a tiered architecture separating client logic, state management, and native execution.
+InstantAIGate is designed around a decoupled, stateful architecture that isolates client orchestration from the gateway server and underlying native execution backends.
 
 <p align="center">
   <img src="media/architecture-diagram.jpg" alt="InstantAIGate Architecture Diagram" width="800"/>
 </p>
+
+### System Layers
+
+#### 1. Client Layer: Universal Integration (CLI as Reference Client)
+The inference gateway exposes a full-duplex, event-driven API. Any environment capable of establishing a WebSocket / SignalR connection can natively integrate with InstantAIGate:
+- **Language Agnostic:** Seamless integration via official SignalR client libraries for **JavaScript / TypeScript** (browsers, Node.js, Electron), **Python**, **Go**, **Rust**, and **.NET / C#**.
+- **InstantAIGate.Cli (Reference Implementation):** An included open-source reference client demonstrating how consumers can implement token budgeting, checkpointed ingestion (`RollbackSessionAsync`), sliding-window memory management (`ShiftSessionMemoryAsync`), and interactive streaming.
+
+#### 2. Gateway Core: InstantAIGate.Server (`SessionChatHub`)
+The actual inference gateway runtime. It manages high-concurrency client sessions and coordinates stateful interactions without mutating context:
+- **Stateful Connection Lifecycle:** Maps transient client connection IDs and persistent `SessionId` tokens directly to leased native memory handles (`Context Handle`).
+- **Zero-Mutation Delta Ingestion:** Ingests only conversational deltas while maintaining strict prompt integrity.
+- **KV-Cache Manipulation Interface:** Directly executes prefix rollback and sequence shift primitives on the host.
+- **Fail-Safe Guard:** Intercepts out-of-budget contexts *before* dispatch to native routines, protecting hardware from crashes.
+
+#### 3. Native Engine Boundary
+The low-level C++ boundary executing hardware-accelerated tensor operations:
+- **Dynamic Backpressure Queue:** Prioritizes and throttles requests across active sessions to prevent VRAM saturation.
+- **Prefix Tree Context Pool:** Reuses shared prefix token graphs and model weights across multi-tenant inference sessions.
+- **Native Memory Operations:** Interacts directly with compiled `llama.cpp` / `mtmd` runtimes for direct hardware offload without runtime virtualization overhead.
 
 ### Main Components:
 
@@ -69,3 +84,14 @@ InstantAIGate utilizes a tiered architecture separating client logic, state mana
 > * **Intel Arc & Integrated Graphics** (Xe architecture)
 > * **Apple Silicon** (via cross-compilation/Metal-Vulkan translation layers where applicable)
 > * **Cross-Environment:** Seamless execution on Windows, Linux, and edge devices within your private network perimeter.
+
+## 📄 License & Trademark
+Copyright (c) 2026 Instancium™ (https://instancium.com). All rights reserved.
+
+This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE.txt) file for details.
+
+### Branding & Logo Trademark
+
+The **InstantAIGate** name, logos, and all branding assets located in any `media` directories are not covered by the Apache 2.0 license. 
+Instead, all branding materials and logos throughout the project are licensed under the [Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)](https://creativecommons.org/licenses/by-nc-nd/4.0/).
+
