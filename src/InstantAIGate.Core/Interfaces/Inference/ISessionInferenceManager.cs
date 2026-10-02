@@ -11,16 +11,12 @@ public interface ISessionInferenceManager
     Task CreateSessionAsync(SessionStartRequest request, CancellationToken ct = default);
     Task ReleaseSessionAsync(string sessionId, CancellationToken ct = default);
     bool TryGetSessionRepoId(string sessionId, out string? repoId);
-
     Task<IDisposable> AcquireSessionExecutionGateAsync(string sessionId, CancellationToken ct = default);
     Task<InferenceContext> GetOrCreateContextAsync(string sessionId, CancellationToken ct = default);
 
-    // Semantic tracking methods
-    void RecordMessageSpan(string sessionId, string role, int startPos, int endPos);
-    bool TryCalculateSemanticEviction(string sessionId, int requiredSpace, out int evictionStart, out int evictionEnd);
-    int GetAdaptiveTokenReserve(string sessionId, int staticMaxTokens);
+    Task RollbackToPositionAsync(string sessionId, int targetTokenPosition, CancellationToken ct = default);
+    Task ShiftMemoryRangeAsync(string sessionId, int startPos, int count, CancellationToken ct = default);
 
-    // Token topology tracking for Radix Tree lookup
     void UpdatePastTokensCount(string sessionId, int count);
     void AppendSessionTokens(string sessionId, int[] tokens);
     int[] GetSessionPrefixTokens(string sessionId);
