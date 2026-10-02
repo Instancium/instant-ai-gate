@@ -6,106 +6,134 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-public class RadixContextNode
+public sealed class PrefixTreeNode
 {
-    public int[] PrefixTokens { get; set; } = Array.Empty<int>();
+    public int TokenId { get; init; }
     public IContextHandle? CachedContext { get; set; }
     public DateTimeOffset LastAccessed { get; set; } = DateTimeOffset.UtcNow;
-    public Dictionary<int, RadixContextNode> Children { get; } = new();
+    public Dictionary<int, PrefixTreeNode> Children { get; } = new();
+
+    public PrefixTreeNode(int tokenId)
+    {
+        TokenId = tokenId;
+    }
 }
 
-public class PrefixTreeContextPool
+public sealed class PrefixTreeContextPool
 {
-    private readonly RadixContextNode _root = new();
-    private readonly object _lock = new();
+    private readonly PrefixTreeNode _root = new(-1);
+    private readonly object _syncLock = new();
     private readonly IBackendFacade _backendFacade;
 
     public PrefixTreeContextPool(IBackendFacade backendFacade)
     {
-        _backendFacade = backendFacade;
+        _backendFacade = backendFacade ?? throw new ArgumentNullException(nameof(backendFacade));
     }
 
-    public (IContextHandle? Handle, int MatchedLength) AcquireBestContext(int[] targetPrefix)
+    public (IContextHandle? Handle, int MatchedLength) AcquireBestContext(ReadOnlySpan<int> targetPrefix)
     {
-        lock (_lock)
+        lock (_syncLock)
         {
-            RadixContextNode bestNode = _root;
-            int bestMatchLength = 0;
+            var currentNode = _root;
+            PrefixTreeNode? bestMatchNode = null;
+            int currentDepth = 0;
+            int bestMatchDepth = 0;
 
-            foreach (var child in _root.Children.Values)
+            for (int i = 0; i < targetPrefix.Length; i++)
             {
-                int matchLen = GetCommonPrefixLength(child.PrefixTokens, targetPrefix);
-                if (matchLen > bestMatchLength)
+                int token = targetPrefix[i];
+                if (!currentNode.Children.TryGetValue(token, out var nextNode))
                 {
-                    bestMatchLength = matchLen;
-                    bestNode = child;
+                    break;
+                }
+
+                currentNode = nextNode;
+                currentDepth++;
+
+                if (currentNode.CachedContext != null)
+                {
+                    bestMatchNode = currentNode;
+                    bestMatchDepth = currentDepth;
                 }
             }
 
-            if (bestNode.CachedContext != null)
+            if (bestMatchNode?.CachedContext != null)
             {
-                var handle = bestNode.CachedContext;
-                bestNode.CachedContext = null;
-                return (handle, bestMatchLength);
+                var handle = bestMatchNode.CachedContext;
+                bestMatchNode.CachedContext = null;
+                bestMatchNode.LastAccessed = DateTimeOffset.UtcNow;
+                return (handle, bestMatchDepth);
             }
 
             return (null, 0);
         }
     }
 
-    public void ReturnContext(IContextHandle handle, int[] prefixSequence)
+    public void ReturnContext(IContextHandle handle, ReadOnlySpan<int> prefixSequence)
     {
-        lock (_lock)
-        {
-            var node = new RadixContextNode
-            {
-                PrefixTokens = prefixSequence.ToArray(),
-                CachedContext = handle,
-                LastAccessed = DateTimeOffset.UtcNow
-            };
+        ArgumentNullException.ThrowIfNull(handle);
 
-            int hash = CalculateSequenceHash(prefixSequence);
-            _root.Children[hash] = node;
+        lock (_syncLock)
+        {
+            var currentNode = _root;
+            foreach (int token in prefixSequence)
+            {
+                if (!currentNode.Children.TryGetValue(token, out var child))
+                {
+                    child = new PrefixTreeNode(token);
+                    currentNode.Children[token] = child;
+                }
+                currentNode = child;
+            }
+
+            if (currentNode.CachedContext != null)
+            {
+                _backendFacade.FreeContext(currentNode.CachedContext);
+            }
+
+            currentNode.CachedContext = handle;
+            currentNode.LastAccessed = DateTimeOffset.UtcNow;
         }
     }
 
-    public void ApplyEvictionPolicy(int maxCapacity)
+    public void EvictOldest(int maxRetainedContexts)
     {
-        lock (_lock)
+        lock (_syncLock)
         {
-            int currentContexts = _root.Children.Values.Count(n => n.CachedContext != null);
-            if (currentContexts <= maxCapacity) return;
+            var allActiveNodes = new List<PrefixTreeNode>();
+            TraverseActiveNodes(_root, allActiveNodes);
 
-            var oldest = _root.Children.Values
-                .Where(n => n.CachedContext != null)
-                .OrderBy(n => n.LastAccessed)
-                .FirstOrDefault();
-
-            if (oldest != null && oldest.CachedContext != null)
+            if (allActiveNodes.Count <= maxRetainedContexts)
             {
-                _backendFacade.ClearContextMemory(oldest.CachedContext, true);
-                _root.Children.Remove(CalculateSequenceHash(oldest.PrefixTokens));
+                return;
+            }
+
+            var evictionCandidates = allActiveNodes
+                .OrderBy(n => n.LastAccessed)
+                .Take(allActiveNodes.Count - maxRetainedContexts);
+
+            foreach (var node in evictionCandidates)
+            {
+                if (node.CachedContext != null)
+                {
+                    _backendFacade.ClearContextMemory(node.CachedContext, clearKvCache: true);
+                    _backendFacade.FreeContext(node.CachedContext);
+                    node.CachedContext = null;
+                }
             }
         }
     }
 
-    private int GetCommonPrefixLength(int[] a, int[] b)
+    private static void TraverseActiveNodes(PrefixTreeNode node, List<PrefixTreeNode> accumulator)
     {
-        int len = Math.Min(a.Length, b.Length);
-        for (int i = 0; i < len; i++)
+        if (node.CachedContext != null)
         {
-            if (a[i] != b[i]) return i;
+            accumulator.Add(node);
         }
-        return len;
-    }
 
-    private int CalculateSequenceHash(int[] sequence)
-    {
-        unchecked
+        foreach (var child in node.Children.Values)
         {
-            int hash = 17;
-            foreach (var t in sequence) hash = hash * 31 + t;
-            return hash;
+            TraverseActiveNodes(child, accumulator);
         }
     }
 }

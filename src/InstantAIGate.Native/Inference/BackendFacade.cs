@@ -16,17 +16,27 @@ public class BackendFacade : IBackendFacade
     public void BackendFree() => LlamaNative.llama_backend_free();
     public bool SupportsGpuOffload() => LlamaNative.llama_supports_gpu_offload();
     private static GgmlLogCallback? _nativeLogCallback;
+
+
     public IModelHandle LoadModel(ModelSettings settings, string modelPath)
     {
         var modelParams = LlamaNative.llama_model_default_params();
         modelParams.NGpuLayers = settings.GpuLayerCount;
         modelParams.MainGpu = settings.MainGPU;
-        modelParams.LoadMode = !settings.UseMemoryLock ? LlamaLoadMode.MMap : LlamaLoadMode.None;
-        modelParams.SplitMode = settings.GpuLayerCount > 0 ? LlamaSplitMode.Layer : LlamaSplitMode.None;
+
+        // Fix: Use MLock / MMapMLock when UseMemoryLock is requested
+        modelParams.LoadMode = settings.UseMemoryLock
+            ? LlamaLoadMode.MMapMLock
+            : LlamaLoadMode.MMap;
+
+        modelParams.SplitMode = settings.GpuLayerCount > 0
+            ? LlamaSplitMode.Layer
+            : LlamaSplitMode.None;
 
         IntPtr ptr = LlamaNative.llama_model_load_from_file(modelPath, in modelParams, (nuint)modelPath.Length);
-
-        return ptr != IntPtr.Zero ? new LlamaModelHandle(ptr) : throw new InvalidOperationException("Failed to load model natively.");
+        return ptr != IntPtr.Zero
+            ? new LlamaModelHandle(ptr)
+            : throw new InvalidOperationException("Failed to load model natively.");
     }
 
 

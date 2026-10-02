@@ -201,9 +201,22 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
 
                 if (session.ActiveContext?.TextContext?.Handle is IContextHandle handle)
                 {
-                    // llama_memory_seq_rm
-                    _backendFacade.RemoveContextMemoryRange(handle, 0, startPos, startPos + count);
-                    // llama_memory_seq_add
+                    // Fail-Safe Guard: Check native shift capability prior to mutating state
+                    if (!_backendFacade.CanShiftContextMemory(handle))
+                    {
+                        throw new NotSupportedException(
+                            $"Physical KV-cache shifting is not supported for session '{sessionId}' " +
+                            "due to active FlashAttention or GPU offload configuration. " +
+                            "Use RollbackToPositionAsync and re-decode the suffix instead.");
+                    }
+
+                    bool removed = _backendFacade.RemoveContextMemoryRange(handle, 0, startPos, startPos + count);
+                    if (!removed)
+                    {
+                        throw new InvalidOperationException(
+                            $"Failed to remove KV memory range [{startPos}, {startPos + count}) natively.");
+                    }
+
                     _backendFacade.ShiftContextMemoryRange(handle, 0, startPos + count, -1, -count);
                 }
 
@@ -214,7 +227,9 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
                 }
 
                 session.Touch(_timeProvider.GetUtcNow());
-                _logger.LogDebug("Session {SessionId} shifted KV range: removed {Count} tokens starting at {StartPos}", sessionId, count, startPos);
+                _logger.LogDebug(
+                    "Session {SessionId} shifted KV range: removed {Count} tokens starting at {StartPos}",
+                    sessionId, count, startPos);
             }
         }
     }
