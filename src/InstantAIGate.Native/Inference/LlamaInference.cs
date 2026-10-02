@@ -56,14 +56,17 @@ public class LlamaInference : IInferenceEngine, IDisposable
         using var model = await _modelManager.AcquireModelAsync(modelId, ct);
         IntPtr nativeModelPtr = UnwrapModel(model);
         IntPtr vocab = LlamaNative.llama_model_get_vocab(nativeModelPtr);
+
+        // Honor vocab requirements for special tokens (BOS)
+        bool addBos = LlamaNative.llama_vocab_get_add_bos(vocab);
+
         byte[] textBytes = Encoding.UTF8.GetBytes(text);
         int[] tokens = new int[textBytes.Length + 64];
-
-        int count = LlamaNative.llama_tokenize(vocab, textBytes, textBytes.Length, tokens, tokens.Length, false, true);
+        int count = LlamaNative.llama_tokenize(vocab, textBytes, textBytes.Length, tokens, tokens.Length, addBos, true);
         if (count < 0)
         {
             tokens = new int[-count];
-            count = LlamaNative.llama_tokenize(vocab, textBytes, textBytes.Length, tokens, tokens.Length, false, true);
+            count = LlamaNative.llama_tokenize(vocab, textBytes, textBytes.Length, tokens, tokens.Length, addBos, true);
         }
 
         if (count <= 0)
