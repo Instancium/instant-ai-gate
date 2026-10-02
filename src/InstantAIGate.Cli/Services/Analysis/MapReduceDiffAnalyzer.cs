@@ -154,17 +154,17 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         using var reader = new StringReader(rawDiff);
         string? line;
         bool isCurrentFileIgnored = false;
+        string currentFileName = string.Empty;
 
         while ((line = reader.ReadLine()) != null)
         {
             if (line.StartsWith("diff --git a/"))
             {
                 var parts = line.Split(' ');
-                string detectedPath = parts.Length >= 4 && parts[3].StartsWith("b/")
-                    ? parts[3][2..]
-                    : (parts.Length >= 3 && parts[2].StartsWith("a/") ? parts[2][2..] : string.Empty);
+                currentFileName = parts.Length >= 4 && parts[3].StartsWith("b/") ? parts[3][2..]
+                                : (parts.Length >= 3 && parts[2].StartsWith("a/") ? parts[2][2..] : string.Empty);
 
-                isCurrentFileIgnored = IsGeneratedOrBinary(detectedPath);
+                isCurrentFileIgnored = IsGeneratedOrBinary(currentFileName);
 
                 if (currentChunk.Length > 0 && currentChunk.Length + line.Length > maxLength)
                 {
@@ -175,13 +175,26 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
                 if (isCurrentFileIgnored)
                 {
                     currentChunk.AppendLine(line);
-                    currentChunk.AppendLine($"[SKIPPED: Auto-generated/binary payload for {detectedPath}]");
+                    currentChunk.AppendLine($"[SKIPPED: Auto-generated/binary payload for {currentFileName}]");
                     continue;
                 }
             }
 
             if (!isCurrentFileIgnored)
             {
+              
+                if (currentChunk.Length > 0 && currentChunk.Length + line.Length > maxLength)
+                {
+                    chunks.Add(currentChunk.ToString());
+                    currentChunk.Clear();
+
+                  
+                    if (!string.IsNullOrEmpty(currentFileName))
+                    {
+                        currentChunk.AppendLine($"[... CONTINUATION OF DIFF FOR FILE: {currentFileName} ...]");
+                    }
+                }
+
                 currentChunk.AppendLine(line);
             }
         }
@@ -241,60 +254,110 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
     }
 
     private async Task<string> GenerateFinalCommitAsync(
-            string aggregatedContext,
-            string diffStat,
-            List<FileDiffStatus> fileStatuses,
-            CancellationToken ct)
+           string aggregatedContext,
+           string diffStat,
+           List<FileDiffStatus> fileStatuses,
+           CancellationToken ct)
     {
-        string fileListText = string.Join("\n", fileStatuses.Select(f => $"- [{f.Status.ToUpperInvariant()}] {f.Path}"));
-        string statSection = string.IsNullOrWhiteSpace(diffStat) ? string.Empty : $"""
+        // Deterministic Compact Registry generation instead of naive Take(15)
+        string fileListText = BuildCompactFileRegistry(fileStatuses);
 
-            DIFF VOLUME STATISTICS:
-            {diffStat}
-            """;
+        string statSection = string.IsNullOrWhiteSpace(diffStat) ? string.Empty : $"""
+        DIFF VOLUME STATISTICS:
+        {diffStat}
+        """;
 
         string prompt = $"""
-            You are an expert developer generating a Conventional Commit message.
-            Strictly adhere to the provided file statuses, diff volume statistics, and context.
+        You are an expert developer generating a Conventional Commit message. Strictly adhere to the provided file statuses, diff volume statistics, and context.
+        
+        FILE CHANGE OVERVIEW:
+        {fileListText}
+        {statSection}
+        
+        RULES:
+        1. MUST be exclusively in English.
+        2. First line (Title): Format as type(scope): description. 
+           - HARD LIMIT: Target 50-65 characters. Absolute maximum is 72 characters.
+           - Be concise, direct, and imperative (e.g., 'feat(server): add startup worker tests').
+        3. CRITICAL STATUS ACCURACY RULES:
+           - NEVER label a file as 'created', 'introduced', or 'added' if its status is [MODIFIED]. Use verbs like 'update', 'refactor', 'enhance', 'fix'.
+           - ONLY treat files with status [ADDED] as newly created files.
+           - Files with status [DELETED] must be described as removed or deleted.
+           - Files with status [RENAMED] must be described as renamed or moved.
+        4. FILE TYPE AND SCOPE RULE:
+           - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs'.
+           - Derive the primary scope from the most affected module indicated in the overview.
+        5. Second line: MUST be completely blank.
+        6. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed, preserving exact file statuses.
 
-            FILE CHANGE REGISTRY:
-            {fileListText}{statSection}
+        Context:
+        {aggregatedContext}
+        """;
 
-            RULES:
-            1. MUST be exclusively in English.
-            2. First line (Title): Format as type(scope): description.
-               - HARD LIMIT: Target 50-65 characters. Absolute maximum is 72 characters.
-               - Be concise, direct, and imperative (e.g., 'feat(server): add startup worker tests').
-            3. CRITICAL STATUS ACCURACY RULES:
-               - NEVER label a file as 'created', 'introduced', or 'added' if its status is [MODIFIED]. Use verbs like 'update', 'refactor', 'enhance', 'fix'.
-               - ONLY treat files with status [ADDED] as newly created files.
-               - Files with status [DELETED] must be described as removed or deleted.
-               - Files with status [RENAMED] must be described as renamed or moved.
-               - If diff chunks show added lines (+) inside a [MODIFIED] file, it means code was appended or updated, NOT that the file is new.
-            4. FILE TYPE AND SCOPE RULE:
-               - If ONLY documentation files (.md, .txt) are changed, type MUST be 'docs'.
-               - Do not guess the architectural scope from code terms if file paths indicate another layer.
-            5. Second line: MUST be completely blank.
-            6. Third line onwards (Body): Provide a concise bulleted list detailing WHAT was changed, preserving exact file statuses.
-
-            Context:
-            {aggregatedContext}
-            """;
-
-       
         var deltaMessage = new ChatMessage("user", prompt);
         var sb = new StringBuilder();
         string commitSessionId = $"diff-commit-{Guid.NewGuid():N}";
 
-       
-        await foreach (var chunk in _gatewayClient.StreamChatAsync(commitSessionId, _modelId, deltaMessage, ct))
+        try
         {
-            sb.Append(chunk);
+            await foreach (var chunk in _gatewayClient.StreamChatAsync(commitSessionId, _modelId, deltaMessage, ct))
+            {
+                sb.Append(chunk);
+            }
+        }
+        finally
+        {
+            await _gatewayClient.EndSessionAsync(commitSessionId, CancellationToken.None);
         }
 
         string rawMessage = sb.ToString().Trim(' ', '\r', '\n', '`', '"');
         return SanitizeCommitMessage(rawMessage);
     }
+
+    private static string BuildCompactFileRegistry(List<FileDiffStatus> fileStatuses)
+    {
+        const int maxFlatDisplay = 20;
+
+        if (fileStatuses.Count <= maxFlatDisplay)
+        {
+            return string.Join("\n", fileStatuses.Select(f => $"- [{f.Status.ToUpperInvariant()}] {f.Path}"));
+        }
+
+        
+        var sb = new StringBuilder();
+        sb.AppendLine($"Total files changed: {fileStatuses.Count}. Module Breakdown:");
+
+        var groups = fileStatuses
+            .GroupBy(f =>
+            {
+                var parts = f.Path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length > 2 && parts[0].Equals("src", StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"{parts[0]}/{parts[1]}"; // e.g. "src/InstantAIGate.Native"
+                }
+                return parts.Length > 1 ? parts[0] : "Root";
+            })
+            .OrderByDescending(g => g.Count());
+
+        foreach (var group in groups)
+        {
+            int modifiedCount = group.Count(f => f.Status == "MODIFIED");
+            int addedCount = group.Count(f => f.Status == "ADDED");
+            int deletedCount = group.Count(f => f.Status == "DELETED");
+            int renamedCount = group.Count(f => f.Status == "RENAMED");
+
+            var statusParts = new List<string>();
+            if (modifiedCount > 0) statusParts.Add($"{modifiedCount} modified");
+            if (addedCount > 0) statusParts.Add($"{addedCount} added");
+            if (deletedCount > 0) statusParts.Add($"{deletedCount} deleted");
+            if (renamedCount > 0) statusParts.Add($"{renamedCount} renamed");
+
+            sb.AppendLine($"- {group.Key}: {string.Join(", ", statusParts)}");
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
 
     private static string SanitizeCommitMessage(string rawMessage)
     {
