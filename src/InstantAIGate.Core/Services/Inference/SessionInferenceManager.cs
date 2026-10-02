@@ -1,31 +1,27 @@
-﻿// File: src/InstantAIGate.Core/Services/Inference/SessionInferenceManager.cs
-namespace InstantAIGate.Core.Services.Inference;
+﻿namespace InstantAIGate.Core.Services.Inference;
 
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
+using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Interfaces.Native;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-public sealed class SessionInferenceManager : ISessionInferenceManager
+public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposable
 {
-    private class StatefulSessionEntry : IDisposable
+    private sealed class StatefulSessionEntry : IDisposable
     {
         public SessionStartRequest Request { get; }
         public string RepoId => Request.RepoId;
         public int PastTokens { get; set; } = 0;
-        public List<MessageTokenSpan> MessageSpans { get; } = new();
         public List<int> TokenSequence { get; } = new();
-
-        // 1. DUAL-GATE CONCURRENCY (Fixes Deadlock)
         public readonly SemaphoreSlim ExecutionGate = new(1, 1);
         public readonly SemaphoreSlim ContextInitGate = new(1, 1);
-
         public readonly object LockObj = new();
         public InferenceContext? ActiveContext { get; set; }
         public DateTimeOffset LastAccessed { get; private set; }
@@ -38,16 +34,6 @@ public sealed class SessionInferenceManager : ISessionInferenceManager
 
         public void Touch(DateTimeOffset now) => LastAccessed = now;
 
-        public int CalculateAdaptiveReserve(int staticMaxTokens)
-        {
-            var assistantSpans = MessageSpans.Where(m => m.Role == "assistant").ToList();
-            if (assistantSpans.Count == 0) return staticMaxTokens;
-
-            double avgTokens = assistantSpans.Average(m => m.EndPos - m.StartPos);
-            int adaptiveReserve = (int)(avgTokens * 1.5);
-            return Math.Min(adaptiveReserve, staticMaxTokens);
-        }
-
         public void Dispose()
         {
             ActiveContext?.Dispose();
@@ -57,6 +43,7 @@ public sealed class SessionInferenceManager : ISessionInferenceManager
     }
 
     private readonly IModelManager _modelManager;
+    private readonly IBackendFacade _backendFacade;
     private readonly ILogger<SessionInferenceManager> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _idleTimeout;
@@ -66,24 +53,25 @@ public sealed class SessionInferenceManager : ISessionInferenceManager
 
     public SessionInferenceManager(
         IModelManager modelManager,
+        IBackendFacade backendFacade,
         ILogger<SessionInferenceManager> logger,
         TimeProvider? timeProvider = null,
         TimeSpan? idleTimeout = null)
     {
         _modelManager = modelManager ?? throw new ArgumentNullException(nameof(modelManager));
+        _backendFacade = backendFacade ?? throw new ArgumentNullException(nameof(backendFacade));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _idleTimeout = idleTimeout ?? TimeSpan.FromMinutes(10);
-
         _cleanupTimer = _timeProvider.CreateTimer(
             _ => _ = CleanupIdleSessionsAsync(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
     }
+
 
     public Task CreateSessionAsync(SessionStartRequest request, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var entry = new StatefulSessionEntry(request, _timeProvider.GetUtcNow());
-
         if (!_sessions.TryAdd(request.SessionId, entry))
         {
             throw new InvalidOperationException($"Session '{request.SessionId}' is already registered.");
@@ -96,6 +84,7 @@ public sealed class SessionInferenceManager : ISessionInferenceManager
         if (_sessions.TryRemove(sessionId, out var session))
         {
             session.Dispose();
+            _logger.LogInformation("Released session state for {SessionId}", sessionId);
         }
         return Task.CompletedTask;
     }
@@ -118,7 +107,6 @@ public sealed class SessionInferenceManager : ISessionInferenceManager
         {
             throw new KeyNotFoundException($"Session '{sessionId}' is not active.");
         }
-
         session.Touch(_timeProvider.GetUtcNow());
         await session.ExecutionGate.WaitAsync(ct);
         return new Releaser(session.ExecutionGate);
@@ -133,145 +121,125 @@ public sealed class SessionInferenceManager : ISessionInferenceManager
         }
 
         session.Touch(_timeProvider.GetUtcNow());
-
-        // Lock safely via secondary gate to avoid execution reentrancy
-        if (session.ActiveContext == null)
+        if (session.ActiveContext != null)
         {
-            await session.ContextInitGate.WaitAsync(ct);
-            try
-            {
-                if (session.ActiveContext == null)
-                {
-                    session.ActiveContext = await _modelManager.AcquireContextAsync(session.RepoId, ct);
-                }
-            }
-            finally
-            {
-                session.ContextInitGate.Release();
-            }
+            return session.ActiveContext;
         }
 
-        return session.ActiveContext;
-    }
-
-    public void RecordMessageSpan(string sessionId, string role, int startPos, int endPos)
-    {
-        if (_sessions.TryGetValue(sessionId, out var session))
+        await session.ContextInitGate.WaitAsync(ct);
+        try
         {
-            lock (session.LockObj) session.MessageSpans.Add(new MessageTokenSpan(role, startPos, endPos));
+            if (session.ActiveContext == null)
+            {
+                session.ActiveContext = await _modelManager.AcquireContextAsync(session.RepoId, ct);
+            }
+            return session.ActiveContext;
+        }
+        finally
+        {
+            session.ContextInitGate.Release();
         }
     }
 
-    public int GetAdaptiveTokenReserve(string sessionId, int staticMaxTokens)
+    public async Task RollbackToPositionAsync(string sessionId, int targetTokenPosition, CancellationToken ct = default)
     {
-        if (_sessions.TryGetValue(sessionId, out var session))
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_sessions.TryGetValue(sessionId, out var session))
         {
-            lock (session.LockObj) return session.CalculateAdaptiveReserve(staticMaxTokens);
+            throw new KeyNotFoundException($"Session '{sessionId}' was not found.");
         }
-        return staticMaxTokens;
+
+        using (await AcquireSessionExecutionGateAsync(sessionId, ct))
+        {
+            lock (session.LockObj)
+            {
+                if (targetTokenPosition < 0 || targetTokenPosition > session.PastTokens)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(targetTokenPosition),
+                        $"Target rollback position {targetTokenPosition} is invalid for current PastTokens={session.PastTokens}.");
+                }
+
+                if (session.ActiveContext?.TextContext?.Handle is IContextHandle handle)
+                {
+                    // llama_memory_seq_rm(seq_id=0, p0=targetTokenPosition, p1=-1)
+                    _backendFacade.RemoveContextMemoryRange(handle, 0, targetTokenPosition, -1);
+                }
+
+                session.PastTokens = targetTokenPosition;
+                if (session.TokenSequence.Count > targetTokenPosition)
+                {
+                    session.TokenSequence.RemoveRange(
+                        targetTokenPosition,
+                        session.TokenSequence.Count - targetTokenPosition);
+                }
+
+                session.Touch(_timeProvider.GetUtcNow());
+                _logger.LogDebug("Session {SessionId} rolled back to token position {TargetPosition}", sessionId, targetTokenPosition);
+            }
+        }
     }
 
-    public bool TryCalculateSemanticEviction(string sessionId, int requiredSpace, out int evictionStart, out int evictionEnd)
+    public async Task ShiftMemoryRangeAsync(string sessionId, int startPos, int count, CancellationToken ct = default)
     {
-        evictionStart = 0;
-        evictionEnd = 0;
-
-        if (!_sessions.TryGetValue(sessionId, out var session)) return false;
-
-        lock (session.LockObj)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_sessions.TryGetValue(sessionId, out var session))
         {
-        
-            if (session.MessageSpans.Count < 2) return false;
+            throw new KeyNotFoundException($"Session '{sessionId}' was not found.");
+        }
 
-            var systemSpan = session.MessageSpans[0];
-            var firstUserSpan = session.MessageSpans.FirstOrDefault(m => m.Role == "user" && m.StartPos >= systemSpan.EndPos)
-                                ?? systemSpan; 
-
-            int protectedBoundary = firstUserSpan.StartPos + Math.Min(4, firstUserSpan.EndPos - firstUserSpan.StartPos);
-
-            evictionStart = protectedBoundary;
-            evictionEnd = protectedBoundary;
-            int accumulatedSpace = 0;
-            var spansToRemove = new List<MessageTokenSpan>();
-
-            
-            var evictableSpans = session.MessageSpans
-                .Where(m => m.EndPos > protectedBoundary)
-                .OrderBy(m => m.StartPos)
-                .ToList();
-
-            foreach (var span in evictableSpans)
+        using (await AcquireSessionExecutionGateAsync(sessionId, ct))
+        {
+            lock (session.LockObj)
             {
-               
-                int spanEvictionStart = Math.Max(span.StartPos, protectedBoundary);
-                int spanEvictionEnd = span.EndPos;
-
-                int spaceGained = spanEvictionEnd - spanEvictionStart;
-                if (spaceGained > 0)
+                if (startPos < 0 || count <= 0 || (startPos + count) > session.PastTokens)
                 {
-                    accumulatedSpace += spaceGained;
-                    evictionEnd = spanEvictionEnd;
-
-                   
-                    if (spanEvictionStart <= span.StartPos)
-                    {
-                        spansToRemove.Add(span);
-                    }
+                    throw new ArgumentOutOfRangeException(
+                        nameof(count),
+                        $"Invalid range startPos={startPos}, count={count} for PastTokens={session.PastTokens}.");
                 }
 
-               
-                if (accumulatedSpace >= requiredSpace)
+                if (session.ActiveContext?.TextContext?.Handle is IContextHandle handle)
                 {
-                    break;
+                    // llama_memory_seq_rm
+                    _backendFacade.RemoveContextMemoryRange(handle, 0, startPos, startPos + count);
+                    // llama_memory_seq_add
+                    _backendFacade.ShiftContextMemoryRange(handle, 0, startPos + count, -1, -count);
                 }
+
+                session.PastTokens -= count;
+                if (session.TokenSequence.Count >= (startPos + count))
+                {
+                    session.TokenSequence.RemoveRange(startPos, count);
+                }
+
+                session.Touch(_timeProvider.GetUtcNow());
+                _logger.LogDebug("Session {SessionId} shifted KV range: removed {Count} tokens starting at {StartPos}", sessionId, count, startPos);
             }
-
-           
-            if (accumulatedSpace < requiredSpace) return false;
-
-            int shiftAmount = evictionEnd - evictionStart;
-
-           
-            session.MessageSpans.RemoveAll(m => spansToRemove.Contains(m));
-
-            
-            int capturedEvictionEnd = evictionEnd;
-            foreach (var remainingSpan in session.MessageSpans)
-            {
-               
-                if (remainingSpan.StartPos < evictionStart && remainingSpan.EndPos > evictionStart)
-                {
-                    remainingSpan.EndPos = evictionStart;
-                }
-
-                else if (remainingSpan.StartPos >= capturedEvictionEnd)
-                {
-                    remainingSpan.StartPos -= shiftAmount;
-                    remainingSpan.EndPos -= shiftAmount;
-                }
-            }
-
-            if (session.TokenSequence.Count >= evictionStart + shiftAmount)
-            {
-                session.TokenSequence.RemoveRange(evictionStart, shiftAmount);
-            }
-
-            return true;
         }
     }
 
     public void UpdatePastTokensCount(string sessionId, int count)
     {
-        if (_sessions.TryGetValue(sessionId, out var session)) session.PastTokens = count;
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            lock (session.LockObj)
+            {
+                session.PastTokens = count;
+                session.Touch(_timeProvider.GetUtcNow());
+            }
+        }
     }
-
-    public int GetPastTokensCount(string sessionId) => _sessions.TryGetValue(sessionId, out var session) ? session.PastTokens : 0;
 
     public void AppendSessionTokens(string sessionId, int[] tokens)
     {
         if (_sessions.TryGetValue(sessionId, out var session))
         {
-            lock (session.LockObj) session.TokenSequence.AddRange(tokens);
+            lock (session.LockObj)
+            {
+                session.TokenSequence.AddRange(tokens);
+                session.Touch(_timeProvider.GetUtcNow());
+            }
         }
     }
 
@@ -279,38 +247,65 @@ public sealed class SessionInferenceManager : ISessionInferenceManager
     {
         if (_sessions.TryGetValue(sessionId, out var session))
         {
-            lock (session.LockObj) return session.TokenSequence.ToArray();
+            lock (session.LockObj)
+            {
+                return session.TokenSequence.ToArray();
+            }
         }
         return Array.Empty<int>();
     }
 
-    public Task CleanupIdleSessionsAsync()
+    public int GetPastTokensCount(string sessionId)
     {
-        if (_disposed) return Task.CompletedTask;
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            lock (session.LockObj)
+            {
+                return session.PastTokens;
+            }
+        }
+        return 0;
+    }
+
+    public async Task CleanupIdleSessionsAsync()
+    {
         var now = _timeProvider.GetUtcNow();
         foreach (var kvp in _sessions)
         {
             if (now - kvp.Value.LastAccessed > _idleTimeout)
             {
-                if (_sessions.TryRemove(kvp.Key, out var entry)) entry.Dispose();
+                _logger.LogInformation("Evicting expired idle session {SessionId}", kvp.Key);
+                await ReleaseSessionAsync(kvp.Key);
             }
         }
-        return Task.CompletedTask;
     }
 
     public void Dispose()
     {
         if (_disposed) return;
-        _cleanupTimer.Dispose();
-        foreach (var entry in _sessions.Values) entry.Dispose();
-        _sessions.Clear();
         _disposed = true;
+        _cleanupTimer.Dispose();
+        foreach (var session in _sessions.Values)
+        {
+            session.Dispose();
+        }
+        _sessions.Clear();
     }
 
-    private class Releaser : IDisposable
+    private sealed class Releaser : IDisposable
     {
-        private readonly SemaphoreSlim _semaphore;
-        public Releaser(SemaphoreSlim semaphore) => _semaphore = semaphore;
-        public void Dispose() => _semaphore.Release();
+        private readonly SemaphoreSlim _gate;
+        private bool _disposed;
+
+        public Releaser(SemaphoreSlim gate) => _gate = gate;
+
+        public void Dispose()
+        {
+            if (!_disposed)
+            {
+                _gate.Release();
+                _disposed = true;
+            }
+        }
     }
 }

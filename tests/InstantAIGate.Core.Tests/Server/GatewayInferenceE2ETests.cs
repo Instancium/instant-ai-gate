@@ -7,6 +7,8 @@ using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Tests.TestConfiguration;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Threading.Tasks;
@@ -20,6 +22,7 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
     public GatewayInferenceE2ETests(GatewayTestFixture fixture)
     {
         _fixture = fixture;
+        InstantAIGate.Native.Bindings.NativeLibraryLoader.Load();
     }
 
     [Fact]
@@ -28,25 +31,31 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
         var modelManager = _fixture.Services.GetRequiredService<IModelManager>();
         var activeConfig = modelManager.GetActiveSettings();
 
+        // 1. HTTP Auth Fix: Use standard Bearer token schema for Admin API
         if (activeConfig == null)
         {
             var adminClient = _fixture.CreateAdminClient();
-            adminClient.DefaultRequestHeaders.Add("X-API-Key", _fixture.ServerOptions.AdminApiKey);
-            var response = await adminClient.PostAsJsonAsync("admin/models/load", new { RepoId = ModelOptions.RepoId, Profile = "Default" });
+            adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _fixture.ServerOptions.AdminApiKey);
+
+            var response = await adminClient.PostAsJsonAsync("admin/models/load", new { RepoId = ModelOptions.RepoId });
             response.EnsureSuccessStatusCode();
         }
 
+        // 2. SignalR Auth Fix: Inject AccessTokenProvider for hub authorization
         var hubConnection = new HubConnectionBuilder()
             .WithUrl(new Uri(_fixture.CreatePublicClient().BaseAddress!, "hub/chat"), options =>
             {
                 options.HttpMessageHandlerFactory = _ => _fixture.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult(_fixture.ServerOptions.TenantApiKey)!;
             })
             .Build();
 
         await hubConnection.StartAsync();
 
         string sessionId = $"test-session-{Guid.NewGuid():N}";
-        await hubConnection.InvokeAsync("CreateSession", new SessionStartRequest(sessionId, ModelOptions.RepoId));
+
+        // 3. Signature Fix: Match flat parameters defined in SessionChatHub.cs
+        await hubConnection.InvokeAsync("JoinSession", sessionId, ModelOptions.RepoId);
 
         var completionBuilder = new StringBuilder();
         var tcs = new TaskCompletionSource<string>();
@@ -69,7 +78,9 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
         });
 
         var message = new ChatMessage("user", "Hello! Return one word: Pong.");
-        await hubConnection.InvokeAsync("SendPromptDelta", new SessionPromptDelta(sessionId, message));
+
+        // Match exact signature: SendPromptDelta(string sessionId, ChatMessage deltaMessage)
+        await hubConnection.InvokeAsync("SendPromptDelta", sessionId, message);
 
         var result = await Task.WhenAny(tcs.Task, Task.Delay(30000));
         result.Should().Be(tcs.Task, "The model must respond within timeout via SignalR");
@@ -77,7 +88,7 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
         var text = await tcs.Task;
         text.Should().NotBeNullOrWhiteSpace();
 
-        await hubConnection.InvokeAsync("CloseSession", sessionId);
+        await hubConnection.InvokeAsync("LeaveSession", sessionId);
         await hubConnection.StopAsync();
     }
 }

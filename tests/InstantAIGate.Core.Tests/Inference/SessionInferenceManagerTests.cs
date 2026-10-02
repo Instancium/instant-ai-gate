@@ -15,16 +15,19 @@ using Xunit;
 public class SessionInferenceManagerTests : IDisposable
 {
     private readonly Mock<IModelManager> _mockModelManager;
+    private readonly Mock<IBackendFacade> _mockBackendFacade;
     private readonly FakeTimeProvider _timeProvider;
     private readonly SessionInferenceManager _sessionManager;
 
     public SessionInferenceManagerTests()
     {
         _mockModelManager = new Mock<IModelManager>();
+        _mockBackendFacade = new Mock<IBackendFacade>();
         _timeProvider = new FakeTimeProvider();
 
         _sessionManager = new SessionInferenceManager(
             _mockModelManager.Object,
+            _mockBackendFacade.Object,
             NullLogger<SessionInferenceManager>.Instance,
             _timeProvider,
             idleTimeout: TimeSpan.FromMinutes(5));
@@ -45,6 +48,7 @@ public class SessionInferenceManagerTests : IDisposable
     public async Task CreateSession_DuplicateSessionId_ThrowsInvalidOperationException()
     {
         var request = new SessionStartRequest("session-1", "test-repo");
+
         await _sessionManager.CreateSessionAsync(request);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -67,13 +71,9 @@ public class SessionInferenceManagerTests : IDisposable
     {
         var request = new SessionStartRequest("session-auto-evict", "test-repo");
         await _sessionManager.CreateSessionAsync(request);
-
         Assert.True(_sessionManager.TryGetSessionRepoId("session-auto-evict", out _));
 
-        // Advance time past 5-minute idle threshold
         _timeProvider.Advance(TimeSpan.FromMinutes(6));
-
-        // Trigger maintenance check
         await _sessionManager.CleanupIdleSessionsAsync();
 
         Assert.False(_sessionManager.TryGetSessionRepoId("session-auto-evict", out _));
