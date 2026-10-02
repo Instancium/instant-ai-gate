@@ -9,7 +9,6 @@
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License">
 </p>
 
-
 **InstantAIGate** is a high-throughput, deterministic AI inference gateway developed by **Instancium**, an independent R&D laboratory. Engineered as the laboratory's foundational platform for powering next-generation sovereign applications and intelligent systems, it delivers a compiled, cross-platform **.NET 10** architecture with direct native memory bindings to inference engines, establishing **Architectural Autonomy** and **Structural Resilience**.
 
 By serving as the laboratory's core inference gateway, InstantAIGate enables Instancium's ecosystem and downstream applications to orchestrate local models within a **Controlled Data Perimeter**. This foundation empowers engineering teams and enterprises to deploy production-grade AI solutions without forced dependencies on proprietary cloud APIs, guaranteeing **Vendor Independence** and uncompromised **Digital Subjectivity**.
@@ -69,21 +68,14 @@ The low-level C++ boundary executing hardware-accelerated tensor operations:
 - **Prefix Tree Context Pool:** Reuses shared prefix token graphs and model weights across multi-tenant inference sessions.
 - **Native Memory Operations:** Interacts directly with compiled `llama.cpp` / `mtmd` runtimes for direct hardware offload without runtime virtualization overhead.
 
-### Main Components:
+### Hardware Acceleration & Cross-Platform Execution
 
-1.  **InstantAIGate.Cli:** Handles Token Budgeting, Checkpointed Memory Ingestion (`RollbackSessionAsync`), and Sliding Window management.
-2.  **InstantAIGate.Server (SignalR Hub):** Manages connection lifecycles, maps `SessionId` to `Context Handle`, handles Delta Ingestion, and enforces the Fail-Safe Guard.
-3.  **Core / Native Engine Boundary:** Manages the dynamic request queue with backpressure, Prefix Tree Context Pool, and performs Native Memory Sequence Operations (via `llama.cpp` / `mtmd`).
-
----
-
-> **Vulkan-Powered Cross-Platform Acceleration:**
-> Powered by `llama.cpp` with native Vulkan backend integration, InstantAIGate breaks free from vendor lock-in. It delivers hardware-accelerated LLM/VLM inference across a vast spectrum of consumer and enterprise GPUs without requiring heavy proprietary stacks like CUDA. Supported hardware and environments include:
-> * **NVIDIA GPUs** (GeForce, Quadro, Tesla via Vulkan ICD)
-> * **AMD Radeon GPUs** (RX series, Vega, RDNA architectures)
-> * **Intel Arc & Integrated Graphics** (Xe architecture)
-> * **Apple Silicon** (via cross-compilation/Metal-Vulkan translation layers where applicable)
-> * **Cross-Environment:** Seamless execution on Windows, Linux, and edge devices within your private network perimeter.
+Powered by `llama.cpp` with native Vulkan backend integration, InstantAIGate breaks free from vendor lock-in. It delivers hardware-accelerated LLM/VLM inference across a vast spectrum of consumer and enterprise GPUs without requiring heavy proprietary stacks like CUDA:
+- **NVIDIA GPUs:** GeForce, Quadro, Tesla (via Vulkan ICD)
+- **AMD Radeon GPUs:** RX series, Vega, RDNA architectures
+- **Intel Arc & Integrated Graphics:** Xe architecture
+- **Apple Silicon:** via cross-compilation and Metal-Vulkan translation layers where applicable
+- **Cross-Environment:** Seamless execution on Windows, Linux, and edge devices within your private network perimeter.
 
 ## 📄 License & Trademark
 Copyright (c) 2026 Instancium™ (https://instancium.com). All rights reserved.
@@ -94,4 +86,3 @@ This project is licensed under the **Apache License 2.0** - see the [LICENSE](LI
 
 The **InstantAIGate** name, logos, and all branding assets located in any `media` directories are not covered by the Apache 2.0 license. 
 Instead, all branding materials and logos throughout the project are licensed under the [Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)](https://creativecommons.org/licenses/by-nc-nd/4.0/).
-
