@@ -113,6 +113,7 @@
 |    |    |         +--- ModelRegistryStatus.cs
 |    |    |         \--- NativeModelDetails.cs
 |    |    +--- Exceptions
+|    |    |    +--- ContextOverflowException.cs
 |    |    |    +--- ModelIntegrityException.cs
 |    |    |    \--- QueueFullException.cs
 |    |    +--- Interfaces
@@ -275,25 +276,17 @@
 |    |    +--- Configuration
 |    |    |    \--- StartupModelSettings.cs
 |    |    +--- Controllers
-|    |    |    +--- admin
-|    |    |    |    +--- AdminModelsController.cs
-|    |    |    |    \--- AdminQueueController.cs
-|    |    |    \--- v1
-|    |    |         \--- ChatCompletionsController.cs
+|    |    |    \--- admin
+|    |    |         +--- AdminModelsController.cs
+|    |    |         \--- AdminQueueController.cs
 |    |    +--- Diagnostics
 |    |    |    +--- MetricsBroadcasterWorker.cs
 |    |    |    +--- ModelReadyHealthCheckcs.cs
 |    |    |    \--- SignalRLoggerProvider.cs
-|    |    +--- Dtos
-|    |    |    \--- OpenAi
-|    |    |         +--- OpenAiChatModels.cs
-|    |    |         \--- OpenAiStreamModels.cs
 |    |    +--- Hubs
 |    |    |    +--- ISessionChatClient.cs
 |    |    |    +--- ITelemetryClient.cs
 |    |    |    \--- SessionChatHub.cs
-|    |    +--- Mapping
-|    |    |    \--- ChatContractMapper.cs
 |    |    +--- Middleware
 |    |    |    +--- ApiKeyAuthMiddleware.cs
 |    |    |    +--- GatewayExceptionMiddleware.cs
@@ -333,13 +326,13 @@
 |    |    |    +--- ParallelModelDownloaderTests.cs
 |    |    |    \--- SsrPipelineIntegrationTests.cs
 |    |    +--- Dtos
-|    |    |    +--- OpenAiContractTests.cs
 |    |    |    \--- SessionDeltaContractTests.cs
 |    |    +--- Inference
 |    |    |    +--- Stubs
 |    |    |    |    +--- StubModelLocator.cs
 |    |    |    |    \--- StubModelValidator.cs
 |    |    |    +--- DynamicRequestQueueTests.cs
+|    |    |    +--- LlamaInferenceProtectionTests.cs
 |    |    |    +--- LlamaVisionIntegrationTests.cs
 |    |    |    +--- NativeModelValidatorIntegrationTests.cs
 |    |    |    \--- SessionInferenceManagerTests.cs
