@@ -37,6 +37,38 @@ public sealed class ModelManager : IDisposable, IModelManager
         _isDraining = false;
     }
 
+
+    public NativeModelDetails GetActiveModelDetails()
+    {
+        if (_activeConfig == null)
+        {
+            return new NativeModelDetails
+            {
+                RepoId = string.Empty,
+                ContextSize = 0,
+                GpuLayers = 0,
+                Threads = 0,
+                FlashAttention = false,
+                IdleContextsCount = 0,
+                Backend = "none"
+            };
+        }
+
+        var nativeDetails = _modelProvider.GetNativeDetails()
+            .FirstOrDefault(d => d.RepoId.Equals(_activeConfig.RepoId, StringComparison.OrdinalIgnoreCase));
+
+        return nativeDetails ?? new NativeModelDetails
+        {
+            RepoId = _activeConfig.RepoId,
+            ContextSize = _activeConfig.ContextSize,
+            GpuLayers = _activeConfig.GpuLayerCount,
+            Threads = _activeConfig.Threads,
+            FlashAttention = _activeConfig.FlashAttention,
+            IdleContextsCount = 0,
+            Backend = "llama.cpp"
+        };
+    }
+
     public async Task LoadModelAsync(ModelSettings config, CancellationToken ct = default)
     {
         await _globalLock.WaitAsync(ct);

@@ -29,6 +29,37 @@ public class BackendFacade : IBackendFacade
         return ptr != IntPtr.Zero ? new LlamaModelHandle(ptr) : throw new InvalidOperationException("Failed to load model natively.");
     }
 
+
+    public bool CanShiftContextMemory(IContextHandle contextHandle)
+    {
+        if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+            return false;
+
+        IntPtr mem = LlamaNative.llama_get_memory(nativeHandle.Pointer);
+        return mem != IntPtr.Zero && LlamaNative.llama_memory_can_shift(mem);
+    }
+
+    public bool RemoveContextMemoryRange(IContextHandle contextHandle, int seqId, int p0, int p1)
+    {
+        if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+            return false;
+
+        IntPtr mem = LlamaNative.llama_get_memory(nativeHandle.Pointer);
+        return mem != IntPtr.Zero && LlamaNative.llama_memory_seq_rm(mem, seqId, p0, p1);
+    }
+
+    public void ShiftContextMemoryRange(IContextHandle contextHandle, int seqId, int p0, int p1, int delta)
+    {
+        if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+            return;
+
+        IntPtr mem = LlamaNative.llama_get_memory(nativeHandle.Pointer);
+        if (mem != IntPtr.Zero)
+        {
+            LlamaNative.llama_memory_seq_add(mem, seqId, p0, p1, delta);
+        }
+    }
+
     public IContextHandle CreateContext(IModelHandle modelHandle, ModelSettings settings)
     {
         if (modelHandle is not LlamaModelHandle nativeHandle)

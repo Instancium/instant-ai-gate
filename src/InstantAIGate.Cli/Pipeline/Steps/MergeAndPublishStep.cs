@@ -100,12 +100,16 @@ public class MergeAndPublishStep : IPipelineStep
         {gitLog}
         """;
 
-        var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
+
+        var deltaMessage = new ChatMessage("user", prompt);
         var sb = new StringBuilder();
-        await foreach (var chunk in _gatewayClient.StreamChatAsync(_settings.AiModelId, messages, ct))
+
+        string changelogSessionId = $"changelog-{Guid.NewGuid():N}";
+        await foreach (var chunk in _gatewayClient.StreamChatAsync(changelogSessionId, _settings.AiModelId, deltaMessage, ct))
         {
             sb.Append(chunk);
         }
+
         return sb.ToString().Trim(' ', '\n', '\r', '`', '"', '\'');
     }
 

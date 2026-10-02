@@ -1,18 +1,18 @@
 ﻿namespace InstantAIGate.Cli.Core;
 
 using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.Core.Dtos.Session;
+using InstantAIGate.Core.Dtos.Status;
+using InstantAIGate.Core.Exceptions;
 using InstantAIGate.SSR.Dtos;
 using Microsoft.AspNetCore.SignalR.Client;
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
 public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
@@ -20,7 +20,8 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     private readonly HttpClient _httpClient;
     private readonly string _adminHubUrl;
     private readonly string _adminKey;
-    private HubConnection? _hubConnection;
+    private HubConnection? _telemetryConnection;
+    private HubConnection? _chatHubConnection;
 
     public RemoteGatewayClient(HttpClient httpClient, string publicUrl, string adminHubUrl, string adminKey)
     {
@@ -33,123 +34,133 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         _adminKey = adminKey;
     }
 
-
-    public async IAsyncEnumerable<string> StreamChatAsync(string repoId, IEnumerable<ChatMessage> messages, [EnumeratorCancellation] CancellationToken ct)
+    private async Task EnsureChatHubConnectedAsync(CancellationToken ct)
     {
-        var messagesPayload = messages.Select(m => new
+        if (_chatHubConnection != null && _chatHubConnection.State == HubConnectionState.Connected)
         {
-            role = m.Role,
-            content = SerializeMessageContent(m)
-        }).ToArray();
+            return;
+        }
 
-        var requestPayload = new
+        string chatHubUrl = new Uri(_httpClient.BaseAddress!, "/hub/chat").ToString();
+        _chatHubConnection = new HubConnectionBuilder()
+            .WithUrl(chatHubUrl, options =>
+            {
+                if (!string.IsNullOrWhiteSpace(_adminKey))
+                {
+                    options.AccessTokenProvider = () => Task.FromResult(_adminKey)!;
+                }
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        await _chatHubConnection.StartAsync(ct);
+    }
+
+    public async Task EndSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (_chatHubConnection != null && _chatHubConnection.State == HubConnectionState.Connected)
         {
-            // FIX: Pass the repoId exactly as is (empty string). 
-            // The server's ChatCompletionsController will bypass the strict matching 
-            // if the model string is empty, automatically using the active model in VRAM.
-            model = repoId,
-            messages = messagesPayload,
-            stream = true
-        };
+            await _chatHubConnection.InvokeAsync("LeaveSession", sessionId, ct);
+        }
+    }
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+    public async IAsyncEnumerable<string> StreamChatAsync(
+        string sessionId,
+        string repoId,
+        ChatMessage deltaMessage,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await EnsureChatHubConnectedAsync(ct);
+        await _chatHubConnection!.InvokeAsync("JoinSession", sessionId, repoId, ct);
+
+        var channel = Channel.CreateUnbounded<string>();
+        var tcs = new TaskCompletionSource();
+
+        using var tokenSub = _chatHubConnection.On<SessionTokenDelta>("ReceiveTokenDelta", delta =>
         {
-            Content = JsonContent.Create(requestPayload)
-        };
+            if (delta.IsDone)
+            {
+                tcs.TrySetResult();
+                channel.Writer.TryComplete();
+            }
+            else
+            {
+                channel.Writer.TryWrite(delta.Content);
+            }
+        });
 
+        using var errSub = _chatHubConnection.On<string>("ReceiveError", error =>
+        {
+            var ex = new InvalidOperationException($"Remote Inference Error: {error}");
+            tcs.TrySetException(ex);
+            channel.Writer.TryComplete(ex);
+        });
+
+        using var overflowSub = _chatHubConnection.On<ContextOverflowException>("ReceiveContextOverflow", overflow =>
+        {
+            tcs.TrySetException(overflow);
+            channel.Writer.TryComplete(overflow);
+        });
+
+        await _chatHubConnection.InvokeAsync("SendPromptDelta", sessionId, deltaMessage, ct);
+
+        await foreach (var token in channel.Reader.ReadAllAsync(ct))
+        {
+            yield return token;
+        }
+
+        await tcs.Task;
+    }
+
+    public Task LoadModelAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public async Task<NativeModelDetails> GetActiveModelDetailsAsync(CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
         if (!string.IsNullOrWhiteSpace(_adminKey))
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _adminKey);
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _adminKey);
         }
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode();
-
-        using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var reader = new StreamReader(stream);
-
-        while (!ct.IsCancellationRequested)
+        using var response = await _httpClient.SendAsync(request, ct);
+        if (response.IsSuccessStatusCode)
         {
-            var line = await reader.ReadLineAsync(ct);
-            if (line == null) break;
-
-            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data: ")) continue;
-
-            var data = line.Substring(6);
-            if (data == "[DONE]") break;
-
-            using var doc = JsonDocument.Parse(data);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+            var content = await response.Content.ReadFromJsonAsync<ActiveModelDetailsResponse>(cancellationToken: ct);
+            if (content?.ActiveDetails != null)
             {
-                var delta = choices[0].GetProperty("delta");
-                if (delta.TryGetProperty("content", out var contentElement))
-                {
-                    yield return contentElement.GetString() ?? string.Empty;
-                }
+                return content.ActiveDetails;
             }
         }
-    }
 
-    private static object SerializeMessageContent(ChatMessage message)
-    {
-        if (!message.Parts.Any(p => p is not TextContent))
+        return new NativeModelDetails
         {
-            return message.Content;
-        }
-
-        var partsList = new List<object>();
-        foreach (var part in message.Parts)
-        {
-            switch (part)
-            {
-                case TextContent tc:
-                    partsList.Add(new { type = "text", text = tc.Text });
-                    break;
-
-                case ImageFileContent ifc:
-                    if (!File.Exists(ifc.FilePath))
-                    {
-                        throw new FileNotFoundException($"Image file not found: {ifc.FilePath}");
-                    }
-
-                    string ext = Path.GetExtension(ifc.FilePath).TrimStart('.').ToLowerInvariant();
-                    if (ext == "jpg") ext = "jpeg";
-
-                    byte[] imageBytes = File.ReadAllBytes(ifc.FilePath);
-                    string base64 = Convert.ToBase64String(imageBytes);
-                    string dataUrl = $"data:image/{ext};base64,{base64}";
-
-                    partsList.Add(new
-                    {
-                        type = "image_url",
-                        image_url = new { url = dataUrl }
-                    });
-                    break;
-
-                case ImageUrlContent iuc:
-                    partsList.Add(new
-                    {
-                        type = "image_url",
-                        image_url = new { url = iuc.Url }
-                    });
-                    break;
-            }
-        }
-        return partsList;
+            ContextSize = 4096,
+            Backend = "remote",
+            GpuLayers = 99
+        };
     }
 
-    public Task LoadModelAsync(string repoId, CancellationToken ct = default)
+    public async Task<int> GetSessionTokenCountAsync(string sessionId, CancellationToken ct = default)
     {
-        return Task.CompletedTask;
+        await EnsureChatHubConnectedAsync(ct);
+        return await _chatHubConnection!.InvokeAsync<int>("GetSessionTokenCount", sessionId, ct);
     }
 
-    public async Task ConnectTelemetryAsync(
-        Action<InferenceMetrics> onMetrics,
-        Action<DownloadProgress> onSsrProgress,
-        CancellationToken ct)
+    public async Task RollbackSessionAsync(string sessionId, int targetPosition, CancellationToken ct = default)
     {
-        _hubConnection = new HubConnectionBuilder()
+        await EnsureChatHubConnectedAsync(ct);
+        await _chatHubConnection!.InvokeAsync("RollbackSession", sessionId, targetPosition, ct);
+    }
+
+    public async Task ShiftSessionMemoryAsync(string sessionId, int startPos, int count, CancellationToken ct = default)
+    {
+        await EnsureChatHubConnectedAsync(ct);
+        await _chatHubConnection!.InvokeAsync("ShiftSessionCache", sessionId, startPos, count, ct);
+    }
+
+    public async Task ConnectTelemetryAsync(Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct)
+    {
+        _telemetryConnection = new HubConnectionBuilder()
             .WithUrl(_adminHubUrl, options =>
             {
                 options.AccessTokenProvider = () => Task.FromResult(_adminKey)!;
@@ -157,18 +168,17 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
             .WithAutomaticReconnect()
             .Build();
 
-        _hubConnection.On<InferenceMetrics, object>("ReceiveMetrics", (metrics, _) => onMetrics(metrics));
-        _hubConnection.On<DownloadProgress>("ReceiveSsrProgress", progress => onSsrProgress(progress));
+        _telemetryConnection.On<InferenceMetrics, object>("ReceiveMetrics", (metrics, _) => onMetrics(metrics));
+        _telemetryConnection.On<DownloadProgress>("ReceiveSsrProgress", progress => onSsrProgress(progress));
 
-        await _hubConnection.StartAsync(ct);
+        await _telemetryConnection.StartAsync(ct);
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_hubConnection != null)
-        {
-            await _hubConnection.StopAsync();
-            await _hubConnection.DisposeAsync();
-        }
+        if (_telemetryConnection != null) await _telemetryConnection.DisposeAsync();
+        if (_chatHubConnection != null) await _chatHubConnection.DisposeAsync();
     }
+
+    private sealed record ActiveModelDetailsResponse(NativeModelDetails? ActiveDetails);
 }

@@ -33,6 +33,8 @@ public static class ServiceCollectionExtensions
         // Register the high-level inference engine
         services.AddSingleton<IInferenceEngine, LlamaInference>();
 
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ISessionInferenceManager, SessionInferenceManager>();
 
         services.AddSingleton<HttpClient>();
 

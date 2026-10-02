@@ -34,7 +34,8 @@
 |    |    |    +--- ReleaseCommand.cs
 |    |    |    \--- VersionControlCommand.cs
 |    |    +--- Configuration
-|    |    |    \--- ReleasePipelineSettings.cs
+|    |    |    +--- ReleasePipelineSettings.cs
+|    |    |    \--- RemoteGatewaySettings.cs
 |    |    +--- Core
 |    |    |    +--- GatewayClientProxy.cs
 |    |    |    +--- IGatewayClient.cs
@@ -99,14 +100,20 @@
 |    |    |    |    +--- InferenceContext.cs
 |    |    |    |    +--- InferenceMetrics.cs
 |    |    |    |    +--- MessageContent.cs
+|    |    |    |    +--- MessageTokenSpan.cs
 |    |    |    |    +--- ModelContext.cs
 |    |    |    |    +--- ModelWeights.cs
 |    |    |    |    +--- TextContent.cs
 |    |    |    |    \--- VisionContext.cs
+|    |    |    +--- Session
+|    |    |    |    +--- SessionPromptDelta.cs
+|    |    |    |    +--- SessionStartRequest.cs
+|    |    |    |    \--- SessionTokenDelta.cs
 |    |    |    \--- Status
 |    |    |         +--- ModelRegistryStatus.cs
 |    |    |         \--- NativeModelDetails.cs
 |    |    +--- Exceptions
+|    |    |    +--- ContextOverflowException.cs
 |    |    |    +--- ModelIntegrityException.cs
 |    |    |    \--- QueueFullException.cs
 |    |    +--- Interfaces
@@ -121,6 +128,7 @@
 |    |    |    |    +--- IModelValidator.cs
 |    |    |    |    +--- IQueueLease.cs
 |    |    |    |    +--- IQueueManager.cs
+|    |    |    |    +--- ISessionInferenceManager.cs
 |    |    |    |    \--- IVisionFacade.cs
 |    |    |    +--- Infrastructure
 |    |    |    |    \--- IMediaContext.cs
@@ -131,7 +139,9 @@
 |    |    |    |    +--- DynamicRequestQueue.cs
 |    |    |    |    +--- ModelManager.cs
 |    |    |    |    +--- ModelProvider.cs
-|    |    |    |    \--- QueueLease.cs
+|    |    |    |    +--- PrefixTreeContextPool.cs
+|    |    |    |    +--- QueueLease.cs
+|    |    |    |    \--- SessionInferenceManager.cs
 |    |    |    \--- Infrastructure
 |    |    |         +--- LocalTempMediaResolver.cs
 |    |    |         \--- MemoryAssetManager.cs
@@ -266,23 +276,17 @@
 |    |    +--- Configuration
 |    |    |    \--- StartupModelSettings.cs
 |    |    +--- Controllers
-|    |    |    +--- admin
-|    |    |    |    +--- AdminModelsController.cs
-|    |    |    |    \--- AdminQueueController.cs
-|    |    |    \--- v1
-|    |    |         \--- ChatCompletionsController.cs
+|    |    |    \--- admin
+|    |    |         +--- AdminModelsController.cs
+|    |    |         \--- AdminQueueController.cs
 |    |    +--- Diagnostics
 |    |    |    +--- MetricsBroadcasterWorker.cs
 |    |    |    +--- ModelReadyHealthCheckcs.cs
 |    |    |    \--- SignalRLoggerProvider.cs
-|    |    +--- Dtos
-|    |    |    \--- OpenAi
-|    |    |         +--- OpenAiChatModels.cs
-|    |    |         \--- OpenAiStreamModels.cs
 |    |    +--- Hubs
-|    |    |    \--- ITelemetryClient.cs
-|    |    +--- Mapping
-|    |    |    \--- ChatContractMapper.cs
+|    |    |    +--- ISessionChatClient.cs
+|    |    |    +--- ITelemetryClient.cs
+|    |    |    \--- SessionChatHub.cs
 |    |    +--- Middleware
 |    |    |    +--- ApiKeyAuthMiddleware.cs
 |    |    |    +--- GatewayExceptionMiddleware.cs
@@ -322,14 +326,16 @@
 |    |    |    +--- ParallelModelDownloaderTests.cs
 |    |    |    \--- SsrPipelineIntegrationTests.cs
 |    |    +--- Dtos
-|    |    |    \--- OpenAiContractTests.cs
+|    |    |    \--- SessionDeltaContractTests.cs
 |    |    +--- Inference
 |    |    |    +--- Stubs
 |    |    |    |    +--- StubModelLocator.cs
 |    |    |    |    \--- StubModelValidator.cs
 |    |    |    +--- DynamicRequestQueueTests.cs
+|    |    |    +--- LlamaInferenceProtectionTests.cs
 |    |    |    +--- LlamaVisionIntegrationTests.cs
-|    |    |    \--- NativeModelValidatorIntegrationTests.cs
+|    |    |    +--- NativeModelValidatorIntegrationTests.cs
+|    |    |    \--- SessionInferenceManagerTests.cs
 |    |    +--- Infrastructure
 |    |    |    \--- SyntheticNetworkHandler.cs
 |    |    +--- Server
@@ -337,6 +343,7 @@
 |    |    |    +--- GatewaySecurityAndHealthTests.cs
 |    |    |    +--- GatewayTestFixture.cs
 |    |    |    +--- ModelStartupWorkerIntegrationTests.cs
+|    |    |    +--- SessionChatHubIntegrationTests.cs
 |    |    |    \--- TelemetryHubIntegrationTests.cs
 |    |    +--- TestConfiguration
 |    |    |    +--- TestConfig.cs

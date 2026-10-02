@@ -2,6 +2,7 @@ namespace InstantAIGate.Core.Tests.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Tests.TestConfiguration;
 using InstantAIGate.Native.Bindings;
@@ -24,9 +25,12 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
     private ServiceProvider _serviceProvider = null!;
     private IModelManager _modelManager = null!;
     private IInferenceEngine _inferenceEngine = null!;
+
+    // 1. MUST ADD THIS FIELD:
+    private ISessionInferenceManager _sessionManager = null!;
+
     private string _testImagePath = string.Empty;
 
-    // All model/inference parameters are read from the test project appsettings.json.
     private static readonly TestModelOptions ModelOptions = TestConfig.Model;
 
     public LlamaVisionIntegrationTests(ITestOutputHelper output)
@@ -48,17 +52,17 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
-        var storageSettings = new StorageSettings
-        {
-            ModelsDirectory = ModelOptions.ModelsDirectory
-        };
-
+        var storageSettings = new StorageSettings { ModelsDirectory = ModelOptions.ModelsDirectory };
         services.AddSingleton<IOptions<StorageSettings>>(Options.Create(storageSettings));
+
         services.AddInstantAIGateInference();
 
         _serviceProvider = services.BuildServiceProvider();
         _modelManager = _serviceProvider.GetRequiredService<IModelManager>();
         _inferenceEngine = _serviceProvider.GetRequiredService<IInferenceEngine>();
+
+        // 2. MUST INITIALIZE FROM DI CONTAINER:
+        _sessionManager = _serviceProvider.GetRequiredService<ISessionInferenceManager>();
 
         return Task.CompletedTask;
     }
@@ -74,12 +78,8 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
     public async Task Should_Load_Vision_Model_And_Analyze_Image_Successfully()
     {
         string expectedModelDirectory = Path.Combine(ModelOptions.ModelsDirectory, ModelOptions.RepoId);
-
-        Assert.True(Directory.Exists(expectedModelDirectory),
-            $"FATAL: Model directory not found. Expected path: '{expectedModelDirectory}'");
-
-        Assert.True(File.Exists(_testImagePath),
-            $"FATAL: Test image not found. Expected path: '{_testImagePath}'");
+        Assert.True(Directory.Exists(expectedModelDirectory), $"FATAL: Model directory not found. Expected path: '{expectedModelDirectory}'");
+        Assert.True(File.Exists(_testImagePath), $"FATAL: Test image not found. Expected path: '{_testImagePath}'");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 
@@ -100,23 +100,19 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         var activeConfig = _modelManager.GetActiveSettings();
         Assert.NotNull(activeConfig);
 
+        // FIX: Restore the ImageFileContent to trigger the mtmd_helper_eval_chunks routing
         var parts = new List<MessageContent>
         {
             new ImageFileContent(_testImagePath),
             new TextContent(ModelOptions.Inference.VisionPrompt)
         };
 
-        var chatHistory = new List<ChatMessage>
-        {
-            new ChatMessage("user", parts)
-        };
+        var deltaMessage = new ChatMessage("user", parts);
 
         _output.WriteLine("Applying Chat Template...");
 
         string formattedPrompt = await _inferenceEngine.ApplyChatTemplateAsync(
-            config.RepoId, chatHistory, cts.Token);
-
-        Assert.Contains("<__media__>\n", formattedPrompt);
+            config.RepoId, new[] { deltaMessage }, cts.Token);
 
         _output.WriteLine("Starting Inference...");
 
@@ -125,21 +121,29 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
             MaxTokens = ModelOptions.Inference.MaxTokens,
             Temperature = ModelOptions.Inference.Temperature
         };
+
         var responseBuilder = new StringBuilder();
+        string sessionId = $"vision-test-{Guid.NewGuid():N}";
 
-        var mediaParts = parts.Where(p => p is not TextContent).ToList();
+        await _sessionManager.CreateSessionAsync(new SessionStartRequest(sessionId, config.RepoId), cts.Token);
 
-        await foreach (var chunk in _inferenceEngine.StreamGenerationAsync(config.RepoId, formattedPrompt, mediaParts, settings, cts.Token))
+        try
         {
-            responseBuilder.Append(chunk);
-            _output.WriteLine($"Chunk: {chunk.Replace("\n", "\\n")}");
+            await foreach (var chunk in _inferenceEngine.StreamDeltaGenerationAsync(sessionId, deltaMessage, settings, cts.Token))
+            {
+                responseBuilder.Append(chunk);
+                _output.WriteLine($"Chunk: {chunk.Replace("\n", "\\n")}");
+            }
+        }
+        finally
+        {
+            await _sessionManager.ReleaseSessionAsync(sessionId, CancellationToken.None);
         }
 
         string fullResponse = responseBuilder.ToString();
         Assert.False(string.IsNullOrWhiteSpace(fullResponse), "The model returned an empty response.");
         _output.WriteLine($"\nFinal Response:\n{fullResponse}");
 
-        // Expected answer keywords come from the test configuration
         foreach (var keyword in ModelOptions.Inference.ExpectedKeywords)
         {
             Assert.Contains(keyword, fullResponse, StringComparison.OrdinalIgnoreCase);

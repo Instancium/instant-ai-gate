@@ -324,22 +324,6 @@ internal static partial class LlamaNative
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern LlamaPoolingType llama_pooling_type(IntPtr ctx);
 
-    /// <summary>
-    /// Gets memory handle from context.
-    /// </summary>
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern IntPtr llama_get_memory(IntPtr ctx);
-
-    /// <summary>
-    /// Clears the memory contents.
-    /// </summary>
-    /// <param name="mem">Memory handle returned by llama_get_memory.</param>
-    /// <param name="data">If true, data buffers are also cleared together with the metadata.</param>
-    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void llama_memory_clear(
-        IntPtr mem,
-        [MarshalAs(UnmanagedType.I1)] bool data);
-
     #endregion
 
     #region Encoding and Decoding
@@ -793,6 +777,46 @@ internal static partial class LlamaNative
     /// <param name="batch">The batch structure to free.</param>
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void llama_batch_free(LlamaBatch batch);
+    #endregion
+
+    #region Memory Management
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr llama_get_memory(IntPtr ctx);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void llama_memory_clear(
+        IntPtr mem,
+        [MarshalAs(UnmanagedType.I1)] bool data);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool llama_memory_seq_rm(
+        IntPtr mem,
+        int seqId,
+        int p0,
+        int p1);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void llama_memory_seq_add(
+        IntPtr mem,
+        int seqId,
+        int p0,
+        int p1,
+        int delta);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool llama_memory_can_shift(IntPtr mem);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int llama_memory_seq_pos_min(
+        IntPtr mem,
+        int seqId);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int llama_memory_seq_pos_max(
+        IntPtr mem,
+        int seqId);
     #endregion
 
 }

@@ -1,12 +1,18 @@
-﻿using InstantAIGate.Core.Dtos.Config;
+﻿namespace InstantAIGate.Cli.Core;
+
+using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.Core.Dtos.Session;
+using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
 using Microsoft.Extensions.Configuration;
+using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-
-namespace InstantAIGate.Cli.Core;
+using System.Threading;
+using System.Threading.Tasks;
 
 public class LocalGatewayClient : IGatewayClient
 {
@@ -14,42 +20,55 @@ public class LocalGatewayClient : IGatewayClient
     private readonly IModelManager _modelManager;
     private readonly IModelCatalogService _catalogService;
     private readonly IConfiguration _configuration;
+    private readonly ISessionInferenceManager _sessionManager;
 
     public LocalGatewayClient(
         IInferenceEngine inferenceEngine,
         IModelManager modelManager,
         IModelCatalogService catalogService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ISessionInferenceManager sessionManager)
     {
         _inferenceEngine = inferenceEngine;
         _modelManager = modelManager;
         _catalogService = catalogService;
         _configuration = configuration;
+        _sessionManager = sessionManager;
     }
 
     public async IAsyncEnumerable<string> StreamChatAsync(
-            string repoId,
-            IEnumerable<ChatMessage> messages,
-            [EnumeratorCancellation] CancellationToken ct)
+        string sessionId,
+        string repoId,
+        ChatMessage deltaMessage,
+        [EnumeratorCancellation] CancellationToken ct)
     {
+        if (!_sessionManager.TryGetSessionRepoId(sessionId, out _))
+        {
+            await _sessionManager.CreateSessionAsync(new SessionStartRequest(sessionId, repoId), ct);
+        }
+
+        var activeSettings = _modelManager.GetActiveSettings();
+        int contextSize = activeSettings?.ContextSize > 0 ? activeSettings.ContextSize : 4096;
+
+        // Zero-Mutation Policy: Calculate generation budget dynamically based on context capacity
+        int dynamicMaxTokens = Math.Clamp((int)(contextSize * 0.25), 256, 1024);
+
         var settings = new InferenceSettings
         {
-            MaxTokens = 4096,
+            MaxTokens = dynamicMaxTokens,
             Temperature = 0.7f,
             TopP = 0.9f
         };
 
-        // Apply the model's native chat template to the entire history
-        string formattedPrompt = await _inferenceEngine.ApplyChatTemplateAsync(repoId, messages, ct);
-
-        // Extract media parts from the latest user message
-        var lastMessage = System.Linq.Enumerable.LastOrDefault(messages, m => m.Role == "user");
-        var parts = lastMessage?.Parts ?? new List<MessageContent>();
-
-        await foreach (var chunk in _inferenceEngine.StreamGenerationAsync(repoId, formattedPrompt, parts, settings, ct))
+        await foreach (var chunk in _inferenceEngine.StreamDeltaGenerationAsync(sessionId, deltaMessage, settings, ct))
         {
             yield return chunk;
         }
+    }
+
+    public Task EndSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        return _sessionManager.ReleaseSessionAsync(sessionId, ct);
     }
 
     public Task ConnectTelemetryAsync(
@@ -66,10 +85,13 @@ public class LocalGatewayClient : IGatewayClient
                     var metrics = _modelManager.GetMetrics();
                     onMetrics(metrics);
                 }
-                catch { }
+                catch
+                {
+                }
                 await Task.Delay(1000, ct);
             }
         }, ct);
+
         return Task.CompletedTask;
     }
 
@@ -81,7 +103,8 @@ public class LocalGatewayClient : IGatewayClient
             throw new InvalidOperationException($"Model '{repoId}' not found in catalog.");
         }
 
-        var hwProfile = _configuration.GetSection("InstantAIGate:HardwareProfiles:Default").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
+        var hwProfile = _configuration.GetSection("InstantAIGate:HardwareProfiles:Default").Get<HardwareProfileSettings>()
+                        ?? new HardwareProfileSettings();
 
         var config = new ModelSettings
         {
@@ -101,5 +124,25 @@ public class LocalGatewayClient : IGatewayClient
         };
 
         await _modelManager.LoadModelAsync(config, ct);
+    }
+
+    public Task<NativeModelDetails> GetActiveModelDetailsAsync(CancellationToken ct = default)
+    {
+        return Task.FromResult(_modelManager.GetActiveModelDetails());
+    }
+
+    public Task<int> GetSessionTokenCountAsync(string sessionId, CancellationToken ct = default)
+    {
+        return Task.FromResult(_sessionManager.GetPastTokensCount(sessionId));
+    }
+
+    public Task RollbackSessionAsync(string sessionId, int targetPosition, CancellationToken ct = default)
+    {
+        return _sessionManager.RollbackToPositionAsync(sessionId, targetPosition, ct);
+    }
+
+    public Task ShiftSessionMemoryAsync(string sessionId, int startPos, int count, CancellationToken ct = default)
+    {
+        return _sessionManager.ShiftMemoryRangeAsync(sessionId, startPos, count, ct);
     }
 }

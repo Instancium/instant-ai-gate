@@ -490,21 +490,27 @@ public class ReleasePipelineService
         string arguments = string.IsNullOrWhiteSpace(lastTag)
             ? "log -n 20 --oneline --name-status"
             : $"log {lastTag.Trim()}..HEAD --oneline --name-status";
-        string gitLog = await GetCommandOutputAsync("git", arguments, cancellationToken);
 
+        string gitLog = await GetCommandOutputAsync("git", arguments, cancellationToken);
         if (string.IsNullOrWhiteSpace(gitLog)) return "Maintenance and dependency updates.";
 
         string prompt = $@"Analyze the following git commit log and generate a professional release description in English.
-            Group the changes logically (e.g., Features, Bug Fixes, Chores).
-            Keep it concise and professional. Do not use markdown headers larger than h3.
-            Commit Log:
-            {gitLog}";
+        Group the changes logically (e.g., Features, Bug Fixes, Chores).
+        Keep it concise and professional. Do not use markdown headers larger than h3.
+        Commit Log:
+        {gitLog}";
 
-        var messages = new List<ChatMessage> { new ChatMessage("user", prompt) };
+        
+        var deltaMessage = new ChatMessage("user", prompt);
         var sb = new StringBuilder();
 
+       
+        string pipelineSessionId = $"release-notes-{Guid.NewGuid():N}";
+
         await _gatewayClient.LoadModelAsync(_settings.AiModelId, cancellationToken);
-        await foreach (var chunk in _gatewayClient.StreamChatAsync(_settings.AiModelId, messages, cancellationToken))
+
+       
+        await foreach (var chunk in _gatewayClient.StreamChatAsync(pipelineSessionId, _settings.AiModelId, deltaMessage, cancellationToken))
         {
             sb.Append(chunk);
         }
