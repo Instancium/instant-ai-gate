@@ -4,7 +4,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>12.0</LangVersion>
-		<Version>1.0.33-rc.1</Version>
+		<Version>1.0.34-rc.1</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
