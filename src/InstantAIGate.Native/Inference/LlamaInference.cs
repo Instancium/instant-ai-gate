@@ -127,10 +127,10 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
 
     public async IAsyncEnumerable<string> StreamDeltaGenerationAsync(
-    string sessionId,
-    ChatMessage deltaMessage,
-    InferenceSettings? overrideSettings = null,
-    [EnumeratorCancellation] CancellationToken ct = default)
+            string sessionId,
+            ChatMessage deltaMessage,
+            InferenceSettings? overrideSettings = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_sessionManager.TryGetSessionRepoId(sessionId, out var repoId) || string.IsNullOrEmpty(repoId))
@@ -152,7 +152,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
         string formattedDelta = await ApplyChatTemplateAsync(repoId, new[] { deltaMessage }, ct);
         int[] deltaTokens = await TokenizeDataAsync(repoId, formattedDelta, ct);
 
-        // --- ИСПРАВЛЕНИЕ 1: Изолированное удаление BOS-токена ---
+        
         if (pastTokens > 0 && deltaTokens.Length > 0)
         {
             int bosTokenId = LlamaNative.llama_vocab_bos(vocab);
@@ -163,7 +163,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 deltaTokens = slicedTokens;
             }
         }
-        // --------------------------------------------------------
 
         var activeConfig = _modelManager.GetActiveSettings();
         uint maxContextLimit = activeConfig != null ? (uint)activeConfig.ContextSize : LlamaNative.llama_n_ctx(ctxHandle);
@@ -302,79 +301,74 @@ public class LlamaInference : IInferenceEngine, IDisposable
             int generatedCount = 0;
             var generatedTokens = new List<int>();
 
-            // --- ИСПРАВЛЕНИЕ 2: Инициализация потокового декодера ---
             var utf8Decoder = Encoding.UTF8.GetDecoder();
             char[] charBuffer = new char[64];
             byte[] tokenPieceBuffer = new byte[64];
-            // --------------------------------------------------------
 
-            while (generatedCount < maxTokensToGenerate)
+            var singleTokenBatch = LlamaNative.llama_batch_init(1, 0, 1);
+
+         
+            try
             {
-                ct.ThrowIfCancellationRequested();
-
-                int newTokenId = LlamaNative.llama_sampler_sample(samplerChain, ctxHandle, -1);
-                LlamaNative.llama_sampler_accept(samplerChain, newTokenId);
-
-                if (LlamaNative.llama_vocab_is_eog(vocab, newTokenId))
+                while (generatedCount < maxTokensToGenerate)
                 {
-                    break;
-                }
+                    ct.ThrowIfCancellationRequested();
 
-                generatedTokens.Add(newTokenId);
-                generatedCount++;
+                    int newTokenId = LlamaNative.llama_sampler_sample(samplerChain, ctxHandle, -1);
+                    LlamaNative.llama_sampler_accept(samplerChain, newTokenId);
 
-                int nPieces = LlamaNative.llama_token_to_piece(vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length, 0, true);
-                if (nPieces < 0)
-                {
-                    tokenPieceBuffer = new byte[-nPieces];
-                    nPieces = LlamaNative.llama_token_to_piece(vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length, 0, true);
-                }
+                    if (LlamaNative.llama_vocab_is_eog(vocab, newTokenId)) break;
 
-                if (charBuffer.Length < nPieces)
-                {
-                    charBuffer = new char[nPieces];
-                }
+                    generatedTokens.Add(newTokenId);
+                    generatedCount++;
 
-      
-                int charsDecoded = utf8Decoder.GetChars(tokenPieceBuffer, 0, nPieces, charBuffer, 0, flush: false);
-                if (charsDecoded > 0)
-                {
-                    yield return new string(charBuffer, 0, charsDecoded);
-                }
-                // ---------------------------------------------------------
-
-                unsafe
-                {
-                    var batch = LlamaNative.llama_batch_init(1, 0, 1);
-                    try
+                    int nPieces = LlamaNative.llama_token_to_piece(vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length, 0, true);
+                    if (nPieces < 0)
                     {
-                        ((int*)batch.Token)[0] = newTokenId;
-                        ((int*)batch.Pos)[0] = currentPos++;
-                        ((int*)batch.NSeqId)[0] = 1;
-                        ((int**)batch.SeqId)[0][0] = 0;
-                        ((byte*)batch.Logits)[0] = 1;
-                        batch.NTokens = 1;
+                        tokenPieceBuffer = new byte[-nPieces];
+                        nPieces = LlamaNative.llama_token_to_piece(vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length, 0, true);
+                    }
 
-                        int decodeRes = LlamaNative.llama_decode(ctxHandle, batch);
+                    if (charBuffer.Length < nPieces)
+                    {
+                        charBuffer = new char[nPieces];
+                    }
+
+                    int charsDecoded = utf8Decoder.GetChars(tokenPieceBuffer, 0, nPieces, charBuffer, 0, flush: false);
+                    if (charsDecoded > 0)
+                    {
+                        yield return new string(charBuffer, 0, charsDecoded);
+                    }
+
+                    unsafe
+                    {
+                        ((int*)singleTokenBatch.Token)[0] = newTokenId;
+                        ((int*)singleTokenBatch.Pos)[0] = currentPos++;
+                        ((int*)singleTokenBatch.NSeqId)[0] = 1;
+                        ((int**)singleTokenBatch.SeqId)[0][0] = 0;
+                        ((byte*)singleTokenBatch.Logits)[0] = 1;
+                        singleTokenBatch.NTokens = 1;
+
+                        int decodeRes = LlamaNative.llama_decode(ctxHandle, singleTokenBatch);
                         if (decodeRes != 0)
                         {
-                            throw new InvalidOperationException($"llama_decode failed during auto-regressive generation: {decodeRes}");
+                            throw new InvalidOperationException($"llama_decode failed: {decodeRes}");
                         }
-                    }
-                    finally
-                    {
-                        LlamaNative.llama_batch_free(batch);
                     }
                 }
             }
+            finally
+            {
+              
+                LlamaNative.llama_batch_free(singleTokenBatch);
+            }
 
-   
+       
             int finalChars = utf8Decoder.GetChars(Array.Empty<byte>(), 0, 0, charBuffer, 0, flush: true);
             if (finalChars > 0)
             {
                 yield return new string(charBuffer, 0, finalChars);
             }
-            // -------------------------------------------------------------
 
             _sessionManager.UpdatePastTokensCount(sessionId, currentPos);
             if (generatedTokens.Count > 0)
