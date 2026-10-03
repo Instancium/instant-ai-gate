@@ -20,6 +20,8 @@ public record NativeModelDetails
     /// </summary>
     public int GpuLayers { get; init; }
 
+    public int TotalLayers { get; init; }
+
     /// <summary>
     /// Number of CPU threads used.
     /// </summary>

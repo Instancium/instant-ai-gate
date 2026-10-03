@@ -314,15 +314,20 @@ public class ModelProvider : IModelProvider, IDisposable
     {
         _configCache.TryGetValue(r, out var c);
         _pools.TryGetValue(r, out var p);
+        _modelCache.TryGetValue(r, out var modelHandle);
+
+        int totalLayers = modelHandle != null ? _backendFacade.GetModelLayerCount(modelHandle) : 0;
+
         return new NativeModelDetails
         {
             RepoId = r,
             ContextSize = c?.ContextSize ?? 2048,
             GpuLayers = c?.GpuLayerCount ?? 0,
+            TotalLayers = totalLayers, 
             Threads = c?.Threads ?? 4,
             FlashAttention = c?.FlashAttention ?? false,
             IdleContextsCount = p?.Count ?? 0,
-            Backend = "abstracted" // Abstraction prevents knowing backend specifically here
+            Backend = modelHandle?.BackendType ?? "llama.cpp"
         };
     });
 

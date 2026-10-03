@@ -30,6 +30,10 @@ public sealed class VramCommand : IConsoleCommand
                 return;
             }
 
+            string layerText = details.TotalLayers > 0
+                ? $"{Math.Min(details.GpuLayers, details.TotalLayers)} / {details.TotalLayers} layers"
+                : $"{details.GpuLayers} layers";
+
             var table = new Table().Border(TableBorder.Rounded).Expand();
             table.AddColumn("[cyan]Hardware Parameter[/]");
             table.AddColumn("[cyan]Active Configuration[/]");
@@ -37,7 +41,7 @@ public sealed class VramCommand : IConsoleCommand
             table.AddRow("Active Model", $"[bold]{Markup.Escape(details.RepoId)}[/]");
             table.AddRow("Inference Backend", $"[green]{Markup.Escape(details.Backend)}[/]");
             table.AddRow("Context Window (n_ctx)", $"{details.ContextSize:N0} tokens");
-            table.AddRow("Offloaded GPU Layers", details.GpuLayers > 0 ? $"[green]{details.GpuLayers}[/]" : "[yellow]CPU Only (0)[/]");
+            table.AddRow("Offloaded GPU Layers", $"[green]{layerText}[/]");
             table.AddRow("Thread Concurrency", details.Threads.ToString());
             table.AddRow("Flash Attention", details.FlashAttention ? "[green]Enabled[/]" : "[yellow]Disabled[/]");
             table.AddRow("Idle Pool Contexts", details.IdleContextsCount.ToString());

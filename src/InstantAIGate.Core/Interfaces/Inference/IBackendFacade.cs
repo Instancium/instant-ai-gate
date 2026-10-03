@@ -39,5 +39,7 @@ namespace InstantAIGate.Core.Interfaces.Inference
         /// WARNING: Must only be invoked if <see cref="CanShiftContextMemory"/> evaluates to <c>true</c>.
         /// </summary>
         void ShiftContextMemoryRange(IContextHandle contextHandle, int seqId, int p0, int p1, int delta);
+
+        int GetModelLayerCount(IModelHandle modelHandle);
     }
 }
