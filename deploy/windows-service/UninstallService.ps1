@@ -6,7 +6,6 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 $ErrorActionPreference = "Continue"
 
-# Hardcoded settings
 $ServiceName = "InstantAIGate.Server"
 $InstallDir  = "C:\ProgramData\InstantAIGate\Server"
 
@@ -25,24 +24,17 @@ if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
     Write-Host "Service $ServiceName is not installed." -ForegroundColor Yellow
 }
 
-# 2. Terminate any orphaned processes if still running
+# 2. Terminate running process if orphaned
 $process = Get-Process -Name "InstantAIGate.Server" -ErrorAction SilentlyContinue
 if ($process) {
     Write-Host "Killing running process..."
     Stop-Process -Name "InstantAIGate.Server" -Force -ErrorAction SilentlyContinue
 }
 
-# 3. Clean up the installation directory
+# 3. Clean up installation directory
 if (Test-Path $InstallDir) {
-    Write-Host ">>> Removing installation directory: $InstallDir..." -ForegroundColor Cyan
+    Write-Host "Removing installation directory: $InstallDir..."
     Remove-Item -Path $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-# 4. Remove desktop shortcut if present
-$DesktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "InstantAIGate API.url"
-if (Test-Path $DesktopShortcut) {
-    Write-Host "Removing desktop shortcut..."
-    Remove-Item -Path $DesktopShortcut -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ""
@@ -50,5 +42,4 @@ Write-Host "=== SERVICE UNINSTALLED AND CLEANED SUCCESSFULLY ===" -ForegroundCol
 Write-Host "===================================================" -ForegroundColor Green
 Write-Host ""
 
-# Keep the window open
 Read-Host "Press Enter to exit"

@@ -32,6 +32,8 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     // Per-session channels for multiplexed streaming
     private readonly ConcurrentDictionary<string, Channel<string>> _activeChannels = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource> _activeCompletions = new();
+    private readonly ConcurrentDictionary<string, bool> _joinedSessions = new();
+
 
     public event Action<int>? QueuePositionReceived;
     public event Action<string, string, string>? LogReceived;
@@ -49,48 +51,39 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         }
     }
 
-    private async Task EnsureConnectedAsync(CancellationToken ct)
+
+
+
+    private void AbortAllActiveStreams(Exception exception)
     {
-        if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected)
+        foreach (var kvp in _activeChannels)
         {
-            return;
+            kvp.Value.Writer.TryComplete(exception);
         }
-
-        await _connectionLock.WaitAsync(ct);
-        try
+        foreach (var kvp in _activeCompletions)
         {
-            if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected)
-            {
-                return;
-            }
-
-            if (_hubConnection != null)
-            {
-                await _hubConnection.DisposeAsync();
-            }
-
-            _hubConnection = new HubConnectionBuilder()
-                .WithUrl(_hubUrl, options =>
-                {
-                    if (!string.IsNullOrWhiteSpace(_apiKey))
-                    {
-                        options.AccessTokenProvider = () => Task.FromResult(_apiKey)!;
-                    }
-                })
-                .WithAutomaticReconnect()
-                .Build();
-
-            RegisterHubEventHandlers(_hubConnection);
-            await _hubConnection.StartAsync(ct);
+            kvp.Value.TrySetException(exception);
         }
-        finally
-        {
-            _connectionLock.Release();
-        }
+        _activeChannels.Clear();
+        _activeCompletions.Clear();
     }
 
     private void RegisterHubEventHandlers(HubConnection connection)
     {
+        connection.Closed += ex =>
+        {
+            _joinedSessions.Clear();
+            var error = ex ?? new InvalidOperationException("Underlying transport connection was closed.");
+            AbortAllActiveStreams(error);
+            return Task.CompletedTask;
+        };
+
+        connection.Reconnected += _ =>
+        {
+            _joinedSessions.Clear();
+            return Task.CompletedTask;
+        };
+
         connection.On<SessionTokenDelta>("ReceiveTokenDelta", delta =>
         {
             if (_activeChannels.TryGetValue(delta.SessionId, out var channel))
@@ -113,14 +106,7 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         connection.On<string>("ReceiveError", error =>
         {
             var exception = new InvalidOperationException($"Remote Gateway Error: {error}");
-            foreach (var kvp in _activeChannels)
-            {
-                kvp.Value.Writer.TryComplete(exception);
-            }
-            foreach (var kvp in _activeCompletions)
-            {
-                kvp.Value.TrySetException(exception);
-            }
+            AbortAllActiveStreams(exception);
         });
 
         connection.On<ContextOverflowException>("ReceiveContextOverflow", overflow =>
@@ -170,47 +156,153 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
 
     #region Data Plane & Inference
 
+
+    private async Task EnsureConnectedAsync(CancellationToken ct)
+    {
+       
+        while (_hubConnection != null && _hubConnection.State == HubConnectionState.Reconnecting)
+        {
+            await Task.Delay(200, ct);
+        }
+
+        if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected) return;
+
+        await _connectionLock.WaitAsync(ct);
+        try
+        {
+            while (_hubConnection != null && _hubConnection.State == HubConnectionState.Reconnecting)
+            {
+                await Task.Delay(200, ct);
+            }
+            if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected) return;
+
+            if (_hubConnection != null) await _hubConnection.DisposeAsync();
+
+            _joinedSessions.Clear();
+
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(_hubUrl, options =>
+                {
+                    if (!string.IsNullOrWhiteSpace(_apiKey))
+                        options.AccessTokenProvider = () => Task.FromResult(_apiKey)!;
+                })
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hubConnection.Closed += _ => { _joinedSessions.Clear(); return Task.CompletedTask; };
+            _hubConnection.Reconnected += _ => { _joinedSessions.Clear(); return Task.CompletedTask; };
+
+            RegisterHubEventHandlers(_hubConnection);
+            await _hubConnection.StartAsync(ct);
+        }
+        finally
+        {
+            _connectionLock.Release();
+        }
+    }
+
     public async IAsyncEnumerable<string> StreamChatAsync(
         string sessionId,
         string repoId,
         ChatMessage deltaMessage,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        await EnsureConnectedAsync(ct);
-
-        // Захватываем локальную ссылку с явной проверкой на null
-        var connection = _hubConnection
-            ?? throw new InvalidOperationException("SignalR Hub connection is not established.");
-
-        var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
+        var outputChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
         {
             SingleReader = true,
             SingleWriter = true
         });
-        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        _activeChannels[sessionId] = channel;
-        _activeCompletions[sessionId] = tcs;
+        _ = Task.Run(() => ExecuteStreamingPipelineAsync(sessionId, repoId, deltaMessage, outputChannel.Writer, ct), ct);
+
+        // No try/catch around yield return — fully compliant with CS1626
+        await foreach (var token in outputChannel.Reader.ReadAllAsync(ct))
+        {
+            yield return token;
+        }
+    }
+
+    private async Task ExecuteStreamingPipelineAsync(
+        string sessionId,
+        string repoId,
+        ChatMessage deltaMessage,
+        ChannelWriter<string> outputWriter,
+        CancellationToken ct)
+    {
+        const int maxAttempts = 2;
+        Exception? terminalException = null;
 
         try
         {
-            await connection.InvokeAsync("JoinSession", sessionId, repoId, ct);
-
-            await connection.SendAsync("SendPromptDelta", sessionId, deltaMessage, ct);
-
-            await foreach (var token in channel.Reader.ReadAllAsync(ct))
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                yield return token;
-            }
+                await EnsureConnectedAsync(ct);
+                var connection = _hubConnection
+                    ?? throw new InvalidOperationException("SignalR Hub connection is not established.");
 
-            await tcs.Task.WaitAsync(ct);
+                var internalChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
+                {
+                    SingleReader = true,
+                    SingleWriter = true
+                });
+                var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                _activeChannels[sessionId] = internalChannel;
+                _activeCompletions[sessionId] = tcs;
+
+                bool retryNeeded = false;
+                bool yieldedAny = false;
+
+                try
+                {
+                    if (!_joinedSessions.ContainsKey(sessionId))
+                    {
+                        await connection.InvokeAsync("JoinSession", sessionId, repoId ?? string.Empty, ct);
+                        _joinedSessions.TryAdd(sessionId, true);
+                    }
+
+                    await connection.SendAsync("SendPromptDelta", sessionId, deltaMessage, ct);
+
+                    await foreach (var token in internalChannel.Reader.ReadAllAsync(ct))
+                    {
+                        yieldedAny = true;
+                        await outputWriter.WriteAsync(token, ct);
+                    }
+
+                    await tcs.Task.WaitAsync(ct);
+                    return;
+                }
+                catch (Exception ex) when (!yieldedAny && attempt < maxAttempts &&
+                                          (ex.Message.Contains("not active", StringComparison.OrdinalIgnoreCase) ||
+                                           ex.Message.Contains("was not found", StringComparison.OrdinalIgnoreCase)))
+                {
+                    // Server rebooted and dropped memory context: drop local cache and recreate session on backend
+                    _joinedSessions.TryRemove(sessionId, out _);
+                    retryNeeded = true;
+                }
+                finally
+                {
+                    _activeChannels.TryRemove(sessionId, out _);
+                    _activeCompletions.TryRemove(sessionId, out _);
+                }
+
+                if (retryNeeded)
+                {
+                    await Task.Delay(300, ct);
+                    continue;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            terminalException = ex;
         }
         finally
         {
-            _activeChannels.TryRemove(sessionId, out _);
-            _activeCompletions.TryRemove(sessionId, out _);
+            outputWriter.TryComplete(terminalException);
         }
     }
+
 
     public async Task EndSessionAsync(string sessionId, CancellationToken ct = default)
     {

@@ -73,7 +73,7 @@ public class SignalRLogger : ILogger
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-    public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
+    public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Debug;
 
     public void Log<TState>(
         LogLevel logLevel,
