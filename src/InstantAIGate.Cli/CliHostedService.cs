@@ -170,6 +170,18 @@ public class CliHostedService : IHostedService
             AnsiConsole.MarkupLine($"\n[bold yellow]Context Window Boundary Reached![/] [{ex.PastTokens} + {ex.IncomingTokens} + {ex.ReservedTokens} > {ex.ContextSize} tokens]");
             await HandleContextOverflowMitigationAsync(ex, cancellationToken);
         }
+        catch (Exception ex) when (ex.Message.Contains("was not found", StringComparison.OrdinalIgnoreCase))
+        {
+            AnsiConsole.MarkupLine("\n[bold red]Server State Lost:[/] The server was restarted or lost the session. Physical KV-cache destroyed.");
+            AnsiConsole.MarkupLine("[yellow]Local history has been cleared. Please start a new dialogue.[/]");
+
+            // Remove the problematic prompt and force a new SessionId generation
+            if (_session.ChatHistory.Count > 0)
+            {
+                _session.ChatHistory.RemoveAt(_session.ChatHistory.Count - 1);
+            }
+            _session.ClearHistory();
+        }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"\n[red]Fatal Inference Error:[/] {Markup.Escape(ex.Message)}");
