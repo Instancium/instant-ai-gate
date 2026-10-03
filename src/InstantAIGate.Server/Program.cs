@@ -20,6 +20,11 @@ builder.Services.Configure<StorageSettings>(
     builder.Configuration.GetSection("InstantAIGate:Storage"));
 
 builder.Services.AddControllers();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("GatewayAdmin", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("GatewayUser", policy => policy.RequireRole("User", "Admin"));
+});
 
 builder.Services.AddHealthChecks()
     .AddCheck<ModelReadyHealthCheck>("model_ready");
@@ -54,13 +59,13 @@ InstantAIGate.Native.Logging.NativeStreamRedirector.Initialize(logMessage =>
 });
 
 app.UseMiddleware<GatewayExceptionMiddleware>();
-app.UseMiddleware<PortRoutingMiddleware>();
 app.UseMiddleware<ApiKeyAuthMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Name == "model_ready" });
+
 app.MapHub<InstantAIGate.Server.Hubs.TelemetryHub>("/hub/telemetry");
 app.MapHub<InstantAIGate.Server.Hubs.SessionChatHub>("/hub/chat");
 

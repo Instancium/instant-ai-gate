@@ -1,82 +1,80 @@
-﻿using System.Security.Claims;
+﻿namespace InstantAIGate.Server.Middleware;
 
-namespace InstantAIGate.Server.Middleware;
+using System;
+using System.Collections.Generic;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 
 public class ApiKeyAuthMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly string _adminApiKey;
-    private readonly int _publicPort;
-    private readonly int _adminPort;
 
     public ApiKeyAuthMiddleware(RequestDelegate next, IConfiguration configuration)
     {
         _next = next;
         _adminApiKey = configuration["InstantAIGate:AdminApiKey"] ?? string.Empty;
-        _publicPort = ExtractPort(configuration, "PublicEndpoint", 5000);
-        _adminPort = ExtractPort(configuration, "AdminEndpoint", 5001);
     }
 
     public async Task InvokeAsync(HttpContext context)
     {
         string path = context.Request.Path.Value ?? string.Empty;
-
-        // Bypass authentication for health checks
-        if (path.StartsWith("/health", System.StringComparison.OrdinalIgnoreCase))
+        if (path.StartsWith("/health", StringComparison.OrdinalIgnoreCase))
         {
             await _next(context);
             return;
         }
 
-        int port = context.Connection.LocalPort;
+        string? token = null;
 
-        if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader))
+        if (context.Request.Headers.TryGetValue("Authorization", out var authHeader))
+        {
+            string headerValue = authHeader.ToString().Trim();
+            if (headerValue.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                token = headerValue.Substring("Bearer ".Length).Trim();
+            }
+            else if (!string.IsNullOrWhiteSpace(headerValue))
+            {
+                token = headerValue;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(token) && context.Request.Query.TryGetValue("access_token", out var queryToken))
+        {
+            token = queryToken.ToString().Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(token))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return;
         }
 
-        string token = authHeader.ToString().Replace("Bearer ", string.Empty).Trim();
-
-        if (port == _adminPort)
+        List<Claim> claims;
+        if (!string.IsNullOrEmpty(_adminApiKey) && string.Equals(token, _adminApiKey, StringComparison.Ordinal))
         {
-            if (string.IsNullOrEmpty(_adminApiKey) || token != _adminApiKey)
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return;
-            }
-
-            var claims = new[] { new Claim(ClaimTypes.Role, "Admin") };
-            var identity = new ClaimsIdentity(claims, "ApiKey");
-            context.User = new ClaimsPrincipal(identity);
+            claims =
+            [
+                new Claim(ClaimTypes.Role, "Admin"),
+                new Claim(ClaimTypes.Role, "User"),
+                new Claim("TenantId", "admin")
+            ];
         }
-        else if (port == _publicPort)
+        else
         {
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return;
-            }
-
-            var claims = new[] { new Claim("TenantId", token) };
-            var identity = new ClaimsIdentity(claims, "ApiKey");
-            context.User = new ClaimsPrincipal(identity);
+            claims =
+            [
+                new Claim(ClaimTypes.Role, "User"),
+                new Claim("TenantId", token)
+            ];
         }
+
+        var identity = new ClaimsIdentity(claims, "ApiKey");
+        context.User = new ClaimsPrincipal(identity);
 
         await _next(context);
-    }
-
-    private static int ExtractPort(IConfiguration config, string endpointName, int defaultPort)
-    {
-        var url = config[$"Kestrel:Endpoints:{endpointName}:Url"];
-        if (string.IsNullOrWhiteSpace(url)) return defaultPort;
-
-        var parts = url.Split(':');
-        if (parts.Length > 0 && int.TryParse(parts[^1], out int port))
-        {
-            return port;
-        }
-
-        return defaultPort;
     }
 }
