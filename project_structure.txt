@@ -15,6 +15,7 @@
 |         +--- InstallService.ps1
 |         \--- UninstallService.ps1
 +--- media
+|    +--- architecture-diagram.jpg
 |    +--- dashboard.gif
 |    +--- ig-logo.png
 |    \--- status-ready.png
@@ -289,8 +290,7 @@
 |    |    |    \--- SessionChatHub.cs
 |    |    +--- Middleware
 |    |    |    +--- ApiKeyAuthMiddleware.cs
-|    |    |    +--- GatewayExceptionMiddleware.cs
-|    |    |    \--- PortRoutingMiddleware.cs
+|    |    |    \--- GatewayExceptionMiddleware.cs
 |    |    +--- Properties
 |    |    |    +--- PublishProfiles
 |    |    |    |    +--- FolderProfile.pubxml

@@ -66,8 +66,12 @@ app.MapControllers();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Name == "model_ready" });
 
+app.MapHub<InstantAIGate.Server.Hubs.GatewayHub>("/hub/gateway");
+
 app.MapHub<InstantAIGate.Server.Hubs.TelemetryHub>("/hub/telemetry");
 app.MapHub<InstantAIGate.Server.Hubs.SessionChatHub>("/hub/chat");
+
+
 
 app.Run();
 
