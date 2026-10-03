@@ -7,196 +7,308 @@ using InstantAIGate.Core.Exceptions;
 using InstantAIGate.SSR.Dtos;
 using Microsoft.AspNetCore.SignalR.Client;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 
-public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
+public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
 {
     private readonly HttpClient _httpClient;
-    private readonly string _adminHubUrl;
-    private readonly string _adminKey;
-    private HubConnection? _telemetryConnection;
-    private HubConnection? _chatHubConnection;
+    private readonly string _baseUrl;
+    private readonly string _hubUrl;
+    private readonly string _apiKey;
+
+    private HubConnection? _hubConnection;
+    private readonly SemaphoreSlim _connectionLock = new(1, 1);
+
+    // Callbacks for global observability
+    private Action<InferenceMetrics>? _onMetricsCallback;
+    private Action<DownloadProgress>? _onDownloadProgressCallback;
+
+    // Per-session channels for multiplexed streaming
+    private readonly ConcurrentDictionary<string, Channel<string>> _activeChannels = new();
+    private readonly ConcurrentDictionary<string, TaskCompletionSource> _activeCompletions = new();
 
     public event Action<int>? QueuePositionReceived;
     public event Action<string, string, string>? LogReceived;
 
-    public RemoteGatewayClient(HttpClient httpClient, string publicUrl, string adminHubUrl, string adminKey)
+    public RemoteGatewayClient(HttpClient httpClient, string baseUrl, string hubUrl, string apiKey)
     {
-        _httpClient = httpClient;
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _baseUrl = baseUrl?.TrimEnd('/') ?? throw new ArgumentNullException(nameof(baseUrl));
+        _hubUrl = string.IsNullOrWhiteSpace(hubUrl) ? $"{_baseUrl}/hub/gateway" : hubUrl;
+        _apiKey = apiKey ?? string.Empty;
+
         if (_httpClient.BaseAddress == null)
         {
-            _httpClient.BaseAddress = new Uri(publicUrl);
+            _httpClient.BaseAddress = new Uri(_baseUrl);
         }
-        _adminHubUrl = adminHubUrl;
-        _adminKey = adminKey;
     }
 
-    private async Task EnsureChatHubConnectedAsync(CancellationToken ct)
+    private async Task EnsureConnectedAsync(CancellationToken ct)
     {
-        if (_chatHubConnection != null && _chatHubConnection.State == HubConnectionState.Connected)
+        if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected)
         {
             return;
         }
 
-        string chatHubUrl = new Uri(_httpClient.BaseAddress!, "/hub/chat").ToString();
-        _chatHubConnection = new HubConnectionBuilder()
-            .WithUrl(chatHubUrl, options =>
+        await _connectionLock.WaitAsync(ct);
+        try
+        {
+            if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected)
             {
-                if (!string.IsNullOrWhiteSpace(_adminKey))
-                {
-                    options.AccessTokenProvider = () => Task.FromResult(_adminKey)!;
-                }
-            })
-            .WithAutomaticReconnect()
-            .Build();
+                return;
+            }
 
-        await _chatHubConnection.StartAsync(ct);
+            if (_hubConnection != null)
+            {
+                await _hubConnection.DisposeAsync();
+            }
+
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(_hubUrl, options =>
+                {
+                    if (!string.IsNullOrWhiteSpace(_apiKey))
+                    {
+                        options.AccessTokenProvider = () => Task.FromResult(_apiKey)!;
+                    }
+                })
+                .WithAutomaticReconnect()
+                .Build();
+
+            RegisterHubEventHandlers(_hubConnection);
+            await _hubConnection.StartAsync(ct);
+        }
+        finally
+        {
+            _connectionLock.Release();
+        }
+    }
+
+    private void RegisterHubEventHandlers(HubConnection connection)
+    {
+        connection.On<SessionTokenDelta>("ReceiveTokenDelta", delta =>
+        {
+            if (_activeChannels.TryGetValue(delta.SessionId, out var channel))
+            {
+                if (delta.IsDone)
+                {
+                    channel.Writer.TryComplete();
+                    if (_activeCompletions.TryGetValue(delta.SessionId, out var tcs))
+                    {
+                        tcs.TrySetResult();
+                    }
+                }
+                else if (!string.IsNullOrEmpty(delta.Content))
+                {
+                    channel.Writer.TryWrite(delta.Content);
+                }
+            }
+        });
+
+        connection.On<string>("ReceiveError", error =>
+        {
+            var exception = new InvalidOperationException($"Remote Gateway Error: {error}");
+            foreach (var kvp in _activeChannels)
+            {
+                kvp.Value.Writer.TryComplete(exception);
+            }
+            foreach (var kvp in _activeCompletions)
+            {
+                kvp.Value.TrySetException(exception);
+            }
+        });
+
+        connection.On<ContextOverflowException>("ReceiveContextOverflow", overflow =>
+        {
+            if (_activeChannels.TryGetValue(overflow.SessionId, out var channel))
+            {
+                channel.Writer.TryComplete(overflow);
+            }
+            if (_activeCompletions.TryGetValue(overflow.SessionId, out var tcs))
+            {
+                tcs.TrySetException(overflow);
+            }
+        });
+
+        connection.On<string>("ReceiveSessionClosed", sessionId =>
+        {
+            if (_activeChannels.TryRemove(sessionId, out var channel))
+            {
+                channel.Writer.TryComplete();
+            }
+            if (_activeCompletions.TryRemove(sessionId, out var tcs))
+            {
+                tcs.TrySetResult();
+            }
+        });
+
+        connection.On<int>("ReceiveQueuePosition", position =>
+        {
+            QueuePositionReceived?.Invoke(position);
+        });
+
+        connection.On<string, string, string>("ReceiveLog", (level, category, message) =>
+        {
+            LogReceived?.Invoke(level, category, message);
+        });
+
+        connection.On<InferenceMetrics, object>("ReceiveMetrics", (metrics, _) =>
+        {
+            _onMetricsCallback?.Invoke(metrics);
+        });
+
+        connection.On<DownloadProgress>("ReceiveDownloadProgress", progress =>
+        {
+            _onDownloadProgressCallback?.Invoke(progress);
+        });
+    }
+
+    #region Data Plane & Inference
+
+    public async IAsyncEnumerable<string> StreamChatAsync(
+        string sessionId,
+        string repoId,
+        ChatMessage deltaMessage,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await EnsureConnectedAsync(ct);
+
+        var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = true
+        });
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _activeChannels[sessionId] = channel;
+        _activeCompletions[sessionId] = tcs;
+
+        try
+        {
+            await _hubConnection!.InvokeAsync("JoinSession", sessionId, repoId, ct);
+            await _hubConnection.InvokeAsync("SendPromptDelta", sessionId, deltaMessage, ct);
+
+            await foreach (var token in channel.Reader.ReadAllAsync(ct))
+            {
+                yield return token;
+            }
+
+            await tcs.Task.WaitAsync(ct);
+        }
+        finally
+        {
+            _activeChannels.TryRemove(sessionId, out _);
+            _activeCompletions.TryRemove(sessionId, out _);
+        }
     }
 
     public async Task EndSessionAsync(string sessionId, CancellationToken ct = default)
     {
-        if (_chatHubConnection != null && _chatHubConnection.State == HubConnectionState.Connected)
+        if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected)
         {
-            await _chatHubConnection.InvokeAsync("LeaveSession", sessionId, ct);
-        }
-    }
-
-    public async IAsyncEnumerable<string> StreamChatAsync(
-        string sessionId, string repoId, ChatMessage deltaMessage, [EnumeratorCancellation] CancellationToken ct)
-    {
-        await EnsureChatHubConnectedAsync(ct);
-        await _chatHubConnection!.InvokeAsync("JoinSession", sessionId, repoId, ct);
-
-        var channel = Channel.CreateUnbounded<string>();
-        var tcs = new TaskCompletionSource();
-
-        using var tokenSub = _chatHubConnection.On<SessionTokenDelta>("ReceiveTokenDelta", delta =>
-        {
-            if (delta.IsDone)
+            try
             {
-                tcs.TrySetResult();
-                channel.Writer.TryComplete();
+                await _hubConnection.InvokeAsync("LeaveSession", sessionId, ct);
             }
-            else
+            catch (Exception)
             {
-                channel.Writer.TryWrite(delta.Content);
-            }
-        });
-
-        using var errSub = _chatHubConnection.On<string>("ReceiveError", error =>
-        {
-            var ex = new InvalidOperationException($"Remote Inference Error: {error}");
-            tcs.TrySetException(ex);
-            channel.Writer.TryComplete(ex);
-        });
-
-        using var overflowSub = _chatHubConnection.On<ContextOverflowException>("ReceiveContextOverflow", overflow =>
-        {
-            tcs.TrySetException(overflow);
-            channel.Writer.TryComplete(overflow);
-        });
-
-        await _chatHubConnection.InvokeAsync("SendPromptDelta", sessionId, deltaMessage, ct);
-
-        await foreach (var token in channel.Reader.ReadAllAsync(ct))
-        {
-            yield return token;
-        }
-
-        await tcs.Task;
-    }
-
-    public Task LoadModelAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
-
-    public Task UnloadModelAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
-
-    public Task SwapModelAsync(string repoId, string? profile = null, CancellationToken ct = default) => Task.CompletedTask;
-
-    public Task DownloadModelAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
-
-    public Task SubscribeToModelDownloadAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
-
-    public Task UnsubscribeFromModelDownloadAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
-
-    public async Task<NativeModelDetails> GetActiveModelDetailsAsync(CancellationToken ct = default)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
-        if (!string.IsNullOrWhiteSpace(_adminKey))
-        {
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _adminKey);
-        }
-
-        using var response = await _httpClient.SendAsync(request, ct);
-        if (response.IsSuccessStatusCode)
-        {
-            var content = await response.Content.ReadFromJsonAsync<ActiveModelDetailsResponse>(cancellationToken: ct);
-            if (content?.ActiveDetails != null)
-            {
-                return content.ActiveDetails;
+                // Graceful ignore if connection or session already terminated
             }
         }
-
-        return new NativeModelDetails
-        {
-            ContextSize = 4096,
-            Backend = "remote",
-            GpuLayers = 99
-        };
     }
 
     public async Task<int> GetSessionTokenCountAsync(string sessionId, CancellationToken ct = default)
     {
-        await EnsureChatHubConnectedAsync(ct);
-        return await _chatHubConnection!.InvokeAsync<int>("GetSessionTokenCount", sessionId, ct);
+        await EnsureConnectedAsync(ct);
+        return await _hubConnection!.InvokeAsync<int>("GetSessionTokenCount", sessionId, ct);
     }
 
     public async Task RollbackSessionAsync(string sessionId, int targetPosition, CancellationToken ct = default)
     {
-        await EnsureChatHubConnectedAsync(ct);
-        await _chatHubConnection!.InvokeAsync("RollbackSession", sessionId, targetPosition, ct);
+        await EnsureConnectedAsync(ct);
+        await _hubConnection!.InvokeAsync("RollbackSession", sessionId, targetPosition, ct);
     }
 
     public async Task ShiftSessionMemoryAsync(string sessionId, int startPos, int count, CancellationToken ct = default)
     {
-        await EnsureChatHubConnectedAsync(ct);
-        await _chatHubConnection!.InvokeAsync("ShiftSessionCache", sessionId, startPos, count, ct);
+        await EnsureConnectedAsync(ct);
+        await _hubConnection!.InvokeAsync("ShiftSessionCache", sessionId, startPos, count, ct);
     }
+
+    #endregion
+
+    #region Control Plane & Model Management
+
+    public async Task<NativeModelDetails> GetActiveModelDetailsAsync(CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        return await _hubConnection!.InvokeAsync<NativeModelDetails>("GetActiveModelDetailsAsync", ct);
+    }
+
+    public async Task LoadModelAsync(string repoId, CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        await _hubConnection!.InvokeAsync("LoadModelAsync", repoId, (string?)null, ct);
+    }
+
+    public async Task UnloadModelAsync(string repoId, CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        await _hubConnection!.InvokeAsync("UnloadModelAsync", repoId, ct);
+    }
+
+    public async Task SwapModelAsync(string repoId, string? profile = null, CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        await _hubConnection!.InvokeAsync("SwapModelAsync", repoId, profile, ct);
+    }
+
+    public async Task DownloadModelAsync(string repoId, CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        await _hubConnection!.InvokeAsync("DownloadModelAsync", repoId, ct);
+    }
+
+    public async Task SubscribeToModelDownloadAsync(string repoId, CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        await _hubConnection!.InvokeAsync("SubscribeToModelDownload", repoId, ct);
+    }
+
+    public async Task UnsubscribeFromModelDownloadAsync(string repoId, CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        await _hubConnection!.InvokeAsync("UnsubscribeFromModelDownload", repoId, ct);
+    }
+
+    #endregion
+
+    #region Observability & Telemetry
 
     public async Task ConnectTelemetryAsync(
-        Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct)
+        Action<InferenceMetrics> onMetrics,
+        Action<DownloadProgress> onSsrProgress,
+        CancellationToken ct)
     {
-        _telemetryConnection = new HubConnectionBuilder()
-            .WithUrl(_adminHubUrl, options =>
-            {
-                options.AccessTokenProvider = () => Task.FromResult(_adminKey)!;
-            })
-            .WithAutomaticReconnect()
-            .Build();
-
-        _telemetryConnection.On<InferenceMetrics, object>("ReceiveMetrics", (metrics, _) => onMetrics(metrics));
-        _telemetryConnection.On<DownloadProgress>("ReceiveSsrProgress", progress => onSsrProgress(progress));
-
-        await _telemetryConnection.StartAsync(ct);
+        _onMetricsCallback = onMetrics;
+        _onDownloadProgressCallback = onSsrProgress;
+        await EnsureConnectedAsync(ct);
     }
+
+    #endregion
 
     public async ValueTask DisposeAsync()
     {
-        if (_telemetryConnection != null)
+        _connectionLock.Dispose();
+        if (_hubConnection != null)
         {
-            await _telemetryConnection.DisposeAsync();
-        }
-
-        if (_chatHubConnection != null)
-        {
-            await _chatHubConnection.DisposeAsync();
+            await _hubConnection.DisposeAsync();
+            _hubConnection = null;
         }
     }
-
-    private sealed record ActiveModelDetailsResponse(NativeModelDetails? ActiveDetails);
 }

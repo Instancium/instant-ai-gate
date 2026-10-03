@@ -111,6 +111,8 @@ public static class Program
                 services.AddSingleton<PipelineRunner>();
                 services.AddSingleton<IProcessRunner, ProcessRunner>();
                 services.AddSingleton<IGitService, GitService>();
+                services.AddSingleton<ClientSessionMemoryCoordinator>();
+
                 services.AddTransient<IDotnetService, DotnetService>();
 
                 services.AddTransient<GitAddAllStep>();
