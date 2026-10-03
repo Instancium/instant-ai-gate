@@ -7,6 +7,7 @@ using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Exceptions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
@@ -24,13 +25,15 @@ public class CliHostedService : IHostedService
     private Task? _applicationTask;
     private CancellationTokenSource? _cancellationTokenSource;
     private volatile string? _activeQueueStatus;
+    private readonly ILogger<CliHostedService> _logger;
 
     public CliHostedService(
         IHostApplicationLifetime appLifetime,
         CommandDispatcher commandDispatcher,
         CliSession session,
         IGatewayClient gatewayClient,
-        ClientSessionMemoryCoordinator memoryCoordinator)
+        ClientSessionMemoryCoordinator memoryCoordinator,
+        ILogger<CliHostedService> logger)
     {
         _appLifetime = appLifetime;
         _commandDispatcher = commandDispatcher;
@@ -39,6 +42,7 @@ public class CliHostedService : IHostedService
         _memoryCoordinator = memoryCoordinator;
 
         _gatewayClient.QueuePositionReceived += OnQueuePositionReceived;
+        _logger = logger;
     }
 
     private void OnQueuePositionReceived(int position)
@@ -53,6 +57,10 @@ public class CliHostedService : IHostedService
             _activeQueueStatus = null;
         }
     }
+    private void OnLogReceived(string level, string category, string message)
+    {
+        _logger.LogInformation("[{Level}] {Category}: {Message}", level, category, message);
+    }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -64,6 +72,7 @@ public class CliHostedService : IHostedService
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _gatewayClient.QueuePositionReceived -= OnQueuePositionReceived;
+        _gatewayClient.LogReceived -= OnLogReceived;
 
         if (_cancellationTokenSource != null)
         {

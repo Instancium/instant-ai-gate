@@ -32,6 +32,8 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     // Per-session channels for multiplexed streaming
     private readonly ConcurrentDictionary<string, Channel<string>> _activeChannels = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource> _activeCompletions = new();
+    private readonly ConcurrentDictionary<string, bool> _joinedSessions = new();
+
 
     public event Action<int>? QueuePositionReceived;
     public event Action<string, string, string>? LogReceived;
@@ -48,6 +50,27 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
             _httpClient.BaseAddress = new Uri(_baseUrl);
         }
     }
+
+   
+
+    private async Task EnsureSessionJoinedAsync(string sessionId, string repoId, CancellationToken ct)
+    {
+        if (_joinedSessions.ContainsKey(sessionId))
+        {
+            return;
+        }
+
+        await EnsureConnectedAsync(ct);
+
+        if (_hubConnection == null)
+        {
+            throw new InvalidOperationException("SignalR connection is not initialized.");
+        }
+
+        await _hubConnection.InvokeAsync("JoinSession", sessionId, repoId, ct);
+        _joinedSessions.TryAdd(sessionId, true);
+    }
+
 
     private async Task EnsureConnectedAsync(CancellationToken ct)
     {
@@ -79,6 +102,12 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
                 })
                 .WithAutomaticReconnect()
                 .Build();
+
+            _hubConnection.Reconnected += connectionId =>
+            {
+                _joinedSessions.Clear();
+                return Task.CompletedTask;
+            };
 
             RegisterHubEventHandlers(_hubConnection);
             await _hubConnection.StartAsync(ct);
@@ -170,31 +199,25 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
 
     #region Data Plane & Inference
 
+
     public async IAsyncEnumerable<string> StreamChatAsync(
-        string sessionId,
-        string repoId,
-        ChatMessage deltaMessage,
-        [EnumeratorCancellation] CancellationToken ct)
+    string sessionId, string repoId, ChatMessage deltaMessage, [EnumeratorCancellation] CancellationToken ct)
     {
         await EnsureConnectedAsync(ct);
-
-        // Захватываем локальную ссылку с явной проверкой на null
-        var connection = _hubConnection
-            ?? throw new InvalidOperationException("SignalR Hub connection is not established.");
-
-        var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = true
-        });
+        var connection = _hubConnection ?? throw new InvalidOperationException("SignalR Hub connection is not established.");
+        var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
         _activeChannels[sessionId] = channel;
         _activeCompletions[sessionId] = tcs;
 
         try
         {
-            await connection.InvokeAsync("JoinSession", sessionId, repoId, ct);
+            if (!_joinedSessions.ContainsKey(sessionId))
+            {
+                await connection.InvokeAsync("JoinSession", sessionId, repoId ?? string.Empty, ct);
+                _joinedSessions.TryAdd(sessionId, true);
+            }
+
 
             await connection.SendAsync("SendPromptDelta", sessionId, deltaMessage, ct);
 

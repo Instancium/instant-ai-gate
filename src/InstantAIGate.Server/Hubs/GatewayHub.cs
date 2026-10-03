@@ -102,6 +102,17 @@ public class GatewayHub : Hub<IGatewayHubClient>
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(repoId))
+            {
+                var activeSettings = _modelManager.GetActiveSettings();
+                if (activeSettings == null || string.IsNullOrWhiteSpace(activeSettings.RepoId))
+                {
+                    await Clients.Caller.ReceiveError("No active model is loaded on Remote Gateway. Server has no model in memory.");
+                    return;
+                }
+                repoId = activeSettings.RepoId;
+            }
+
             var request = new SessionStartRequest(sessionId, repoId);
             await _sessionManager.CreateSessionAsync(request, Context.ConnectionAborted);
             Context.Items["SessionId"] = sessionId;
@@ -209,7 +220,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         return Task.FromResult(_modelManager.GetActiveModelsStatus());
     }
 
-    [Authorize(Policy = "GatewayAdmin")]
+    [Authorize(Policy = "GatewayUser")]
     public Task<NativeModelDetails> GetActiveModelDetailsAsync()
     {
         return Task.FromResult(_modelManager.GetActiveModelDetails());

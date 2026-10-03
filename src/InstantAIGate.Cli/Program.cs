@@ -109,12 +109,12 @@ public static class Program
 
                     var proxy = new GatewayClientProxy(sp, httpClientFactory, initial);
 
-                    // Привязываем протокольные серверные логи к DebugState консоли
+     
                     proxy.LogReceived += (level, category, message) =>
                     {
                         if (debugState.IsEnabled)
                         {
-                            AnsiConsole.MarkupLine($"[dim red][Server Log - {Markup.Escape(level)}][/] [grey]{Markup.Escape(category)}:[/] {Markup.Escape(message)}");
+                            AnsiConsole.MarkupLine($"[dim red][[Server Log - {Markup.Escape(level)}]][/] [grey]{Markup.Escape(category)}[/]: {Markup.Escape(message)}");
                         }
                     };
 
