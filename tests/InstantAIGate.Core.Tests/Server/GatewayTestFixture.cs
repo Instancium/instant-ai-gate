@@ -45,7 +45,7 @@ public class GatewayTestFixture : WebApplicationFactory<Program>
         BaseAddress = new Uri(ServerOptions.PublicBaseUrl)
     });
 
-    public Uri TelemetryHubUrl => ServerOptions.TelemetryHubUrl;
+    public Uri TelemetryHubUrl => new(new Uri(ServerOptions.PublicBaseUrl), "/hub/gateway");
 
     private sealed class TestModelDownloaderStub : IModelDownloader
     {

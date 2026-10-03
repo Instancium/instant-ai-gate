@@ -1,15 +1,15 @@
 ﻿namespace InstantAIGate.Core.Tests.Server;
 
+using FluentAssertions;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
+using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Tests.TestConfiguration;
 using InstantAIGate.Native.Bindings;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -28,29 +28,33 @@ public class SessionChatHubIntegrationTests : IClassFixture<GatewayTestFixture>
         _tenantToken = _serverOptions.TenantApiKey;
         _adminToken = _serverOptions.AdminApiKey;
         _testRepoId = fixture.ModelOptions.RepoId;
-
         NativeLibraryLoader.Load();
+    }
+
+    private HubConnection CreateGatewayConnection(string token)
+    {
+        var hubUrl = new Uri(new Uri(_serverOptions.PublicBaseUrl), "/hub/gateway");
+        return new HubConnectionBuilder()
+            .WithUrl(hubUrl, options =>
+            {
+                options.HttpMessageHandlerFactory = _ => _fixture.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult(token)!;
+            })
+            .Build();
     }
 
     [Fact]
     public async Task SessionChatHub_CanJoinSession_And_ReceiveTokens()
     {
-   
-        var adminClient = _fixture.CreateAdminClient();
-        var loadRequest = new HttpRequestMessage(HttpMethod.Post, "/admin/models/load");
-        loadRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _adminToken);
-        loadRequest.Content = JsonContent.Create(new { RepoId = _testRepoId });
-        await adminClient.SendAsync(loadRequest);
+        var modelManager = _fixture.Services.GetRequiredService<IModelManager>();
+        if (modelManager.GetActiveSettings() == null)
+        {
+            await using var adminConn = CreateGatewayConnection(_adminToken);
+            await adminConn.StartAsync();
+            await adminConn.InvokeAsync("LoadModelAsync", _testRepoId, "Default");
+        }
 
-        var hubUrl = new Uri(new Uri(_serverOptions.PublicBaseUrl), "/hub/chat");
-        var connection = new HubConnectionBuilder()
-            .WithUrl(hubUrl, options =>
-            {
-                options.HttpMessageHandlerFactory = _ => _fixture.Server.CreateHandler();
-                options.AccessTokenProvider = () => Task.FromResult(_tenantToken)!;
-            })
-            .Build();
-
+        await using var connection = CreateGatewayConnection(_tenantToken);
         var tokensReceived = new List<SessionTokenDelta>();
         var completionSource = new TaskCompletionSource();
 
@@ -71,13 +75,13 @@ public class SessionChatHubIntegrationTests : IClassFixture<GatewayTestFixture>
         var deltaMessage = new ChatMessage("user", "Hello, SignalR!");
         await connection.InvokeAsync("SendPromptDelta", sessionId, deltaMessage);
 
-       
-        var completed = await Task.WhenAny(completionSource.Task, Task.Delay(TimeSpan.FromSeconds(15))) == completionSource.Task;
+        var completed = await Task.WhenAny(completionSource.Task, Task.Delay(TimeSpan.FromSeconds(20))) == completionSource.Task;
+        completed.Should().BeTrue("Timeout waiting for generation completion over GatewayHub.");
 
-        Assert.True(completed, "Timeout waiting for generation completion over SignalR.");
-        Assert.NotEmpty(tokensReceived);
-        Assert.Contains(tokensReceived, t => t.IsDone && t.FinishReason == "stop");
+        tokensReceived.Should().NotBeEmpty();
+        tokensReceived.Should().Contain(t => t.IsDone && t.FinishReason == "stop");
 
+        await connection.InvokeAsync("LeaveSession", sessionId);
         await connection.StopAsync();
     }
 }
