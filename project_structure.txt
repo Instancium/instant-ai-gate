@@ -285,6 +285,8 @@
 |    |    |    +--- ModelReadyHealthCheckcs.cs
 |    |    |    \--- SignalRLoggerProvider.cs
 |    |    +--- Hubs
+|    |    |    +--- GatewayHub.cs
+|    |    |    +--- IGatewayHubClient.cs
 |    |    |    +--- ISessionChatClient.cs
 |    |    |    +--- ITelemetryClient.cs
 |    |    |    \--- SessionChatHub.cs
@@ -340,6 +342,7 @@
 |    |    +--- Infrastructure
 |    |    |    \--- SyntheticNetworkHandler.cs
 |    |    +--- Server
+|    |    |    +--- GatewayHubIntegrationTests.cs
 |    |    |    +--- GatewayInferenceE2ETests.cs
 |    |    |    +--- GatewaySecurityAndHealthTests.cs
 |    |    |    +--- GatewayTestFixture.cs

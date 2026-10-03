@@ -24,7 +24,7 @@ public sealed class ModelStartupWorker : IHostedService
     private readonly StartupModelSettings _startupSettings;
     private readonly StorageSettings _storageSettings;
     private readonly IConfiguration _configuration;
-    private readonly IHubContext<TelemetryHub, ITelemetryClient> _hubContext;
+    private readonly IHubContext<GatewayHub, IGatewayHubClient> _hubContext;
     private readonly ILogger<ModelStartupWorker> _logger;
 
     public ModelStartupWorker(
@@ -32,7 +32,7 @@ public sealed class ModelStartupWorker : IHostedService
         IOptions<StartupModelSettings> startupOptions,
         IOptions<StorageSettings> storageOptions,
         IConfiguration configuration,
-        IHubContext<TelemetryHub, ITelemetryClient> hubContext,
+        IHubContext<GatewayHub, IGatewayHubClient> hubContext,
         ILogger<ModelStartupWorker> logger)
     {
         _serviceProvider = serviceProvider;
@@ -84,7 +84,6 @@ public sealed class ModelStartupWorker : IHostedService
         if (!isModelPresent)
         {
             _logger.LogInformation("Startup model '{RepoId}' is not found on disk. Initiating download...", targetModel.Id);
-
             var urlsToDownload = new List<string>(targetModel.DownloadUrls);
             if (targetModel.RequiresVisionProjector && targetModel.VisionProjectorUrls != null)
             {
@@ -92,13 +91,15 @@ public sealed class ModelStartupWorker : IHostedService
             }
 
             string destinationDir = Path.Combine(_storageSettings.ModelsDirectory, targetModel.Id);
+            string targetModelGroup = $"download_{targetModel.Id}";
 
             var progress = new Progress<DownloadProgress>(async p =>
             {
                 try
                 {
-                    // Broadcast structured progress to UI clients via SignalR
-                    await _hubContext.Clients.All.ReceiveSsrProgress(p);
+                    var taskUser = _hubContext.Clients.Group(targetModelGroup).ReceiveDownloadProgress(p);
+                    var taskAdmin = _hubContext.Clients.Group(GatewayHub.AdminGroupName).ReceiveDownloadProgress(p);
+                    await Task.WhenAll(taskUser, taskAdmin);
                 }
                 catch (Exception ex)
                 {
@@ -141,8 +142,6 @@ public sealed class ModelStartupWorker : IHostedService
             MaxContexts = hwProfile.MaxContexts
         };
 
-        // UI clients will receive real-time memory allocation logs via SignalR ReceiveLog 
-        // intercepted by SignalRLoggerProvider from the native engine
         _logger.LogInformation("Loading startup model '{RepoId}' into memory using profile '{Profile}'...", targetModel.Id, profileName);
         await modelManager.LoadModelAsync(config, cancellationToken);
         _logger.LogInformation("Startup model '{RepoId}' loaded successfully.", targetModel.Id);

@@ -1,17 +1,22 @@
-﻿using InstantAIGate.Core.Interfaces.Inference;
+﻿namespace InstantAIGate.Server.Diagnostics;
+
+using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Server.Hubs;
 using Microsoft.AspNetCore.SignalR;
-
-namespace InstantAIGate.Server.Diagnostics;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 public class MetricsBroadcasterWorker : BackgroundService
 {
-    private readonly IHubContext<TelemetryHub, ITelemetryClient> _hubContext;
+    private readonly IHubContext<GatewayHub, IGatewayHubClient> _hubContext;
     private readonly IModelManager _modelManager;
     private readonly ILogger<MetricsBroadcasterWorker> _logger;
 
     public MetricsBroadcasterWorker(
-        IHubContext<TelemetryHub, ITelemetryClient> hubContext,
+        IHubContext<GatewayHub, IGatewayHubClient> hubContext,
         IModelManager modelManager,
         ILogger<MetricsBroadcasterWorker> logger)
     {
@@ -19,6 +24,7 @@ public class MetricsBroadcasterWorker : BackgroundService
         _modelManager = modelManager;
         _logger = logger;
     }
+
 
     /// <summary>
     /// Background worker that periodically broadcasts inference metrics and native hardware details 
@@ -44,15 +50,15 @@ public class MetricsBroadcasterWorker : BackgroundService
             {
                 var metrics = _modelManager.GetMetrics();
                 var nativeDetails = _modelManager.GetNativeDetails();
-
-                await _hubContext.Clients.All.ReceiveMetrics(metrics, nativeDetails);
+                await _hubContext.Clients.Group(GatewayHub.AdminGroupName)
+                    .ReceiveMetrics(metrics, nativeDetails);
             }
             catch (Exception ex)
             {
-                _logger.LogTrace(ex, "Failed to broadcast metrics.");
+                _logger.LogTrace(ex, "Failed to broadcast metrics to admin group.");
             }
 
-            await Task.Delay(1000, stoppingToken); // Broadcast 1 Hz
+            await Task.Delay(1000, stoppingToken);
         }
     }
 }

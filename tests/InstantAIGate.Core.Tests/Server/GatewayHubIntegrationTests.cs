@@ -7,12 +7,12 @@ using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Tests.TestConfiguration;
 using InstantAIGate.Native.Bindings;
+using InstantAIGate.SSR.Dtos;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -53,7 +53,6 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await userConnection.StartAsync();
 
         var act = async () => await userConnection.InvokeAsync<IEnumerable<ModelRegistryStatus>>("GetModelsAsync");
-
         await act.Should().ThrowAsync<HubException>();
     }
 
@@ -121,5 +120,58 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
 
         var actUnsubscribe = async () => await userConnection.InvokeAsync("UnsubscribeFromModelDownload", _testRepoId);
         await actUnsubscribe.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Observability_SystemMetricsAndLogs_DeliveredOnlyToAdmin()
+    {
+        await using var adminConn = CreateGatewayConnection(_adminToken);
+        await using var userConn = CreateGatewayConnection(_tenantToken);
+
+        var adminMetricsTcs = new TaskCompletionSource<bool>();
+        var userMetricsReceived = false;
+
+        adminConn.On<InferenceMetrics, object>("ReceiveMetrics", (m, d) =>
+        {
+            adminMetricsTcs.TrySetResult(true);
+        });
+
+        userConn.On<InferenceMetrics, object>("ReceiveMetrics", (m, d) =>
+        {
+            userMetricsReceived = true;
+        });
+
+        await adminConn.StartAsync();
+        await userConn.StartAsync();
+
+        var adminReceived = await Task.WhenAny(adminMetricsTcs.Task, Task.Delay(TimeSpan.FromSeconds(3))) == adminMetricsTcs.Task;
+        adminReceived.Should().BeTrue("Admin must receive metrics broadcast in GatewayAdminGroup");
+        userMetricsReceived.Should().BeFalse("Standard user must not receive system metrics broadcast");
+    }
+
+    [Fact]
+    public async Task Observability_ModelDownloadProgress_BroadcastsToSubscribedUser()
+    {
+        await using var userConn = CreateGatewayConnection(_tenantToken);
+        await using var adminConn = CreateGatewayConnection(_adminToken);
+
+        await userConn.StartAsync();
+        await adminConn.StartAsync();
+
+        await userConn.InvokeAsync("SubscribeToModelDownload", _testRepoId);
+
+        var userProgressTcs = new TaskCompletionSource<DownloadProgress>();
+        userConn.On<DownloadProgress>("ReceiveDownloadProgress", p =>
+        {
+            userProgressTcs.TrySetResult(p);
+        });
+
+        await adminConn.InvokeAsync("DownloadModelAsync", _testRepoId);
+
+        var received = await Task.WhenAny(userProgressTcs.Task, Task.Delay(TimeSpan.FromSeconds(5))) == userProgressTcs.Task;
+        received.Should().BeTrue("Subscribed user should receive download progress updates over GatewayHub");
+
+        var progressData = await userProgressTcs.Task;
+        progressData.ModelId.Should().Be(_testRepoId);
     }
 }

@@ -2,6 +2,7 @@ using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Native.DependencyInjection;
 using InstantAIGate.Server.Configuration;
 using InstantAIGate.Server.Diagnostics;
+using InstantAIGate.Server.Hubs;
 using InstantAIGate.Server.Middleware;
 using InstantAIGate.Server.Services.Workers;
 using InstantAIGate.SSR.DependencyInjection;
@@ -20,6 +21,7 @@ builder.Services.Configure<StorageSettings>(
     builder.Configuration.GetSection("InstantAIGate:Storage"));
 
 builder.Services.AddControllers();
+
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("GatewayAdmin", policy => policy.RequireRole("Admin"));
@@ -49,8 +51,8 @@ builder.Services.AddHostedService<ModelStartupWorker>();
 
 var app = builder.Build();
 
-var hubContext = app.Services.GetRequiredService<IHubContext<InstantAIGate.Server.Hubs.TelemetryHub, InstantAIGate.Server.Hubs.ITelemetryClient>>();
-signalRLoggerProvider.SetHubContext(hubContext);
+var gatewayHubContext = app.Services.GetRequiredService<IHubContext<GatewayHub, IGatewayHubClient>>();
+signalRLoggerProvider.SetHubContext(gatewayHubContext);
 
 var nativeLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NativeStreamRedirector");
 InstantAIGate.Native.Logging.NativeStreamRedirector.Initialize(logMessage =>
@@ -63,15 +65,20 @@ app.UseMiddleware<ApiKeyAuthMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
-app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Name == "model_ready" });
 
-app.MapHub<InstantAIGate.Server.Hubs.GatewayHub>("/hub/gateway");
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false
+});
 
-app.MapHub<InstantAIGate.Server.Hubs.TelemetryHub>("/hub/telemetry");
-app.MapHub<InstantAIGate.Server.Hubs.SessionChatHub>("/hub/chat");
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Name == "model_ready"
+});
 
-
+app.MapHub<GatewayHub>("/hub/gateway");
+app.MapHub<TelemetryHub>("/hub/telemetry");
+app.MapHub<SessionChatHub>("/hub/chat");
 
 app.Run();
 
