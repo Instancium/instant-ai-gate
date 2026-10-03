@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -46,7 +47,6 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
     }
 
     #region Control Plane Tests
-
     [Fact]
     public async Task ControlPlane_WhenCalledByTenantUser_ThrowsHubExceptionOrUnauthorized()
     {
@@ -70,11 +70,9 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         var queueMetrics = await adminConnection.InvokeAsync<InferenceMetrics>("GetQueueMetricsAsync");
         queueMetrics.Should().NotBeNull();
     }
-
     #endregion
 
     #region Data Plane Tests
-
     [Fact]
     public async Task DataPlane_TenantUser_CanJoinSession_And_ReceiveDeltaTokens()
     {
@@ -100,6 +98,7 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         });
 
         await userConnection.StartAsync();
+
         string sessionId = $"gw-session-{Guid.NewGuid():N}";
         await userConnection.InvokeAsync("JoinSession", sessionId, _testRepoId);
 
@@ -113,11 +112,9 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
 
         await userConnection.InvokeAsync("LeaveSession", sessionId);
     }
-
     #endregion
 
     #region User & System Observability Tests
-
     [Fact]
     public async Task Observability_DownloadGroup_Subscription_IsCallable()
     {
@@ -136,7 +133,6 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
     {
         await using var adminConn = CreateGatewayConnection(_adminToken);
         await using var userConn = CreateGatewayConnection(_tenantToken);
-
         var adminMetricsTcs = new TaskCompletionSource<bool>();
         var userMetricsReceived = false;
 
@@ -156,6 +152,58 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         var adminReceived = await Task.WhenAny(adminMetricsTcs.Task, Task.Delay(TimeSpan.FromSeconds(3))) == adminMetricsTcs.Task;
         adminReceived.Should().BeTrue("Admin must receive metrics broadcast in GatewayAdminGroup");
         userMetricsReceived.Should().BeFalse("Standard user must not receive system metrics broadcast");
+    }
+
+    [Fact]
+    public async Task Observability_IdleState_DoesNotProduceRedundantBroadcasts()
+    {
+        await using var adminConn = CreateGatewayConnection(_adminToken);
+        int receivedPacketsCount = 0;
+
+        adminConn.On<InferenceMetrics, object>("ReceiveMetrics", (_, _) =>
+        {
+            Interlocked.Increment(ref receivedPacketsCount);
+        });
+
+        await adminConn.StartAsync();
+
+        // Under legacy 1Hz polling, waiting 2.5s would yield 2-3 additional packets.
+        // Under reactive event-driven approach, only the initial snapshot on connect arrives during idle state.
+        await Task.Delay(2500);
+
+        receivedPacketsCount.Should().Be(1, "Event-driven broadcaster must not send redundant packets during idle state");
+    }
+
+    [Fact]
+    public async Task Observability_StateMutation_PushesMetricsImmediately()
+    {
+        await using var adminConn = CreateGatewayConnection(_adminToken);
+        var initialReceivedTcs = new TaskCompletionSource<bool>();
+        var mutationReceivedTcs = new TaskCompletionSource<InferenceMetrics>();
+
+        adminConn.On<InferenceMetrics, object>("ReceiveMetrics", (m, _) =>
+        {
+            if (!initialReceivedTcs.Task.IsCompleted)
+            {
+                initialReceivedTcs.TrySetResult(true);
+            }
+            else
+            {
+                mutationReceivedTcs.TrySetResult(m);
+            }
+        });
+
+        await adminConn.StartAsync();
+        await initialReceivedTcs.Task;
+
+        // Trigger queue limit mutation via admin control plane
+        await adminConn.InvokeAsync("SetQueueLimitAsync", 42);
+
+        var completed = await Task.WhenAny(mutationReceivedTcs.Task, Task.Delay(TimeSpan.FromSeconds(2))) == mutationReceivedTcs.Task;
+        completed.Should().BeTrue("Metrics must update immediately upon state mutation via event-driven signal");
+
+        var updatedMetrics = await mutationReceivedTcs.Task;
+        updatedMetrics.Should().NotBeNull();
     }
 
     [Fact]
@@ -183,6 +231,5 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         var progressData = await userProgressTcs.Task;
         progressData.ModelId.Should().Be(_testRepoId);
     }
-
     #endregion
 }

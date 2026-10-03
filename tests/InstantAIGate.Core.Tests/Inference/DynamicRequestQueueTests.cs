@@ -1,6 +1,7 @@
 ﻿// tests/InstantAIGate.Core.Tests/Inference/DynamicRequestQueueTests.cs
 namespace InstantAIGate.Core.Tests.Inference;
 
+using FluentAssertions;
 using InstantAIGate.Core.Exceptions;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Services.Inference;
@@ -104,4 +105,25 @@ public class DynamicRequestQueueTests
         Assert.NotNull(newLease);
         Assert.Equal(5, queue.PendingCount);
     }
+
+
+    [Fact]
+    public async Task EnqueueRequestAsync_NotifiesMetricsEventSourceOnStateChange()
+    {
+        var eventSource = new MetricsEventSource();
+        using var queue = new DynamicRequestQueue(10, TimeProvider.System, eventSource);
+
+        eventSource.Reader.TryRead(out _).Should().BeFalse();
+
+        var lease = await queue.EnqueueRequestAsync("tenant-1", TimeSpan.FromSeconds(1));
+
+        eventSource.Reader.TryRead(out bool signaledOnEnqueue).Should().BeTrue();
+        signaledOnEnqueue.Should().BeTrue();
+
+        lease.Dispose();
+
+        eventSource.Reader.TryRead(out bool signaledOnRelease).Should().BeTrue();
+        signaledOnRelease.Should().BeTrue();
+    }
+
 }

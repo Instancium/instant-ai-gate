@@ -276,20 +276,13 @@
 |    +--- InstantAIGate.Server
 |    |    +--- Configuration
 |    |    |    \--- StartupModelSettings.cs
-|    |    +--- Controllers
-|    |    |    \--- admin
-|    |    |         +--- AdminModelsController.cs
-|    |    |         \--- AdminQueueController.cs
 |    |    +--- Diagnostics
 |    |    |    +--- MetricsBroadcasterWorker.cs
 |    |    |    +--- ModelReadyHealthCheckcs.cs
 |    |    |    \--- SignalRLoggerProvider.cs
 |    |    +--- Hubs
 |    |    |    +--- GatewayHub.cs
-|    |    |    +--- IGatewayHubClient.cs
-|    |    |    +--- ISessionChatClient.cs
-|    |    |    +--- ITelemetryClient.cs
-|    |    |    \--- SessionChatHub.cs
+|    |    |    \--- IGatewayHubClient.cs
 |    |    +--- Middleware
 |    |    |    +--- ApiKeyAuthMiddleware.cs
 |    |    |    \--- GatewayExceptionMiddleware.cs
@@ -346,9 +339,7 @@
 |    |    |    +--- GatewayInferenceE2ETests.cs
 |    |    |    +--- GatewaySecurityAndHealthTests.cs
 |    |    |    +--- GatewayTestFixture.cs
-|    |    |    +--- ModelStartupWorkerIntegrationTests.cs
-|    |    |    +--- SessionChatHubIntegrationTests.cs
-|    |    |    \--- TelemetryHubIntegrationTests.cs
+|    |    |    \--- ModelStartupWorkerIntegrationTests.cs
 |    |    +--- TestConfiguration
 |    |    |    +--- TestConfig.cs
 |    |    |    +--- TestModelOptions.cs

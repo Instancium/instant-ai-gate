@@ -24,7 +24,6 @@ using System.Threading.Tasks;
 public class GatewayHub : Hub<IGatewayHubClient>
 {
     public const string AdminGroupName = "GatewayAdminGroup";
-
     private readonly ISessionInferenceManager _sessionManager;
     private readonly IInferenceEngine _inferenceEngine;
     private readonly IModelManager _modelManager;
@@ -58,15 +57,24 @@ public class GatewayHub : Hub<IGatewayHubClient>
     }
 
     #region Connection Lifecycle
-
     public override async Task OnConnectedAsync()
     {
         if (Context.User?.IsInRole("Admin") == true)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, AdminGroupName);
             _logger.LogInformation("Admin connection {ConnectionId} added to {Group}", Context.ConnectionId, AdminGroupName);
-        }
 
+            try
+            {
+                var metrics = _modelManager.GetMetrics();
+                var nativeDetails = _modelManager.GetNativeDetails();
+                await Clients.Caller.ReceiveMetrics(metrics, nativeDetails);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogTrace(ex, "Failed to send initial metrics snapshot to admin caller {ConnectionId}", Context.ConnectionId);
+            }
+        }
         await base.OnConnectedAsync();
     }
 
@@ -84,14 +92,11 @@ public class GatewayHub : Hub<IGatewayHubClient>
                 _logger.LogWarning(ex, "Failed to gracefully release session {SessionId} during disconnection", sessionId);
             }
         }
-
         await base.OnDisconnectedAsync(exception);
     }
-
     #endregion
 
     #region Data Plane (GatewayUser)
-
     [Authorize(Policy = "GatewayUser")]
     public async Task JoinSession(string sessionId, string repoId)
     {
@@ -128,7 +133,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
             {
                 await Clients.Caller.ReceiveTokenDelta(new SessionTokenDelta(sessionId, token));
             }
-
             await Clients.Caller.ReceiveTokenDelta(new SessionTokenDelta(sessionId, string.Empty, IsDone: true, FinishReason: "stop"));
         }
         catch (ContextOverflowException ex)
@@ -178,11 +182,9 @@ public class GatewayHub : Hub<IGatewayHubClient>
     {
         return Task.FromResult(_sessionManager.GetPastTokensCount(sessionId));
     }
-
     #endregion
 
     #region User Observability (Groups)
-
     [Authorize(Policy = "GatewayUser")]
     public async Task SubscribeToModelDownload(string repoId)
     {
@@ -198,11 +200,9 @@ public class GatewayHub : Hub<IGatewayHubClient>
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
         _logger.LogDebug("Connection {ConnectionId} unsubscribed from {GroupName}", Context.ConnectionId, groupName);
     }
-
     #endregion
 
     #region Control Plane (GatewayAdmin)
-
     [Authorize(Policy = "GatewayAdmin")]
     public Task<IEnumerable<ModelRegistryStatus>> GetModelsAsync()
     {
@@ -223,7 +223,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
         {
             throw new HubException($"Model '{repoId}' not found in catalog.");
         }
-
         var config = BuildModelSettings(targetModel, profile);
         await _modelManager.LoadModelAsync(config, Context.ConnectionAborted);
     }
@@ -236,7 +235,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
         {
             throw new HubException($"Model '{repoId}' not found in catalog.");
         }
-
         var config = BuildModelSettings(targetModel, profile);
         await _modelManager.SwapModelAsync(config, Context.ConnectionAborted);
     }
@@ -280,20 +278,16 @@ public class GatewayHub : Hub<IGatewayHubClient>
         {
             throw new HubException("Queue limit must be greater than zero.");
         }
-
         _queueManager.UpdateQueueLimit(limit);
         return Task.CompletedTask;
     }
-
     #endregion
 
     #region Helpers
-
     private ModelSettings BuildModelSettings(CatalogModelEntry targetModel, string? profile)
     {
         var profileName = profile ?? "Default";
-        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>()
-                        ?? new HardwareProfileSettings();
+        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
 
         return new ModelSettings
         {
@@ -312,6 +306,5 @@ public class GatewayHub : Hub<IGatewayHubClient>
             MaxContexts = hwProfile.MaxContexts
         };
     }
-
     #endregion
 }
