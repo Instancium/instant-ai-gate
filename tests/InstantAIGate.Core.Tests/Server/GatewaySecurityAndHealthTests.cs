@@ -33,33 +33,37 @@ public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>
     }
 
     [Fact]
-    public async Task Api_ShouldReturn401_WhenMissingToken()
+    public async Task GatewayNegotiate_ShouldReturn401_WhenMissingToken()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/hub/gateway/negotiate?negotiateVersion=1");
         var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task Api_ShouldReturn200_WhenAuthorizedViaBearerHeader()
+    public async Task GatewayNegotiate_ShouldReturn401_WhenQueryAccessTokenIsEmpty()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/hub/gateway/negotiate?negotiateVersion=1&access_token=");
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GatewayNegotiate_ShouldReturn200_WhenAuthorizedViaBearerHeader()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/hub/gateway/negotiate?negotiateVersion=1");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.AdminApiKey);
         var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
-    public async Task Api_ShouldReturn200_WhenAuthorizedViaQueryAccessToken()
+    public async Task GatewayNegotiate_ShouldReturn200_WhenAuthorizedViaQueryAccessToken()
     {
-        var response = await _client.GetAsync($"/admin/models?access_token={_serverOptions.AdminApiKey}");
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/hub/gateway/negotiate?negotiateVersion=1&access_token={_serverOptions.AdminApiKey}");
+        var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Api_ShouldReturn401_WhenQueryAccessTokenIsEmpty()
-    {
-        var response = await _client.GetAsync("/admin/models?access_token=");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

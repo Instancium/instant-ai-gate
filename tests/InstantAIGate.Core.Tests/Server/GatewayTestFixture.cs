@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using InstantAIGate.Core.Tests.TestConfiguration;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
+using InstantAIGate.Server;
 
 public class GatewayTestFixture : WebApplicationFactory<Program>
 {
@@ -45,7 +46,7 @@ public class GatewayTestFixture : WebApplicationFactory<Program>
         BaseAddress = new Uri(ServerOptions.PublicBaseUrl)
     });
 
-    public Uri TelemetryHubUrl => new(new Uri(ServerOptions.PublicBaseUrl), "/hub/gateway");
+    public Uri GatewayHubUrl => new(new Uri(ServerOptions.PublicBaseUrl), "/hub/gateway");
 
     private sealed class TestModelDownloaderStub : IModelDownloader
     {

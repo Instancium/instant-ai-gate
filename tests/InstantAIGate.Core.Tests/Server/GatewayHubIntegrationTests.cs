@@ -36,15 +36,16 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
 
     private HubConnection CreateGatewayConnection(string token)
     {
-        var gatewayUrl = new Uri(new Uri(_serverOptions.PublicBaseUrl), "/hub/gateway");
         return new HubConnectionBuilder()
-            .WithUrl(gatewayUrl, options =>
+            .WithUrl(_fixture.GatewayHubUrl, options =>
             {
                 options.HttpMessageHandlerFactory = _ => _fixture.Server.CreateHandler();
                 options.AccessTokenProvider = () => Task.FromResult(token)!;
             })
             .Build();
     }
+
+    #region Control Plane Tests
 
     [Fact]
     public async Task ControlPlane_WhenCalledByTenantUser_ThrowsHubExceptionOrUnauthorized()
@@ -69,6 +70,10 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         var queueMetrics = await adminConnection.InvokeAsync<InferenceMetrics>("GetQueueMetricsAsync");
         queueMetrics.Should().NotBeNull();
     }
+
+    #endregion
+
+    #region Data Plane Tests
 
     [Fact]
     public async Task DataPlane_TenantUser_CanJoinSession_And_ReceiveDeltaTokens()
@@ -98,7 +103,7 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         string sessionId = $"gw-session-{Guid.NewGuid():N}";
         await userConnection.InvokeAsync("JoinSession", sessionId, _testRepoId);
 
-        var prompt = new ChatMessage("user", "Hello via GatewayHub!");
+        var prompt = new ChatMessage("user", "Hello via unified GatewayHub!");
         await userConnection.InvokeAsync("SendPromptDelta", sessionId, prompt);
 
         var completed = await Task.WhenAny(completionSource.Task, Task.Delay(TimeSpan.FromSeconds(20))) == completionSource.Task;
@@ -108,6 +113,10 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
 
         await userConnection.InvokeAsync("LeaveSession", sessionId);
     }
+
+    #endregion
+
+    #region User & System Observability Tests
 
     [Fact]
     public async Task Observability_DownloadGroup_Subscription_IsCallable()
@@ -174,4 +183,6 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         var progressData = await userProgressTcs.Task;
         progressData.ModelId.Should().Be(_testRepoId);
     }
+
+    #endregion
 }
