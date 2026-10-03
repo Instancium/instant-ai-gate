@@ -23,6 +23,9 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     private HubConnection? _telemetryConnection;
     private HubConnection? _chatHubConnection;
 
+    public event Action<int>? QueuePositionReceived;
+    public event Action<string, string, string>? LogReceived;
+
     public RemoteGatewayClient(HttpClient httpClient, string publicUrl, string adminHubUrl, string adminKey)
     {
         _httpClient = httpClient;
@@ -65,10 +68,7 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     }
 
     public async IAsyncEnumerable<string> StreamChatAsync(
-        string sessionId,
-        string repoId,
-        ChatMessage deltaMessage,
-        [EnumeratorCancellation] CancellationToken ct)
+        string sessionId, string repoId, ChatMessage deltaMessage, [EnumeratorCancellation] CancellationToken ct)
     {
         await EnsureChatHubConnectedAsync(ct);
         await _chatHubConnection!.InvokeAsync("JoinSession", sessionId, repoId, ct);
@@ -114,6 +114,16 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
 
     public Task LoadModelAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
 
+    public Task UnloadModelAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task SwapModelAsync(string repoId, string? profile = null, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task DownloadModelAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task SubscribeToModelDownloadAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task UnsubscribeFromModelDownloadAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
+
     public async Task<NativeModelDetails> GetActiveModelDetailsAsync(CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
@@ -158,7 +168,8 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         await _chatHubConnection!.InvokeAsync("ShiftSessionCache", sessionId, startPos, count, ct);
     }
 
-    public async Task ConnectTelemetryAsync(Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct)
+    public async Task ConnectTelemetryAsync(
+        Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct)
     {
         _telemetryConnection = new HubConnectionBuilder()
             .WithUrl(_adminHubUrl, options =>
@@ -176,8 +187,15 @@ public class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_telemetryConnection != null) await _telemetryConnection.DisposeAsync();
-        if (_chatHubConnection != null) await _chatHubConnection.DisposeAsync();
+        if (_telemetryConnection != null)
+        {
+            await _telemetryConnection.DisposeAsync();
+        }
+
+        if (_chatHubConnection != null)
+        {
+            await _chatHubConnection.DisposeAsync();
+        }
     }
 
     private sealed record ActiveModelDetailsResponse(NativeModelDetails? ActiveDetails);

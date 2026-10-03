@@ -2,7 +2,9 @@
 
 public class RemoteGatewaySettings
 {
-    public string PublicUrl { get; set; } = "http://localhost:5000";
-    public string AdminHubUrl { get; set; } = "http://localhost:5001/hub/telemetry";
-    public string AdminKey { get; set; } = "test-admin-secret";
+    public string BaseUrl { get; set; } = "http://localhost:5000";
+    public string HubPath { get; set; } = "/hub/gateway";
+    public string ApiKey { get; set; } = "test-admin-secret";
+
+    public string HubUrl => $"{BaseUrl.TrimEnd('/')}/{HubPath.TrimStart('/')}";
 }

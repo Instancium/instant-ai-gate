@@ -122,6 +122,7 @@
 |    |    |    |    +--- IAssetManager.cs
 |    |    |    |    +--- IBackendFacade.cs
 |    |    |    |    +--- IInferenceEngine.cs
+|    |    |    |    +--- IMetricsEventSource.cs
 |    |    |    |    +--- IModelLocator.cs
 |    |    |    |    +--- IModelManager.cs
 |    |    |    |    +--- IModelPathProvider.cs
@@ -138,6 +139,7 @@
 |    |    +--- Services
 |    |    |    +--- Inference
 |    |    |    |    +--- DynamicRequestQueue.cs
+|    |    |    |    +--- MetricsEventSource.cs
 |    |    |    |    +--- ModelManager.cs
 |    |    |    |    +--- ModelProvider.cs
 |    |    |    |    +--- PrefixTreeContextPool.cs

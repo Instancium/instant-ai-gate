@@ -7,7 +7,7 @@
   },
   "RemoteGateway": {
     "PublicUrl": "http://localhost:5000",
-    "AdminHubUrl": "http://localhost:5001/hub/telemetry",
+    "HubPath": "/hub/gateway",
     "AdminKey": "test-admin-secret"
   },
 
