@@ -26,8 +26,17 @@ public class LocalGatewayClient : IGatewayClient
     private readonly ISessionInferenceManager _sessionManager;
     private readonly StorageSettings _storageSettings;
 
-    public event Action<int>? QueuePositionReceived;
-    public event Action<string, string, string>? LogReceived;
+    public event Action<int>? QueuePositionReceived
+    {
+        add { }
+        remove { }
+    }
+
+    public event Action<string, string, string>? LogReceived
+    {
+        add { }
+        remove { }
+    }
 
     public LocalGatewayClient(
         IInferenceEngine inferenceEngine,

@@ -76,12 +76,14 @@ public static class Program
                 services.AddInstantAIGateSSR();
 
                 services.AddSingleton<LocalGatewayClient>();
+
                 services.AddSingleton<GatewayClientProxy>(sp =>
                 {
                     var config = sp.GetRequiredService<IConfiguration>();
                     var remoteSettings = config.GetSection("RemoteGateway").Get<RemoteGatewaySettings>() ?? new RemoteGatewaySettings();
                     var session = sp.GetRequiredService<CliSession>();
                     var httpClientFactory = sp.GetRequiredService<System.Net.Http.IHttpClientFactory>();
+                    var debugState = sp.GetRequiredService<DebugState>();
 
                     IGatewayClient initial;
                     if (args.Contains("--remote"))
@@ -105,7 +107,18 @@ public static class Program
                         session.IsRemoteMode = false;
                     }
 
-                    return new GatewayClientProxy(sp, httpClientFactory, initial);
+                    var proxy = new GatewayClientProxy(sp, httpClientFactory, initial);
+
+                    // Привязываем протокольные серверные логи к DebugState консоли
+                    proxy.LogReceived += (level, category, message) =>
+                    {
+                        if (debugState.IsEnabled)
+                        {
+                            AnsiConsole.MarkupLine($"[dim red][Server Log - {Markup.Escape(level)}][/] [grey]{Markup.Escape(category)}:[/] {Markup.Escape(message)}");
+                        }
+                    };
+
+                    return proxy;
                 });
 
                 services.AddSingleton<IGatewayClient>(sp => sp.GetRequiredService<GatewayClientProxy>());

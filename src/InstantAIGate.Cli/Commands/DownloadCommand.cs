@@ -77,8 +77,6 @@ public sealed class DownloadCommand : IConsoleCommand
             var tcs = new TaskCompletionSource();
             using var reg = ct.Register(() => tcs.TrySetCanceled());
 
-            Action<InferenceMetrics, DownloadProgress> progressHandler = null!;
-
             await AnsiConsole.Progress()
                 .AutoRefresh(true)
                 .AutoClear(false)

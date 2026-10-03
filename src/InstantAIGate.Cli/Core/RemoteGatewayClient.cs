@@ -178,6 +178,10 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     {
         await EnsureConnectedAsync(ct);
 
+        // Захватываем локальную ссылку с явной проверкой на null
+        var connection = _hubConnection
+            ?? throw new InvalidOperationException("SignalR Hub connection is not established.");
+
         var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
         {
             SingleReader = true,
@@ -190,8 +194,9 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
 
         try
         {
-            await _hubConnection!.InvokeAsync("JoinSession", sessionId, repoId, ct);
-            await _hubConnection.InvokeAsync("SendPromptDelta", sessionId, deltaMessage, ct);
+            await connection.InvokeAsync("JoinSession", sessionId, repoId, ct);
+
+            await connection.SendAsync("SendPromptDelta", sessionId, deltaMessage, ct);
 
             await foreach (var token in channel.Reader.ReadAllAsync(ct))
             {

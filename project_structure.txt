@@ -25,6 +25,7 @@
 |    |    |    +--- CommandDispatcher.cs
 |    |    |    +--- CommitCommand.cs
 |    |    |    +--- ConnectCommand.cs
+|    |    |    +--- ContextCommand.cs
 |    |    |    +--- DebugCommand.cs
 |    |    |    +--- DownloadCommand.cs
 |    |    |    +--- HelpCommand.cs
@@ -33,7 +34,8 @@
 |    |    |    +--- LoadCommand.cs
 |    |    |    +--- ModelsCommand.cs
 |    |    |    +--- ReleaseCommand.cs
-|    |    |    \--- VersionControlCommand.cs
+|    |    |    +--- VersionControlCommand.cs
+|    |    |    \--- VramCommand.cs
 |    |    +--- Configuration
 |    |    |    +--- ReleasePipelineSettings.cs
 |    |    |    \--- RemoteGatewaySettings.cs
