@@ -30,7 +30,6 @@ public static class Program
         var originalError = Console.Error;
 
         var debugState = new DebugState();
-
         Console.SetOut(new EngineLogFilter(originalOut, debugState));
         Console.SetError(new EngineLogFilter(originalError, debugState));
 
@@ -38,10 +37,6 @@ public static class Program
         {
             Out = new AnsiConsoleOutput(originalOut)
         });
-
-        var isRemote = args.Contains("--remote");
-        var remoteUrl = isRemote ? args[Array.IndexOf(args, "--remote") + 1] : string.Empty;
-        var adminKey = isRemote && args.Contains("--key") ? args[Array.IndexOf(args, "--key") + 1] : "test-admin-secret";
 
         var host = Host.CreateDefaultBuilder(args)
             .ConfigureAppConfiguration((context, config) =>
@@ -62,9 +57,8 @@ public static class Program
 
                 services.AddSingleton<CliSession>();
                 services.AddSingleton(debugState);
-
-                // Core CLI Commands
                 services.AddSingleton<CommandDispatcher>();
+
                 services.AddTransient<IConsoleCommand, LoadCommand>();
                 services.AddTransient<IConsoleCommand, ImageCommand>();
                 services.AddTransient<IConsoleCommand, HelpCommand>();
@@ -72,14 +66,15 @@ public static class Program
                 services.AddTransient<IConsoleCommand, ModelsCommand>();
                 services.AddTransient<IConsoleCommand, DownloadCommand>();
                 services.AddTransient<IConsoleCommand, ConnectCommand>();
-
-                // Unified TUI command (Replaces /commit and /release)
+                services.AddTransient<IConsoleCommand, ContextCommand>();
+                services.AddTransient<IConsoleCommand, VramCommand>();
                 services.AddTransient<IConsoleCommand, VersionControlCommand>();
+                services.AddTransient<IConsoleCommand, CommitCommand>();
 
-                // Engine & Gateway
                 services.AddHttpClient();
                 services.AddInstantAIGateInference();
                 services.AddInstantAIGateSSR();
+
                 services.AddSingleton<LocalGatewayClient>();
 
                 services.AddSingleton<GatewayClientProxy>(sp =>
@@ -88,22 +83,22 @@ public static class Program
                     var remoteSettings = config.GetSection("RemoteGateway").Get<RemoteGatewaySettings>() ?? new RemoteGatewaySettings();
                     var session = sp.GetRequiredService<CliSession>();
                     var httpClientFactory = sp.GetRequiredService<System.Net.Http.IHttpClientFactory>();
+                    var debugState = sp.GetRequiredService<DebugState>();
 
                     IGatewayClient initial;
                     if (args.Contains("--remote"))
                     {
                         int urlIndex = Array.IndexOf(args, "--remote") + 1;
-                        string url = urlIndex < args.Length ? args[urlIndex] : remoteSettings.PublicUrl;
-
-                        string key = remoteSettings.AdminKey;
+                        string baseUrl = urlIndex < args.Length ? args[urlIndex] : remoteSettings.BaseUrl;
+                        string key = remoteSettings.ApiKey;
                         if (args.Contains("--key"))
                         {
                             int keyIndex = Array.IndexOf(args, "--key") + 1;
                             if (keyIndex < args.Length) key = args[keyIndex];
                         }
 
-                        string hubUrl = remoteSettings.AdminHubUrl;
-                        initial = new RemoteGatewayClient(httpClientFactory.CreateClient(), url, hubUrl, key);
+                        string hubUrl = $"{baseUrl.TrimEnd('/')}/{remoteSettings.HubPath.TrimStart('/')}";
+                        initial = new RemoteGatewayClient(httpClientFactory.CreateClient(), baseUrl, hubUrl, key);
                         session.IsRemoteMode = true;
                     }
                     else
@@ -112,37 +107,43 @@ public static class Program
                         session.IsRemoteMode = false;
                     }
 
-                    return new GatewayClientProxy(sp, httpClientFactory, initial);
+                    var proxy = new GatewayClientProxy(sp, httpClientFactory, initial);
+
+                    // Привязываем протокольные серверные логи к DebugState консоли
+                    proxy.LogReceived += (level, category, message) =>
+                    {
+                        if (debugState.IsEnabled)
+                        {
+                            AnsiConsole.MarkupLine($"[dim red][Server Log - {Markup.Escape(level)}][/] [grey]{Markup.Escape(category)}:[/] {Markup.Escape(message)}");
+                        }
+                    };
+
+                    return proxy;
                 });
 
                 services.AddSingleton<IGatewayClient>(sp => sp.GetRequiredService<GatewayClientProxy>());
                 services.AddHostedService<CliHostedService>();
 
-                // Version Control Pipeline Infrastructure
                 services.AddSingleton<PipelineRunner>();
                 services.AddSingleton<IProcessRunner, ProcessRunner>();
                 services.AddSingleton<IGitService, GitService>();
+                services.AddSingleton<ClientSessionMemoryCoordinator>();
+
                 services.AddTransient<IDotnetService, DotnetService>();
 
-                // Pipeline 1 Steps (Auto-Commit)
                 services.AddTransient<GitAddAllStep>();
                 services.AddTransient<GenerateCommitMessageStep>();
                 services.AddTransient<GitCommitAndPushStep>();
-
-                // Pipeline 2 Steps (Release)
                 services.AddTransient<BumpVersionStep>();
                 services.AddTransient<RunUnitTestsStep>();
                 services.AddTransient<MergeAndPublishStep>();
 
-                // Map-Reduce Analyzer
                 services.AddTransient<IDiffAnalyzer>(sp =>
                 {
                     var gateway = sp.GetRequiredService<IGatewayClient>();
                     var settings = sp.GetRequiredService<IOptions<ReleasePipelineSettings>>().Value;
-
                     return new MapReduceDiffAnalyzer(gateway, settings.AiModelId);
                 });
-
             })
             .Build();
 

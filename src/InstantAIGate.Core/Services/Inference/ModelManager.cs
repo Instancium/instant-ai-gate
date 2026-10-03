@@ -1,5 +1,4 @@
-﻿// File: src/InstantAIGate.Core/Services/Inference/ModelManager.cs
-namespace InstantAIGate.Core.Services.Inference;
+﻿namespace InstantAIGate.Core.Services.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
@@ -8,6 +7,7 @@ using InstantAIGate.Core.Interfaces.Inference;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,7 +17,7 @@ public sealed class ModelManager : IDisposable, IModelManager
     private readonly IModelLocator _modelLocator;
     private readonly IQueueManager _queueManager;
     private readonly ILogger<ModelManager> _logger;
-
+    private readonly IMetricsEventSource? _eventSource;
     private ModelSettings? _activeConfig;
     private int _activeLeases;
     private bool _isDraining;
@@ -27,16 +27,17 @@ public sealed class ModelManager : IDisposable, IModelManager
         IModelProvider modelProvider,
         IModelLocator modelLocator,
         IQueueManager queueManager,
-        ILogger<ModelManager> logger)
+        ILogger<ModelManager> logger,
+        IMetricsEventSource? eventSource = null)
     {
         _modelProvider = modelProvider;
         _modelLocator = modelLocator;
         _queueManager = queueManager;
         _logger = logger;
+        _eventSource = eventSource;
         _activeLeases = 0;
         _isDraining = false;
     }
-
 
     public NativeModelDetails GetActiveModelDetails()
     {
@@ -75,7 +76,6 @@ public sealed class ModelManager : IDisposable, IModelManager
         try
         {
             if (_activeConfig?.RepoId == config.RepoId) return;
-
             if (_activeConfig != null)
             {
                 await PerformGracefulSwapInternalAsync(config, ct);
@@ -83,10 +83,10 @@ public sealed class ModelManager : IDisposable, IModelManager
             }
 
             var resolvedPaths = await _modelLocator.ResolvePathsAsync(config.RepoId, config.VisionSupport, ct);
-
             await _modelProvider.InitializeAsync(config, resolvedPaths, ct);
             _activeConfig = config;
             _queueManager.Resume();
+            _eventSource?.NotifyStateChanged();
         }
         finally
         {
@@ -110,12 +110,10 @@ public sealed class ModelManager : IDisposable, IModelManager
     private async Task PerformGracefulSwapInternalAsync(ModelSettings newConfig, CancellationToken ct)
     {
         _logger.LogInformation("Initiating Hot-Swap to '{RepoId}'.", newConfig.RepoId);
-
-        // Pause the queue so no new leases are granted while draining active requests
         _queueManager.Pause();
         _isDraining = true;
+        _eventSource?.NotifyStateChanged();
 
-        // Wait for all active inference requests to complete
         while (Volatile.Read(ref _activeLeases) > 0)
         {
             await Task.Delay(100, ct);
@@ -128,12 +126,11 @@ public sealed class ModelManager : IDisposable, IModelManager
 
         var resolvedPaths = await _modelLocator.ResolvePathsAsync(newConfig.RepoId, newConfig.VisionSupport, ct);
         await _modelProvider.InitializeAsync(newConfig, resolvedPaths, ct);
-
-
         _activeConfig = newConfig;
         _isDraining = false;
+        _queueManager.Resume();
+        _eventSource?.NotifyStateChanged();
 
-        _queueManager.Resume(); // Re-open traffic
         _logger.LogInformation("Hot-Swap to '{RepoId}' completed successfully.", newConfig.RepoId);
     }
 
@@ -145,14 +142,18 @@ public sealed class ModelManager : IDisposable, IModelManager
         }
 
         Interlocked.Increment(ref _activeLeases);
+        _eventSource?.NotifyStateChanged();
 
         try
         {
             var inferenceContext = await _modelProvider.GetInferenceContextAsync(repoId, ct);
-
             if (inferenceContext.TextContext != null)
             {
-                inferenceContext.TextContext.AttachOnDispose(() => Interlocked.Decrement(ref _activeLeases));
+                inferenceContext.TextContext.AttachOnDispose(() =>
+                {
+                    Interlocked.Decrement(ref _activeLeases);
+                    _eventSource?.NotifyStateChanged();
+                });
                 return inferenceContext;
             }
 
@@ -161,6 +162,7 @@ public sealed class ModelManager : IDisposable, IModelManager
         catch
         {
             Interlocked.Decrement(ref _activeLeases);
+            _eventSource?.NotifyStateChanged();
             throw;
         }
     }
@@ -174,6 +176,7 @@ public sealed class ModelManager : IDisposable, IModelManager
 
             _queueManager.Pause();
             _isDraining = true;
+            _eventSource?.NotifyStateChanged();
 
             while (Volatile.Read(ref _activeLeases) > 0)
             {
@@ -183,6 +186,7 @@ public sealed class ModelManager : IDisposable, IModelManager
             _modelProvider.UnloadModel(repoId);
             _activeConfig = null;
             _isDraining = false;
+            _eventSource?.NotifyStateChanged();
         }
         finally
         {
@@ -207,7 +211,9 @@ public sealed class ModelManager : IDisposable, IModelManager
     }
 
     public IEnumerable<ModelRegistryStatus> GetActiveModelsStatus() => _modelProvider.GetStatus();
+
     public IEnumerable<string> GetActiveModels() => _activeConfig != null ? new[] { _activeConfig.RepoId } : Array.Empty<string>();
+
     public IEnumerable<NativeModelDetails> GetNativeDetails() => _modelProvider.GetNativeDetails();
 
     public void Dispose()

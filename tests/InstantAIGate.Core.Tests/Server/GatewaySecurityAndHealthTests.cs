@@ -1,96 +1,69 @@
-using System.Net;
-using System.Net.Http.Headers;
-using InstantAIGate.Core.Tests.TestConfiguration;
-
 namespace InstantAIGate.Core.Tests.Server;
+
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Threading.Tasks;
+using InstantAIGate.Core.Tests.TestConfiguration;
+using Xunit;
 
 public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>
 {
-    private readonly HttpClient _publicClient;
-    private readonly HttpClient _adminClient;
+    private readonly HttpClient _client;
     private readonly TestServerOptions _serverOptions;
 
     public GatewaySecurityAndHealthTests(GatewayTestFixture fixture)
     {
         _serverOptions = fixture.ServerOptions;
-
-        // Client emulating requests to the public port (from test configuration)
-        _publicClient = fixture.CreatePublicClient();
-
-        // Client emulating requests to the admin port (from test configuration)
-        _adminClient = fixture.CreateAdminClient();
+        _client = fixture.CreatePublicClient();
     }
 
     [Fact]
-    public async Task HealthLive_ShouldReturn200OK_WithoutAuth_OnBothPorts()
+    public async Task HealthLive_ShouldReturn200OK_WithoutAuth()
     {
-        var publicResponse = await _publicClient.GetAsync("/health/live");
-        var adminResponse = await _adminClient.GetAsync("/health/live");
-
-        Assert.Equal(HttpStatusCode.OK, publicResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, adminResponse.StatusCode);
+        var response = await _client.GetAsync("/health/live");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task HealthReady_ShouldReturn503_WhenNoModelLoaded()
     {
-        var response = await _publicClient.GetAsync("/health/ready");
-
+        var response = await _client.GetAsync("/health/ready");
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
     }
 
     [Fact]
-    public async Task PublicApi_ShouldReturn401_WhenMissingApiKey()
+    public async Task GatewayNegotiate_ShouldReturn401_WhenMissingToken()
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
-        var response = await _publicClient.SendAsync(request);
-
+        var request = new HttpRequestMessage(HttpMethod.Post, "/hub/gateway/negotiate?negotiateVersion=1");
+        var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task AdminApi_ShouldReturn403_WhenAccessedViaPublicPort()
+    public async Task GatewayNegotiate_ShouldReturn401_WhenQueryAccessTokenIsEmpty()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.AdminApiKey);
-
-        var response = await _publicClient.SendAsync(request);
-
-        // PortRoutingMiddleware should block requests to /admin via the public port
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var request = new HttpRequestMessage(HttpMethod.Post, "/hub/gateway/negotiate?negotiateVersion=1&access_token=");
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task PublicApi_ShouldReturn403_WhenAccessedViaAdminPort()
+    public async Task GatewayNegotiate_ShouldReturn200_WhenAuthorizedViaBearerHeader()
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.TenantApiKey);
-
-        var response = await _adminClient.SendAsync(request);
-
-        // PortRoutingMiddleware should block requests to /v1 via the admin port
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task AdminApi_ShouldReturn200_WithValidAdminKey()
-    {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/hub/gateway/negotiate?negotiateVersion=1");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.AdminApiKey);
-
-        var response = await _adminClient.SendAsync(request);
-
+        var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
-    public async Task AdminApi_ShouldReturn401_WithInvalidAdminKey()
+    public async Task GatewayNegotiate_ShouldReturn200_WhenAuthorizedViaQueryAccessToken()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/admin/models");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serverOptions.InvalidApiKey);
-
-        var response = await _adminClient.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/hub/gateway/negotiate?negotiateVersion=1&access_token={_serverOptions.AdminApiKey}");
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }

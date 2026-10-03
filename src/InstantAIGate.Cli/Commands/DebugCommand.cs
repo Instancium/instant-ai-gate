@@ -15,21 +15,26 @@ public class DebugCommand : IConsoleCommand
     }
 
     public string Name => "/debug";
-
-    public string Description => "Toggles the native engine diagnostic logs (e.g., /debug on).";
+    public string Description => "Toggles native runtime and remote server diagnostic logs (e.g., /debug on).";
 
     public Task ExecuteAsync(string argument, CancellationToken cancellationToken)
     {
-        bool newState = !_debugState.IsEnabled; // Toggle if no argument is provided
+        bool newState = !_debugState.IsEnabled;
 
-        if (argument.Equals("on", System.StringComparison.OrdinalIgnoreCase)) newState = true;
-        if (argument.Equals("off", System.StringComparison.OrdinalIgnoreCase)) newState = false;
+        if (argument.Trim().Equals("on", System.StringComparison.OrdinalIgnoreCase))
+        {
+            newState = true;
+        }
+        else if (argument.Trim().Equals("off", System.StringComparison.OrdinalIgnoreCase))
+        {
+            newState = false;
+        }
 
         _debugState.IsEnabled = newState;
 
         AnsiConsole.MarkupLine(newState
-            ? "[yellow]Engine debug logs are now ENABLED.[/]"
-            : "[green]Engine debug logs are now DISABLED.[/]");
+            ? "[yellow]Engine & Server debug logs are now ENABLED.[/]"
+            : "[green]Engine & Server debug logs are now DISABLED.[/]");
 
         return Task.CompletedTask;
     }

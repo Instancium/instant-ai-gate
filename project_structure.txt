@@ -15,6 +15,7 @@
 |         +--- InstallService.ps1
 |         \--- UninstallService.ps1
 +--- media
+|    +--- architecture-diagram.jpg
 |    +--- dashboard.gif
 |    +--- ig-logo.png
 |    \--- status-ready.png
@@ -24,6 +25,7 @@
 |    |    |    +--- CommandDispatcher.cs
 |    |    |    +--- CommitCommand.cs
 |    |    |    +--- ConnectCommand.cs
+|    |    |    +--- ContextCommand.cs
 |    |    |    +--- DebugCommand.cs
 |    |    |    +--- DownloadCommand.cs
 |    |    |    +--- HelpCommand.cs
@@ -32,11 +34,13 @@
 |    |    |    +--- LoadCommand.cs
 |    |    |    +--- ModelsCommand.cs
 |    |    |    +--- ReleaseCommand.cs
-|    |    |    \--- VersionControlCommand.cs
+|    |    |    +--- VersionControlCommand.cs
+|    |    |    \--- VramCommand.cs
 |    |    +--- Configuration
 |    |    |    +--- ReleasePipelineSettings.cs
 |    |    |    \--- RemoteGatewaySettings.cs
 |    |    +--- Core
+|    |    |    +--- ContextWindowMetrics.cs
 |    |    |    +--- GatewayClientProxy.cs
 |    |    |    +--- IGatewayClient.cs
 |    |    |    +--- IPipelineStep.cs
@@ -62,6 +66,7 @@
 |    |    |    +--- Analysis
 |    |    |    |    +--- IDiffAnalyzer.cs
 |    |    |    |    \--- MapReduceDiffAnalyzer.cs
+|    |    |    +--- ClientSessionMemoryCoordinator.cs
 |    |    |    +--- DotnetService.cs
 |    |    |    +--- GitService.cs
 |    |    |    +--- IDotnetService.cs
@@ -121,6 +126,7 @@
 |    |    |    |    +--- IAssetManager.cs
 |    |    |    |    +--- IBackendFacade.cs
 |    |    |    |    +--- IInferenceEngine.cs
+|    |    |    |    +--- IMetricsEventSource.cs
 |    |    |    |    +--- IModelLocator.cs
 |    |    |    |    +--- IModelManager.cs
 |    |    |    |    +--- IModelPathProvider.cs
@@ -137,6 +143,7 @@
 |    |    +--- Services
 |    |    |    +--- Inference
 |    |    |    |    +--- DynamicRequestQueue.cs
+|    |    |    |    +--- MetricsEventSource.cs
 |    |    |    |    +--- ModelManager.cs
 |    |    |    |    +--- ModelProvider.cs
 |    |    |    |    +--- PrefixTreeContextPool.cs
@@ -275,22 +282,16 @@
 |    +--- InstantAIGate.Server
 |    |    +--- Configuration
 |    |    |    \--- StartupModelSettings.cs
-|    |    +--- Controllers
-|    |    |    \--- admin
-|    |    |         +--- AdminModelsController.cs
-|    |    |         \--- AdminQueueController.cs
 |    |    +--- Diagnostics
 |    |    |    +--- MetricsBroadcasterWorker.cs
 |    |    |    +--- ModelReadyHealthCheckcs.cs
 |    |    |    \--- SignalRLoggerProvider.cs
 |    |    +--- Hubs
-|    |    |    +--- ISessionChatClient.cs
-|    |    |    +--- ITelemetryClient.cs
-|    |    |    \--- SessionChatHub.cs
+|    |    |    +--- GatewayHub.cs
+|    |    |    \--- IGatewayHubClient.cs
 |    |    +--- Middleware
 |    |    |    +--- ApiKeyAuthMiddleware.cs
-|    |    |    +--- GatewayExceptionMiddleware.cs
-|    |    |    \--- PortRoutingMiddleware.cs
+|    |    |    \--- GatewayExceptionMiddleware.cs
 |    |    +--- Properties
 |    |    |    +--- PublishProfiles
 |    |    |    |    +--- FolderProfile.pubxml
@@ -340,12 +341,11 @@
 |    |    +--- Infrastructure
 |    |    |    \--- SyntheticNetworkHandler.cs
 |    |    +--- Server
+|    |    |    +--- GatewayHubIntegrationTests.cs
 |    |    |    +--- GatewayInferenceE2ETests.cs
 |    |    |    +--- GatewaySecurityAndHealthTests.cs
 |    |    |    +--- GatewayTestFixture.cs
-|    |    |    +--- ModelStartupWorkerIntegrationTests.cs
-|    |    |    +--- SessionChatHubIntegrationTests.cs
-|    |    |    \--- TelemetryHubIntegrationTests.cs
+|    |    |    \--- ModelStartupWorkerIntegrationTests.cs
 |    |    +--- TestConfiguration
 |    |    |    +--- TestConfig.cs
 |    |    |    +--- TestModelOptions.cs

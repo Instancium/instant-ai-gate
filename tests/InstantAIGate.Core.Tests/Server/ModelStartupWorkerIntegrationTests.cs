@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using InstantAIGate.Server;
 
 public class ModelStartupWorkerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 {

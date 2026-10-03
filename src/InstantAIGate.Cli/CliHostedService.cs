@@ -1,10 +1,11 @@
-﻿// src\InstantAIGate.Cli\CliHostedService.cs
-namespace InstantAIGate.Cli;
+﻿namespace InstantAIGate.Cli;
 
 using InstantAIGate.Cli.Commands;
 using InstantAIGate.Cli.Core;
+using InstantAIGate.Cli.Services;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.Core.Exceptions;
 using Microsoft.Extensions.Hosting;
 using Spectre.Console;
 using System;
@@ -19,19 +20,38 @@ public class CliHostedService : IHostedService
     private readonly CommandDispatcher _commandDispatcher;
     private readonly CliSession _session;
     private readonly IGatewayClient _gatewayClient;
+    private readonly ClientSessionMemoryCoordinator _memoryCoordinator;
     private Task? _applicationTask;
     private CancellationTokenSource? _cancellationTokenSource;
+    private volatile string? _activeQueueStatus;
 
     public CliHostedService(
         IHostApplicationLifetime appLifetime,
         CommandDispatcher commandDispatcher,
         CliSession session,
-        IGatewayClient gatewayClient)
+        IGatewayClient gatewayClient,
+        ClientSessionMemoryCoordinator memoryCoordinator)
     {
         _appLifetime = appLifetime;
         _commandDispatcher = commandDispatcher;
         _session = session;
         _gatewayClient = gatewayClient;
+        _memoryCoordinator = memoryCoordinator;
+
+        _gatewayClient.QueuePositionReceived += OnQueuePositionReceived;
+    }
+
+    private void OnQueuePositionReceived(int position)
+    {
+        if (position > 0)
+        {
+            _activeQueueStatus = $"[yellow]Position in inference queue: #{position}...[/]";
+            AnsiConsole.MarkupLine($"\r{_activeQueueStatus}");
+        }
+        else
+        {
+            _activeQueueStatus = null;
+        }
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -43,6 +63,8 @@ public class CliHostedService : IHostedService
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        _gatewayClient.QueuePositionReceived -= OnQueuePositionReceived;
+
         if (_cancellationTokenSource != null)
         {
             await _cancellationTokenSource.CancelAsync();
@@ -66,10 +88,17 @@ public class CliHostedService : IHostedService
                 {
                     AnsiConsole.Markup("\n[bold cyan]👤 User:[/] ");
                     var input = Console.ReadLine();
-                    if (string.IsNullOrWhiteSpace(input)) continue;
+
+                    if (string.IsNullOrWhiteSpace(input))
+                    {
+                        continue;
+                    }
 
                     var isCommand = await _commandDispatcher.TryExecuteAsync(input, cancellationToken);
-                    if (isCommand) continue;
+                    if (isCommand)
+                    {
+                        continue;
+                    }
 
                     await HandleChatInferenceAsync(input, cancellationToken);
                 }
@@ -104,12 +133,12 @@ public class CliHostedService : IHostedService
         _session.ChatHistory.Add(userMessage);
 
         AnsiConsole.WriteLine();
+
         try
         {
             var fullResponse = new StringBuilder();
             string modelToRequest = _session.ActiveModelId ?? string.Empty;
 
-            // Нативный инкрементальный протокол дельт
             await foreach (var chunk in _gatewayClient.StreamChatAsync(
                 _session.SessionId,
                 modelToRequest,
@@ -127,11 +156,79 @@ public class CliHostedService : IHostedService
             _session.ChatHistory.Add(new ChatMessage("assistant", fullResponse.ToString()));
             _session.PendingMedia.Clear();
         }
+        catch (ContextOverflowException ex)
+        {
+            AnsiConsole.MarkupLine($"\n[bold yellow]Context Window Boundary Reached![/] [{ex.PastTokens} + {ex.IncomingTokens} + {ex.ReservedTokens} > {ex.ContextSize} tokens]");
+            await HandleContextOverflowMitigationAsync(ex, cancellationToken);
+        }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"\n[red]Fatal Inference Error:[/] {Markup.Escape(ex.Message)}");
-      
-            _session.ChatHistory.RemoveAt(_session.ChatHistory.Count - 1);
+            if (_session.ChatHistory.Count > 0)
+            {
+                _session.ChatHistory.RemoveAt(_session.ChatHistory.Count - 1);
+            }
+        }
+    }
+
+    private async Task HandleContextOverflowMitigationAsync(ContextOverflowException ex, CancellationToken cancellationToken)
+    {
+        const string optionShift = "1. Truncate context via sliding window (ShiftSessionCache)";
+        const string optionRollback = "2. Rollback context to previous turn (RollbackSession)";
+        const string optionReset = "3. Clear conversation context and start fresh";
+        const string optionCancel = "4. Cancel request";
+
+        var action = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("[cyan]Select a context recovery action:[/]")
+                .AddChoices(optionShift, optionRollback, optionReset, optionCancel));
+
+        switch (action)
+        {
+            case optionShift:
+                int overflowExcess = (ex.PastTokens + ex.IncomingTokens + ex.ReservedTokens) - ex.ContextSize;
+                int shiftAmount = Math.Max(overflowExcess + 128, 256);
+
+                bool shifted = await _memoryCoordinator.TruncateSlidingWindowAsync(
+                    _session.SessionId,
+                    systemPrefixTokens: 0,
+                    tokensToEvict: shiftAmount,
+                    cancellationToken);
+
+                if (shifted)
+                {
+                    AnsiConsole.MarkupLine($"[green]Sliding window applied: evicted {shiftAmount} tokens. You can retry your prompt.[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[yellow]Sliding window shift was not possible. Rolled back to safe state.[/]");
+                }
+                break;
+
+            case optionRollback:
+                int targetRollback = Math.Max(0, ex.PastTokens - 256);
+                await _memoryCoordinator.RollbackToCheckpointAsync(_session.SessionId, targetRollback, cancellationToken);
+                if (_session.ChatHistory.Count > 0)
+                {
+                    _session.ChatHistory.RemoveAt(_session.ChatHistory.Count - 1);
+                }
+                AnsiConsole.MarkupLine($"[green]Context rolled back to token position {targetRollback}.[/]");
+                break;
+
+            case optionReset:
+                await _memoryCoordinator.EvictSessionAsync(_session.SessionId, cancellationToken);
+                _session.ClearHistory();
+                AnsiConsole.MarkupLine("[green]Session context purged. Ready for fresh conversation.[/]");
+                break;
+
+            case optionCancel:
+            default:
+                if (_session.ChatHistory.Count > 0)
+                {
+                    _session.ChatHistory.RemoveAt(_session.ChatHistory.Count - 1);
+                }
+                AnsiConsole.MarkupLine("[dim]Prompt discarded.[/]");
+                break;
         }
     }
 
@@ -142,7 +239,6 @@ public class CliHostedService : IHostedService
             new FigletText("InstantAIGate")
                 .LeftJustified()
                 .Color(Color.Blue));
-
         AnsiConsole.MarkupLine("[dim]High-Performance On-Premises Inference Runtime[/]");
         AnsiConsole.MarkupLine("Type [yellow]/help[/] to view available commands.\n");
     }

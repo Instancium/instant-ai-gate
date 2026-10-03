@@ -125,6 +125,14 @@ public class BackendFacade : IBackendFacade
         }
     }
 
+    public int GetModelLayerCount(IModelHandle modelHandle)
+    {
+        if (modelHandle is LlamaModelHandle nativeHandle && nativeHandle.Pointer != IntPtr.Zero)
+        {
+            return LlamaNative.llama_model_n_layer(nativeHandle.Pointer);
+        }
+        return 0;
+    }
 
     public void SetLogCallback(BackendLogCallback callback)
     {

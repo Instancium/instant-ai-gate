@@ -1,7 +1,10 @@
+namespace InstantAIGate.Server;
+
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Native.DependencyInjection;
 using InstantAIGate.Server.Configuration;
 using InstantAIGate.Server.Diagnostics;
+using InstantAIGate.Server.Hubs;
 using InstantAIGate.Server.Middleware;
 using InstantAIGate.Server.Services.Workers;
 using InstantAIGate.SSR.DependencyInjection;
@@ -9,61 +12,76 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.SignalR;
 using System.Threading.Channels;
 
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Host.UseWindowsService(options =>
+public class Program
 {
-    options.ServiceName = "InstantAIGate.Server";
-});
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.Configure<StorageSettings>(
-    builder.Configuration.GetSection("InstantAIGate:Storage"));
+        builder.Host.UseWindowsService(options =>
+        {
+            options.ServiceName = "InstantAIGate.Server";
+        });
 
-builder.Services.AddControllers();
+        builder.Services.Configure<StorageSettings>(
+            builder.Configuration.GetSection("InstantAIGate:Storage"));
 
-builder.Services.AddHealthChecks()
-    .AddCheck<ModelReadyHealthCheck>("model_ready");
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy("GatewayAdmin", policy => policy.RequireRole("Admin"));
+            options.AddPolicy("GatewayUser", policy => policy.RequireRole("User", "Admin"));
+        });
 
-builder.Services.AddInstantAIGateInference();
-builder.Services.AddInstantAIGateSSR();
-builder.Services.AddSignalR();
+        builder.Services.AddHealthChecks()
+            .AddCheck<ModelReadyHealthCheck>("model_ready");
 
-var signalRLoggerProvider = new SignalRLoggerProvider();
-builder.Services.AddSingleton<ILoggerProvider>(signalRLoggerProvider);
-builder.Services.AddHostedService(sp => signalRLoggerProvider);
-builder.Services.AddHostedService<MetricsBroadcasterWorker>();
+        builder.Services.AddInstantAIGateInference();
+        builder.Services.AddInstantAIGateSSR();
+        builder.Services.AddSignalR();
 
-var downloadChannel = Channel.CreateUnbounded<DownloadJob>();
-builder.Services.AddSingleton<ChannelWriter<DownloadJob>>(downloadChannel.Writer);
-builder.Services.AddSingleton<ChannelReader<DownloadJob>>(downloadChannel.Reader);
-builder.Services.AddHostedService<ModelDownloadWorker>();
+        var signalRLoggerProvider = new SignalRLoggerProvider();
+        builder.Services.AddSingleton<ILoggerProvider>(signalRLoggerProvider);
+        builder.Services.AddHostedService(sp => signalRLoggerProvider);
+        builder.Services.AddHostedService<MetricsBroadcasterWorker>();
 
-builder.Services.Configure<StartupModelSettings>(
-    builder.Configuration.GetSection("InstantAIGate:StartupModel"));
-builder.Services.AddHostedService<ModelStartupWorker>();
+        var downloadChannel = Channel.CreateUnbounded<DownloadJob>();
+        builder.Services.AddSingleton<ChannelWriter<DownloadJob>>(downloadChannel.Writer);
+        builder.Services.AddSingleton<ChannelReader<DownloadJob>>(downloadChannel.Reader);
+        builder.Services.AddHostedService<ModelDownloadWorker>();
 
-var app = builder.Build();
+        builder.Services.Configure<StartupModelSettings>(
+            builder.Configuration.GetSection("InstantAIGate:StartupModel"));
+        builder.Services.AddHostedService<ModelStartupWorker>();
 
-var hubContext = app.Services.GetRequiredService<IHubContext<InstantAIGate.Server.Hubs.TelemetryHub, InstantAIGate.Server.Hubs.ITelemetryClient>>();
-signalRLoggerProvider.SetHubContext(hubContext);
+        var app = builder.Build();
 
-var nativeLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NativeStreamRedirector");
-InstantAIGate.Native.Logging.NativeStreamRedirector.Initialize(logMessage =>
-{
-    nativeLogger.LogDebug("{NativeMessage}", logMessage);
-});
+        var gatewayHubContext = app.Services.GetRequiredService<IHubContext<GatewayHub, IGatewayHubClient>>();
+        signalRLoggerProvider.SetHubContext(gatewayHubContext);
 
-app.UseMiddleware<GatewayExceptionMiddleware>();
-app.UseMiddleware<PortRoutingMiddleware>();
-app.UseMiddleware<ApiKeyAuthMiddleware>();
-app.UseAuthorization();
+        var nativeLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NativeStreamRedirector");
+        InstantAIGate.Native.Logging.NativeStreamRedirector.Initialize(logMessage =>
+        {
+            nativeLogger.LogDebug("{NativeMessage}", logMessage);
+        });
 
-app.MapControllers();
-app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
-app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Name == "model_ready" });
-app.MapHub<InstantAIGate.Server.Hubs.TelemetryHub>("/hub/telemetry");
-app.MapHub<InstantAIGate.Server.Hubs.SessionChatHub>("/hub/chat");
+        app.UseMiddleware<GatewayExceptionMiddleware>();
+        app.UseMiddleware<ApiKeyAuthMiddleware>();
+        app.UseAuthorization();
 
-app.Run();
+        app.MapHealthChecks("/health/live", new HealthCheckOptions
+        {
+            Predicate = _ => false
+        });
 
-public partial class Program { }
+        app.MapHealthChecks("/health/ready", new HealthCheckOptions
+        {
+            Predicate = check => check.Name == "model_ready"
+        });
+
+        app.MapHub<GatewayHub>("/hub/gateway");
+
+        app.Run();
+    }
+}
+
+

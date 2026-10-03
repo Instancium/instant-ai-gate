@@ -13,22 +13,25 @@ using System.Threading.Tasks;
 public class ConnectCommand : IConsoleCommand
 {
     private readonly GatewayClientProxy _proxy;
-    private readonly RemoteGatewaySettings _settings;
     private readonly CliSession _session;
+    private readonly RemoteGatewaySettings _settings;
 
-    public ConnectCommand(GatewayClientProxy proxy, IOptions<RemoteGatewaySettings> settings, CliSession session)
+    public ConnectCommand(
+        GatewayClientProxy proxy,
+        CliSession session,
+        IOptions<RemoteGatewaySettings> settings)
     {
-        _proxy = proxy;
-        _settings = settings.Value;
-        _session = session;
+        _proxy = proxy ?? throw new ArgumentNullException(nameof(proxy));
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _settings = settings?.Value ?? throw new ArgumentNullException(nameof(settings));
     }
 
     public string Name => "/connect";
-    public string Description => "Connects to server using config defaults, custom URL, or switches to local. Usage: /connect OR /connect <url> [[key]] OR /connect local";
+    public string Description => "Connects to a remote gateway instance or switches to local engine. Usage: /connect [baseUrl] [apiKey] or /connect local";
 
     public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
     {
-        var trimmed = (argument ?? string.Empty).Trim();
+        string trimmed = argument?.Trim() ?? string.Empty;
 
         if (string.Equals(trimmed, "local", StringComparison.OrdinalIgnoreCase))
         {
@@ -45,27 +48,25 @@ public class ConnectCommand : IConsoleCommand
             return;
         }
 
-        string publicUrl = _settings.PublicUrl;
-        string adminHubUrl = _settings.AdminHubUrl;
-        string key = _settings.AdminKey;
+        string baseUrl = _settings.BaseUrl;
+        string key = _settings.ApiKey;
 
         if (!string.IsNullOrWhiteSpace(trimmed))
         {
             var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            publicUrl = parts[0];
-            key = parts.Length > 1 ? parts[1] : _settings.AdminKey;
-            adminHubUrl = $"{publicUrl.TrimEnd('/')}/hub/telemetry".Replace("5000", "5001");
+            baseUrl = parts[0];
+            key = parts.Length > 1 ? parts[1] : _settings.ApiKey;
         }
 
         try
         {
-            await _proxy.SwitchToRemoteAsync(publicUrl, adminHubUrl, key, cancellationToken);
+            await _proxy.SwitchToRemoteAsync(baseUrl, key, cancellationToken);
             _session.IsRemoteMode = true;
-            AnsiConsole.MarkupLine($"[green]Successfully connected to Remote Gateway at[/] [cyan]{publicUrl}[/]");
+            AnsiConsole.MarkupLine($"[green]Successfully connected to Remote Gateway at[/] [cyan]{Markup.Escape(baseUrl)}[/]");
         }
         catch (HttpRequestException ex)
         {
-            AnsiConsole.MarkupLine($"[red]Connection failed:[/] Service at [cyan]{publicUrl}[/] is not reachable.");
+            AnsiConsole.MarkupLine($"[red]Connection failed:[/] Service at [cyan]{Markup.Escape(baseUrl)}[/] is not reachable.");
             AnsiConsole.MarkupLine($"[dim red]Details:[/] {Markup.Escape(ex.Message)}");
         }
         catch (Exception ex)

@@ -1,24 +1,28 @@
-﻿using InstantAIGate.Server.Hubs;
-using Microsoft.AspNetCore.SignalR;
-using System.Threading.Channels;
+﻿namespace InstantAIGate.Server.Diagnostics;
 
-namespace InstantAIGate.Server.Diagnostics;
+using InstantAIGate.Server.Hubs;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
 
 public class SignalRLoggerProvider : ILoggerProvider, IHostedService
 {
     private readonly Channel<LogMessage> _logChannel;
-    private IHubContext<TelemetryHub, ITelemetryClient>? _hubContext;
+    private IHubContext<GatewayHub, IGatewayHubClient>? _hubContext;
 
     public SignalRLoggerProvider()
     {
-        // Unbounded channel for high-throughput native logs, or bounded if memory constraints apply.
         _logChannel = Channel.CreateBounded<LogMessage>(new BoundedChannelOptions(5000)
         {
             FullMode = BoundedChannelFullMode.DropOldest
         });
     }
 
-    public void SetHubContext(IHubContext<TelemetryHub, ITelemetryClient> hubContext)
+    public void SetHubContext(IHubContext<GatewayHub, IGatewayHubClient> hubContext)
     {
         _hubContext = hubContext;
     }
@@ -38,16 +42,22 @@ public class SignalRLoggerProvider : ILoggerProvider, IHostedService
                 {
                     try
                     {
-                        await _hubContext.Clients.All.ReceiveLog(log.Level, log.Category, log.Message);
+                        await _hubContext.Clients.Group(GatewayHub.AdminGroupName)
+                            .ReceiveLog(log.Level, log.Category, log.Message);
                     }
-                    catch { /* Ignore SignalR dispatch exceptions */ }
+                    catch
+                    {
+                    }
                 }
             }
         }, cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-    public void Dispose() { }
+
+    public void Dispose()
+    {
+    }
 }
 
 public class SignalRLogger : ILogger
@@ -65,12 +75,20 @@ public class SignalRLogger : ILogger
 
     public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
 
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
     {
         if (!IsEnabled(logLevel)) return;
 
         string message = formatter(state, exception);
-        if (exception != null) message += $"\n{exception}";
+        if (exception != null)
+        {
+            message += $"\n{exception}";
+        }
 
         _writer.TryWrite(new LogMessage(logLevel.ToString(), _categoryName, message));
     }
