@@ -38,6 +38,7 @@
 |    |    |    +--- ReleasePipelineSettings.cs
 |    |    |    \--- RemoteGatewaySettings.cs
 |    |    +--- Core
+|    |    |    +--- ContextWindowMetrics.cs
 |    |    |    +--- GatewayClientProxy.cs
 |    |    |    +--- IGatewayClient.cs
 |    |    |    +--- IPipelineStep.cs
@@ -63,6 +64,7 @@
 |    |    |    +--- Analysis
 |    |    |    |    +--- IDiffAnalyzer.cs
 |    |    |    |    \--- MapReduceDiffAnalyzer.cs
+|    |    |    +--- ClientSessionMemoryCoordinator.cs
 |    |    |    +--- DotnetService.cs
 |    |    |    +--- GitService.cs
 |    |    |    +--- IDotnetService.cs

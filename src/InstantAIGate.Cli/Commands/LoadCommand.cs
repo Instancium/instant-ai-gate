@@ -1,33 +1,28 @@
 ﻿namespace InstantAIGate.Cli.Commands;
 
+using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.State;
-using InstantAIGate.Core.Dtos.Config;
-using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.SSR.Contracts;
-using Microsoft.Extensions.Configuration;
 using Spectre.Console;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-public class LoadCommand : IConsoleCommand
+public sealed class LoadCommand : IConsoleCommand
 {
     private readonly CliSession _session;
-    private readonly IConfiguration _configuration;
-    private readonly IModelManager _modelManager;
+    private readonly IGatewayClient _gatewayClient;
     private readonly IModelCatalogService _catalogService;
 
-    public LoadCommand(CliSession session, IConfiguration configuration, IModelManager modelManager, IModelCatalogService catalogService)
+    public LoadCommand(CliSession session, IGatewayClient gatewayClient, IModelCatalogService catalogService)
     {
-        _session = session;
-        _configuration = configuration;
-        _modelManager = modelManager;
-        _catalogService = catalogService;
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _gatewayClient = gatewayClient ?? throw new ArgumentNullException(nameof(gatewayClient));
+        _catalogService = catalogService ?? throw new ArgumentNullException(nameof(catalogService));
     }
 
     public string Name => "/load";
-
-    public string Description => "Loads a specific model into VRAM (e.g., /load qwen3-vl-8b-instruct [[profile]]).";
+    public string Description => "Loads a model into VRAM via Gateway Client (e.g., /load qwen3-vl-8b-instruct).";
 
     public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
     {
@@ -37,65 +32,30 @@ public class LoadCommand : IConsoleCommand
             return;
         }
 
-
         var parts = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var modelId = parts[0];
-        var profileName = parts.Length > 1 ? parts[1] : "Default";
-
 
         var targetModel = await _catalogService.FindModelByIdAsync(modelId, cancellationToken);
-        if (targetModel == null)
-        {
-            AnsiConsole.MarkupLine($"[red]Model '{modelId}' not found in the catalog. Use /models to see available IDs.[/]");
-            return;
-        }
-        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>();
-        if (hwProfile == null)
-        {
-            AnsiConsole.MarkupLine($"[yellow]Warning: Hardware profile '{profileName}' not found. Using safe defaults.[/]");
-            hwProfile = new HardwareProfileSettings();
-        }
-
-
-        var modelConfig = new ModelSettings
-        {
-            RepoId = targetModel.Id,
-            VisionSupport = targetModel.RequiresVisionProjector,
-            Type = targetModel.RequiresVisionProjector ? ModelType.Vlm : ModelType.Llm,
-
-            GpuLayerCount = hwProfile.GpuLayerCount,
-            MainGPU = hwProfile.MainGPU,
-            ContextSize = hwProfile.ContextSize,
-            BatchSize = hwProfile.BatchSize,
-            Threads = hwProfile.Threads,
-            FlashAttention = hwProfile.FlashAttention,
-            Embeddings = hwProfile.Embeddings,
-            KvCacheQuantization = hwProfile.KvCacheQuantization,
-            UseMemoryLock = hwProfile.UseMemoryLock,
-            MaxContexts = hwProfile.MaxContexts
-        };
+        string displayName = targetModel != null ? targetModel.Name : modelId;
 
         try
         {
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .SpinnerStyle(Style.Parse("yellow"))
-                .StartAsync($"Loading {targetModel.Name} into VRAM via {profileName} profile...", async ctx =>
+                .StartAsync($"Loading {displayName} into memory...", async ctx =>
                 {
-                    await _modelManager.LoadModelAsync(modelConfig, cancellationToken);
+                    await _gatewayClient.LoadModelAsync(modelId, cancellationToken);
                 });
 
-            _session.ActiveModelId = targetModel.Id;
-            _session.ActiveModelConfig = modelConfig;
+            _session.ActiveModelId = modelId;
             _session.ClearHistory();
-
-            AnsiConsole.MarkupLine($"[green]Model {targetModel.Name} successfully loaded and ready for inference![/]");
+            AnsiConsole.MarkupLine($"[green]Model {displayName} successfully loaded and ready for inference![/]");
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Failed to load model:[/] {ex.Message}");
+            AnsiConsole.MarkupLine($"[red]Failed to load model:[/] {Markup.Escape(ex.Message)}");
             _session.ActiveModelId = null;
-            _session.ActiveModelConfig = null;
         }
     }
 }
