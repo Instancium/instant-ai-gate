@@ -117,6 +117,8 @@
 |    |    |    |    +--- SessionStartRequest.cs
 |    |    |    |    \--- SessionTokenDelta.cs
 |    |    |    \--- Status
+|    |    |         +--- GatewayOperationalStatus.cs
+|    |    |         +--- GatewayStatusDetails.cs
 |    |    |         +--- ModelRegistryStatus.cs
 |    |    |         \--- NativeModelDetails.cs
 |    |    +--- Exceptions
@@ -127,6 +129,7 @@
 |    |    |    +--- Inference
 |    |    |    |    +--- IAssetManager.cs
 |    |    |    |    +--- IBackendFacade.cs
+|    |    |    |    +--- IGatewayStateManager.cs
 |    |    |    |    +--- IInferenceEngine.cs
 |    |    |    |    +--- IMetricsEventSource.cs
 |    |    |    |    +--- IModelLocator.cs
@@ -145,6 +148,7 @@
 |    |    +--- Services
 |    |    |    +--- Inference
 |    |    |    |    +--- DynamicRequestQueue.cs
+|    |    |    |    +--- GatewayStateManager.cs
 |    |    |    |    +--- MetricsEventSource.cs
 |    |    |    |    +--- ModelManager.cs
 |    |    |    |    +--- ModelProvider.cs
@@ -335,6 +339,7 @@
 |    |    |    |    +--- StubModelLocator.cs
 |    |    |    |    \--- StubModelValidator.cs
 |    |    |    +--- DynamicRequestQueueTests.cs
+|    |    |    +--- GatewayStateManagerTests.cs
 |    |    |    +--- LlamaInferenceProtectionTests.cs
 |    |    |    +--- LlamaVisionIntegrationTests.cs
 |    |    |    +--- NativeModelValidatorIntegrationTests.cs

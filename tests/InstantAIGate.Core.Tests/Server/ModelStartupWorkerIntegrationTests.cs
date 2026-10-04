@@ -1,21 +1,24 @@
 namespace InstantAIGate.Core.Tests.Server;
 
-using Microsoft.AspNetCore.Mvc.Testing;
+using FluentAssertions;
+using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Tests.TestConfiguration;
-using System.Threading.Tasks;
-using Xunit;
-using System.Collections.Generic;
+using InstantAIGate.Server;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using InstantAIGate.Server;
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
+using Xunit;
 
 public class ModelStartupWorkerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory;
-
-    // Target test model identifier comes from the test project appsettings.json.
     private static readonly TestModelOptions ModelOptions = TestConfig.Model;
 
     public ModelStartupWorkerIntegrationTests(WebApplicationFactory<Program> factory)
@@ -35,16 +38,38 @@ public class ModelStartupWorkerIntegrationTests : IClassFixture<WebApplicationFa
     }
 
     [Fact]
+    public async Task Host_Should_Be_Immediately_Responsive_On_Liveness_Probe()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/health/live");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Worker_Should_Automatically_Load_Model_On_Startup()
     {
-        // Act: The host starts and triggers IHostedService automatically
         var client = _factory.CreateClient();
+        var stateManager = _factory.Services.GetRequiredService<IGatewayStateManager>();
         var modelManager = _factory.Services.GetRequiredService<IModelManager>();
 
-        // Assert: Wait for the background worker to acquire the model
-        // In a real scenario, implement a retry policy or Task.Delay to wait for load completion
-        var activeConfig = modelManager.GetActiveSettings();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (!cts.Token.IsCancellationRequested)
+        {
+            var snapshot = stateManager.GetSnapshot();
+            if (snapshot.Status == GatewayOperationalStatus.Ready)
+            {
+                break;
+            }
 
+            if (snapshot.Status == GatewayOperationalStatus.Faulted)
+            {
+                Assert.Fail($"Startup worker entered Faulted state: {snapshot.ErrorMessage}");
+            }
+
+            await Task.Delay(50, cts.Token);
+        }
+
+        var activeConfig = modelManager.GetActiveSettings();
         Assert.NotNull(activeConfig);
         Assert.Equal(ModelOptions.RepoId, activeConfig.RepoId);
     }
