@@ -47,6 +47,7 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
     }
 
     #region Control Plane Tests
+
     [Fact]
     public async Task ControlPlane_WhenCalledByTenantUser_ThrowsHubExceptionOrUnauthorized()
     {
@@ -70,9 +71,11 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         var queueMetrics = await adminConnection.InvokeAsync<InferenceMetrics>("GetQueueMetricsAsync");
         queueMetrics.Should().NotBeNull();
     }
+
     #endregion
 
     #region Data Plane Tests
+
     [Fact]
     public async Task DataPlane_TenantUser_CanJoinSession_And_ReceiveDeltaTokens()
     {
@@ -112,9 +115,43 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
 
         await userConnection.InvokeAsync("LeaveSession", sessionId);
     }
+
+    [Fact]
+    public async Task DataPlane_JoinSession_WhenModelDownloading_ReturnsInformativeProgressError()
+    {
+        var stateManager = _fixture.Services.GetRequiredService<IGatewayStateManager>();
+        stateManager.SetDownloading("download-target-model", 42.5f, 42500, 100000, 10000, "Downloading test model");
+
+        try
+        {
+            await using var userConnection = CreateGatewayConnection(_tenantToken);
+            var errorTcs = new TaskCompletionSource<string>();
+
+            userConnection.On<string>("ReceiveError", err =>
+            {
+                errorTcs.TrySetResult(err);
+            });
+
+            await userConnection.StartAsync();
+            await userConnection.InvokeAsync("JoinSession", "session-downloading-test", string.Empty);
+
+            var received = await Task.WhenAny(errorTcs.Task, Task.Delay(TimeSpan.FromSeconds(3))) == errorTcs.Task;
+            received.Should().BeTrue("Hub must notify client of downloading status");
+
+            var error = await errorTcs.Task;
+            error.Should().Contain("downloading startup model 'download-target-model'");
+            error.Should().Contain("42.5%");
+        }
+        finally
+        {
+            stateManager.Reset();
+        }
+    }
+
     #endregion
 
     #region User & System Observability Tests
+
     [Fact]
     public async Task Observability_DownloadGroup_Subscription_IsCallable()
     {
@@ -129,10 +166,42 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
     }
 
     [Fact]
+    public async Task Observability_GatewayStatus_SnapshotReceivedOnConnected()
+    {
+        await using var userConnection = CreateGatewayConnection(_tenantToken);
+        var statusTcs = new TaskCompletionSource<GatewayStatusDetails>();
+
+        userConnection.On<GatewayStatusDetails>("ReceiveGatewayStatus", s =>
+        {
+            statusTcs.TrySetResult(s);
+        });
+
+        await userConnection.StartAsync();
+
+        var received = await Task.WhenAny(statusTcs.Task, Task.Delay(TimeSpan.FromSeconds(3))) == statusTcs.Task;
+        received.Should().BeTrue("Connected client must receive initial GatewayStatusDetails snapshot");
+
+        var snapshot = await statusTcs.Task;
+        snapshot.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Observability_GatewayStatus_ExplicitRpcCall_Succeeds()
+    {
+        await using var userConnection = CreateGatewayConnection(_tenantToken);
+        await userConnection.StartAsync();
+
+        var status = await userConnection.InvokeAsync<GatewayStatusDetails>("GetGatewayStatus");
+        status.Should().NotBeNull();
+        status.Status.Should().BeDefined();
+    }
+
+    [Fact]
     public async Task Observability_SystemMetricsAndLogs_DeliveredOnlyToAdmin()
     {
         await using var adminConn = CreateGatewayConnection(_adminToken);
         await using var userConn = CreateGatewayConnection(_tenantToken);
+
         var adminMetricsTcs = new TaskCompletionSource<bool>();
         var userMetricsReceived = false;
 
@@ -166,9 +235,6 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         });
 
         await adminConn.StartAsync();
-
-        // Under legacy 1Hz polling, waiting 2.5s would yield 2-3 additional packets.
-        // Under reactive event-driven approach, only the initial snapshot on connect arrives during idle state.
         await Task.Delay(2500);
 
         receivedPacketsCount.Should().Be(1, "Event-driven broadcaster must not send redundant packets during idle state");
@@ -196,7 +262,6 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await adminConn.StartAsync();
         await initialReceivedTcs.Task;
 
-        // Trigger queue limit mutation via admin control plane
         await adminConn.InvokeAsync("SetQueueLimitAsync", 42);
 
         var completed = await Task.WhenAny(mutationReceivedTcs.Task, Task.Delay(TimeSpan.FromSeconds(2))) == mutationReceivedTcs.Task;
@@ -231,5 +296,6 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         var progressData = await userProgressTcs.Task;
         progressData.ModelId.Should().Be(_testRepoId);
     }
+
     #endregion
 }

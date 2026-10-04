@@ -21,22 +21,19 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     private readonly string _baseUrl;
     private readonly string _hubUrl;
     private readonly string _apiKey;
-
     private HubConnection? _hubConnection;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
-    // Callbacks for global observability
     private Action<InferenceMetrics>? _onMetricsCallback;
     private Action<DownloadProgress>? _onDownloadProgressCallback;
-
-    // Per-session channels for multiplexed streaming
     private readonly ConcurrentDictionary<string, Channel<string>> _activeChannels = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource> _activeCompletions = new();
     private readonly ConcurrentDictionary<string, bool> _joinedSessions = new();
 
-
     public event Action<int>? QueuePositionReceived;
     public event Action<string, string, string>? LogReceived;
+    public event Action<DownloadProgress>? DownloadProgressReceived;
+    public event Action<GatewayStatusDetails>? GatewayStatusReceived;
 
     public RemoteGatewayClient(HttpClient httpClient, string baseUrl, string hubUrl, string apiKey)
     {
@@ -51,19 +48,18 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         }
     }
 
-
-
-
     private void AbortAllActiveStreams(Exception exception)
     {
         foreach (var kvp in _activeChannels)
         {
             kvp.Value.Writer.TryComplete(exception);
         }
+
         foreach (var kvp in _activeCompletions)
         {
             kvp.Value.TrySetException(exception);
         }
+
         _activeChannels.Clear();
         _activeCompletions.Clear();
     }
@@ -115,6 +111,7 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
             {
                 channel.Writer.TryComplete(overflow);
             }
+
             if (_activeCompletions.TryGetValue(overflow.SessionId, out var tcs))
             {
                 tcs.TrySetException(overflow);
@@ -127,6 +124,7 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
             {
                 channel.Writer.TryComplete();
             }
+
             if (_activeCompletions.TryRemove(sessionId, out var tcs))
             {
                 tcs.TrySetResult();
@@ -151,21 +149,28 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         connection.On<DownloadProgress>("ReceiveDownloadProgress", progress =>
         {
             _onDownloadProgressCallback?.Invoke(progress);
+            DownloadProgressReceived?.Invoke(progress);
+        });
+
+        connection.On<GatewayStatusDetails>("ReceiveGatewayStatus", status =>
+        {
+            GatewayStatusReceived?.Invoke(status);
         });
     }
 
     #region Data Plane & Inference
 
-
     private async Task EnsureConnectedAsync(CancellationToken ct)
     {
-       
         while (_hubConnection != null && _hubConnection.State == HubConnectionState.Reconnecting)
         {
             await Task.Delay(200, ct);
         }
 
-        if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected) return;
+        if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected)
+        {
+            return;
+        }
 
         await _connectionLock.WaitAsync(ct);
         try
@@ -174,23 +179,40 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
             {
                 await Task.Delay(200, ct);
             }
-            if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected) return;
 
-            if (_hubConnection != null) await _hubConnection.DisposeAsync();
+            if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected)
+            {
+                return;
+            }
+
+            if (_hubConnection != null)
+            {
+                await _hubConnection.DisposeAsync();
+            }
 
             _joinedSessions.Clear();
-
             _hubConnection = new HubConnectionBuilder()
                 .WithUrl(_hubUrl, options =>
                 {
                     if (!string.IsNullOrWhiteSpace(_apiKey))
+                    {
                         options.AccessTokenProvider = () => Task.FromResult(_apiKey)!;
+                    }
                 })
                 .WithAutomaticReconnect()
                 .Build();
 
-            _hubConnection.Closed += _ => { _joinedSessions.Clear(); return Task.CompletedTask; };
-            _hubConnection.Reconnected += _ => { _joinedSessions.Clear(); return Task.CompletedTask; };
+            _hubConnection.Closed += _ =>
+            {
+                _joinedSessions.Clear();
+                return Task.CompletedTask;
+            };
+
+            _hubConnection.Reconnected += _ =>
+            {
+                _joinedSessions.Clear();
+                return Task.CompletedTask;
+            };
 
             RegisterHubEventHandlers(_hubConnection);
             await _hubConnection.StartAsync(ct);
@@ -202,10 +224,7 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     }
 
     public async IAsyncEnumerable<string> StreamChatAsync(
-        string sessionId,
-        string repoId,
-        ChatMessage deltaMessage,
-        [EnumeratorCancellation] CancellationToken ct)
+        string sessionId, string repoId, ChatMessage deltaMessage, [EnumeratorCancellation] CancellationToken ct)
     {
         var outputChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
         {
@@ -215,7 +234,6 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
 
         _ = Task.Run(() => ExecuteStreamingPipelineAsync(sessionId, repoId, deltaMessage, outputChannel.Writer, ct), ct);
 
-        // No try/catch around yield return — fully compliant with CS1626
         await foreach (var token in outputChannel.Reader.ReadAllAsync(ct))
         {
             yield return token;
@@ -223,11 +241,7 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     }
 
     private async Task ExecuteStreamingPipelineAsync(
-        string sessionId,
-        string repoId,
-        ChatMessage deltaMessage,
-        ChannelWriter<string> outputWriter,
-        CancellationToken ct)
+        string sessionId, string repoId, ChatMessage deltaMessage, ChannelWriter<string> outputWriter, CancellationToken ct)
     {
         const int maxAttempts = 2;
         Exception? terminalException = null;
@@ -237,16 +251,15 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 await EnsureConnectedAsync(ct);
-                var connection = _hubConnection
-                    ?? throw new InvalidOperationException("SignalR Hub connection is not established.");
+                var connection = _hubConnection ?? throw new InvalidOperationException("SignalR Hub connection is not established.");
 
                 var internalChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
                 {
                     SingleReader = true,
                     SingleWriter = true
                 });
-                var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
+                var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 _activeChannels[sessionId] = internalChannel;
                 _activeCompletions[sessionId] = tcs;
 
@@ -272,11 +285,8 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
                     await tcs.Task.WaitAsync(ct);
                     return;
                 }
-                catch (Exception ex) when (!yieldedAny && attempt < maxAttempts &&
-                                          (ex.Message.Contains("not active", StringComparison.OrdinalIgnoreCase) ||
-                                           ex.Message.Contains("was not found", StringComparison.OrdinalIgnoreCase)))
+                catch (Exception ex) when (!yieldedAny && attempt < maxAttempts && (ex.Message.Contains("not active", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("was not found", StringComparison.OrdinalIgnoreCase)))
                 {
-                    // Server rebooted and dropped memory context: drop local cache and recreate session on backend
                     _joinedSessions.TryRemove(sessionId, out _);
                     retryNeeded = true;
                 }
@@ -303,7 +313,6 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         }
     }
 
-
     public async Task EndSessionAsync(string sessionId, CancellationToken ct = default)
     {
         if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected)
@@ -314,7 +323,6 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
             }
             catch (Exception)
             {
-                // Graceful ignore if connection or session already terminated
             }
         }
     }
@@ -340,6 +348,12 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     #endregion
 
     #region Control Plane & Model Management
+
+    public async Task<GatewayStatusDetails> GetGatewayStatusAsync(CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        return await _hubConnection!.InvokeAsync<GatewayStatusDetails>("GetGatewayStatus", ct);
+    }
 
     public async Task<NativeModelDetails> GetActiveModelDetailsAsync(CancellationToken ct = default)
     {
@@ -388,9 +402,7 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     #region Observability & Telemetry
 
     public async Task ConnectTelemetryAsync(
-        Action<InferenceMetrics> onMetrics,
-        Action<DownloadProgress> onSsrProgress,
-        CancellationToken ct)
+        Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct)
     {
         _onMetricsCallback = onMetrics;
         _onDownloadProgressCallback = onSsrProgress;

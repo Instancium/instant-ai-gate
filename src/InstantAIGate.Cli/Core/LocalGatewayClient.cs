@@ -25,18 +25,12 @@ public class LocalGatewayClient : IGatewayClient
     private readonly IConfiguration _configuration;
     private readonly ISessionInferenceManager _sessionManager;
     private readonly StorageSettings _storageSettings;
+    private readonly IGatewayStateManager? _stateManager;
 
-    public event Action<int>? QueuePositionReceived
-    {
-        add { }
-        remove { }
-    }
-
-    public event Action<string, string, string>? LogReceived
-    {
-        add { }
-        remove { }
-    }
+    public event Action<int>? QueuePositionReceived { add { } remove { } }
+    public event Action<string, string, string>? LogReceived { add { } remove { } }
+    public event Action<DownloadProgress>? DownloadProgressReceived { add { } remove { } }
+    public event Action<GatewayStatusDetails>? GatewayStatusReceived;
 
     public LocalGatewayClient(
         IInferenceEngine inferenceEngine,
@@ -45,7 +39,8 @@ public class LocalGatewayClient : IGatewayClient
         IModelDownloader modelDownloader,
         IConfiguration configuration,
         ISessionInferenceManager sessionManager,
-        IOptions<StorageSettings> storageSettings)
+        IOptions<StorageSettings> storageSettings,
+        IGatewayStateManager? stateManager = null)
     {
         _inferenceEngine = inferenceEngine;
         _modelManager = modelManager;
@@ -54,6 +49,12 @@ public class LocalGatewayClient : IGatewayClient
         _configuration = configuration;
         _sessionManager = sessionManager;
         _storageSettings = storageSettings.Value;
+        _stateManager = stateManager;
+
+        if (_stateManager != null)
+        {
+            _stateManager.StatusChanged += status => GatewayStatusReceived?.Invoke(status);
+        }
     }
 
     public async IAsyncEnumerable<string> StreamChatAsync(
@@ -101,11 +102,36 @@ public class LocalGatewayClient : IGatewayClient
                 catch
                 {
                 }
+
                 await Task.Delay(1000, ct);
             }
         }, ct);
 
         return Task.CompletedTask;
+    }
+
+    public Task<GatewayStatusDetails> GetGatewayStatusAsync(CancellationToken ct = default)
+    {
+        if (_stateManager != null)
+        {
+            return Task.FromResult(_stateManager.GetSnapshot());
+        }
+
+        var active = _modelManager.GetActiveSettings();
+        if (active != null)
+        {
+            return Task.FromResult(new GatewayStatusDetails
+            {
+                Status = GatewayOperationalStatus.Ready,
+                ActiveModelId = active.RepoId,
+                ProgressPercentage = 100f
+            });
+        }
+
+        return Task.FromResult(new GatewayStatusDetails
+        {
+            Status = GatewayOperationalStatus.Uninitialized
+        });
     }
 
     public async Task LoadModelAsync(string repoId, CancellationToken ct = default)
@@ -133,16 +159,15 @@ public class LocalGatewayClient : IGatewayClient
             throw new InvalidOperationException($"Model '{repoId}' not found in catalog.");
         }
 
-        var downloadUrls = new List<string>(model.DownloadUrls);
+        string destinationDir = Path.Combine(_storageSettings.ModelsDirectory, model.Id);
+        var urlsToDownload = new List<string>(model.DownloadUrls);
         if (model.RequiresVisionProjector && model.VisionProjectorUrls != null)
         {
-            downloadUrls.AddRange(model.VisionProjectorUrls);
+            urlsToDownload.AddRange(model.VisionProjectorUrls);
         }
 
-        string destinationDir = Path.Combine(_storageSettings.ModelsDirectory, model.Id);
-        var progressReporter = new Progress<DownloadProgress>();
-
-        await _modelDownloader.DownloadModelAsync(model.Id, downloadUrls, destinationDir, progressReporter, ct);
+        var progress = new Progress<DownloadProgress>();
+        await _modelDownloader.DownloadModelAsync(model.Id, urlsToDownload, destinationDir, progress, ct);
     }
 
     public Task SubscribeToModelDownloadAsync(string repoId, CancellationToken ct = default) => Task.CompletedTask;
@@ -171,21 +196,20 @@ public class LocalGatewayClient : IGatewayClient
 
     private async Task<ModelSettings> BuildModelSettingsAsync(string repoId, string? profile, CancellationToken ct)
     {
-        var targetModel = await _catalogService.FindModelByIdAsync(repoId, ct);
-        if (targetModel == null)
+        var model = await _catalogService.FindModelByIdAsync(repoId, ct);
+        if (model == null)
         {
-            throw new InvalidOperationException($"Model '{repoId}' not found in catalog.");
+            throw new InvalidOperationException($"Model '{repoId}' was not found in catalog.");
         }
 
         var profileName = profile ?? "Default";
-        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>()
-                        ?? new HardwareProfileSettings();
+        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
 
         return new ModelSettings
         {
-            RepoId = targetModel.Id,
-            VisionSupport = targetModel.RequiresVisionProjector,
-            Type = targetModel.RequiresVisionProjector ? ModelType.Vlm : ModelType.Llm,
+            RepoId = model.Id,
+            VisionSupport = model.RequiresVisionProjector,
+            Type = model.RequiresVisionProjector ? ModelType.Vlm : ModelType.Llm,
             GpuLayerCount = hwProfile.GpuLayerCount,
             MainGPU = hwProfile.MainGPU,
             ContextSize = hwProfile.ContextSize,
