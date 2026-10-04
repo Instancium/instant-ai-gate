@@ -15,16 +15,15 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddInstantAIGateInference(this IServiceCollection services)
     {
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IGatewayStateManager, GatewayStateManager>();
         services.AddSingleton<IBackendFacade, BackendFacade>();
         services.AddSingleton<IVisionFacade, VisionFacade>();
         services.AddSingleton<IModelLocator, LlamaModelLocator>();
         services.AddSingleton<IMetricsEventSource, MetricsEventSource>();
-        
         services.AddSingleton<IQueueManager>(sp => new DynamicRequestQueue(
             initialLimit: 100,
             sp.GetService<TimeProvider>() ?? TimeProvider.System,
             sp.GetRequiredService<IMetricsEventSource>()));
-
         services.AddSingleton<IModelProvider, ModelProvider>();
         services.AddSingleton<IModelManager, ModelManager>();
         services.AddSingleton<IInferenceEngine, LlamaInference>();

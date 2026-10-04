@@ -9,6 +9,7 @@
 |    \--- model_catalog.json
 +--- deploy
 |    +--- docker
+|    |    +--- .env
 |    |    +--- docker-compose.yml
 |    |    \--- Dockerfile
 |    \--- windows-service
@@ -40,6 +41,7 @@
 |    |    |    +--- ReleasePipelineSettings.cs
 |    |    |    \--- RemoteGatewaySettings.cs
 |    |    +--- Core
+|    |    |    +--- CliMarkup.cs
 |    |    |    +--- ContextWindowMetrics.cs
 |    |    |    +--- GatewayClientProxy.cs
 |    |    |    +--- IGatewayClient.cs
