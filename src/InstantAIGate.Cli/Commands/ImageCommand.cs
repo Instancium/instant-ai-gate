@@ -1,5 +1,6 @@
 ﻿namespace InstantAIGate.Cli.Commands;
 
+using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Inference;
 using Spectre.Console;
@@ -30,7 +31,7 @@ public class ImageCommand : IConsoleCommand
         var cleanPath = argument.Trim('"', '\'', ' ');
         if (!File.Exists(cleanPath))
         {
-            AnsiConsole.MarkupLine($"[red]Error: File not found at '{cleanPath}'[/]");
+            CliMarkup.Line($"[red]Error: File not found at '{cleanPath}'[/]");
             return Task.CompletedTask;
         }
 

@@ -29,6 +29,54 @@ public class ParallelModelDownloaderTests : IDisposable
         Directory.CreateDirectory(_tempTestDir);
     }
 
+
+    [Fact]
+    public async Task DownloadModelAsync_Resume_ContinuesFromManifest()
+    {
+        // Setup
+        var stubValidator = new StubModelValidator { ShouldPass = true };
+        var handler = new SyntheticNetworkHandler(virtualFileSizeBytes: SynthOptions.ParallelDownloadFileSizeBytes, supportRanges: true);
+        var downloader = new ParallelModelDownloader(new HttpClient(handler), NullLogger<ParallelModelDownloader>.Instance, stubValidator);
+
+        string modelId = "resume-test";
+        string url = SynthOptions.BaseUrl + "resume.gguf";
+        string destPath = Path.Combine(_tempTestDir, "resume.gguf");
+        string tempPath = destPath + ".tmp";
+        string manifestPath = tempPath + ".meta.json";
+
+       
+        long totalSize = SynthOptions.ParallelDownloadFileSizeBytes;
+        long chunkSize = totalSize / 4; // MaxDegreesOfParallelism = 4
+        long preDownloaded = chunkSize / 2;
+
+        var manifest = new ParallelModelDownloader.DownloadManifest { TotalBytes = totalSize };
+        manifest.ChunkProgress[0] = preDownloaded;
+
+        using (var fs = new FileStream(tempPath, FileMode.Create))
+        {
+            fs.SetLength(totalSize);
+        }
+        File.WriteAllText(manifestPath, System.Text.Json.JsonSerializer.Serialize(manifest));
+
+        var progressList = new List<DownloadProgress>();
+        var progress = new Progress<DownloadProgress>(progressList.Add);
+
+        // Act
+        await downloader.DownloadModelAsync(modelId, new[] { url }, _tempTestDir, progress);
+
+        // Assert
+        Assert.True(File.Exists(destPath));
+        Assert.False(File.Exists(tempPath));      
+        Assert.False(File.Exists(manifestPath));  
+        Assert.Equal(totalSize, new FileInfo(destPath).Length);
+
+  
+        Assert.NotEmpty(progressList);
+        var finalProgress = progressList.Last();
+        Assert.Equal(100f, finalProgress.Percentage);
+        Assert.Equal(totalSize, finalProgress.BytesDownloaded);
+    }
+
     [Fact]
     public async Task DownloadModelAsync_MultiThreaded_CalculatesSpeedAndCompletes()
     {

@@ -6,8 +6,6 @@ WORKDIR /src
 COPY . .
 
 # Publish the application as a self-contained Linux executable.
-# The "-r linux-x64" flag guarantees that the CreateLinuxSymlinks MSBuild target
-# is executed, properly projecting libggml.so and libllama.so symlinks.
 RUN dotnet publish src/InstantAIGate.Server/InstantAIGate.Server.csproj \
     -c Release \
     -r linux-x64 \
@@ -19,25 +17,23 @@ RUN dotnet publish src/InstantAIGate.Server/InstantAIGate.Server.csproj \
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS final
 WORKDIR /app
 
-# Install native runtime dependencies required by llama.cpp (OpenMP and Vulkan ICD loader).
-# Hardware drivers (NVIDIA/AMD) are explicitly EXCLUDED to strictly rely on host passthrough.
+# Install native runtime dependencies required by llama.cpp (OpenMP and Vulkan ICD loader)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libvulkan1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the compiled binaries and generated symlinks from the build stage
+# Copy the compiled binaries and native runtimes from the build stage
 COPY --from=build /app/publish .
 
-# Expose Public (5000) and Admin (5001) endpoints
-EXPOSE 5000 5001
+# Expose single gateway port
+EXPOSE 5000
 
-# Enforce environment configuration
-ENV Kestrel__Endpoints__PublicEndpoint__Url=http://0.0.0.0:5000
-ENV Kestrel__Endpoints__AdminEndpoint__Url=http://0.0.0.0:5001
+# Bind Kestrel directly to port 5000
+ENV ASPNETCORE_HTTP_PORTS=5000
 ENV InstantAIGate__Storage__ModelsDirectory=/app/models
 
-# Define mount point for persistent zero-duplication model storage
+# Define mount point for persistent model storage
 VOLUME /app/models
 
 ENTRYPOINT ["./InstantAIGate.Server"]

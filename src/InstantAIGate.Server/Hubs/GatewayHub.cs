@@ -16,6 +16,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -24,6 +25,7 @@ using System.Threading.Tasks;
 public class GatewayHub : Hub<IGatewayHubClient>
 {
     public const string AdminGroupName = "GatewayAdminGroup";
+
     private readonly ISessionInferenceManager _sessionManager;
     private readonly IInferenceEngine _inferenceEngine;
     private readonly IModelManager _modelManager;
@@ -32,6 +34,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
     private readonly IConfiguration _configuration;
     private readonly StorageSettings _storageSettings;
     private readonly ChannelWriter<DownloadJob> _downloadChannelWriter;
+    private readonly IGatewayStateManager _stateManager;
     private readonly ILogger<GatewayHub> _logger;
 
     public GatewayHub(
@@ -43,6 +46,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         IConfiguration configuration,
         IOptions<StorageSettings> storageSettings,
         ChannelWriter<DownloadJob> downloadChannelWriter,
+        IGatewayStateManager stateManager,
         ILogger<GatewayHub> logger)
     {
         _sessionManager = sessionManager;
@@ -53,12 +57,24 @@ public class GatewayHub : Hub<IGatewayHubClient>
         _configuration = configuration;
         _storageSettings = storageSettings.Value;
         _downloadChannelWriter = downloadChannelWriter;
+        _stateManager = stateManager;
         _logger = logger;
     }
 
     #region Connection Lifecycle
+
     public override async Task OnConnectedAsync()
     {
+        try
+        {
+            var statusSnapshot = _stateManager.GetSnapshot();
+            await Clients.Caller.ReceiveGatewayStatus(statusSnapshot);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogTrace(ex, "Failed to send initial status snapshot to caller {ConnectionId}", Context.ConnectionId);
+        }
+
         if (Context.User?.IsInRole("Admin") == true)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, AdminGroupName);
@@ -75,6 +91,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
                 _logger.LogTrace(ex, "Failed to send initial metrics snapshot to admin caller {ConnectionId}", Context.ConnectionId);
             }
         }
+
         await base.OnConnectedAsync();
     }
 
@@ -92,16 +109,45 @@ public class GatewayHub : Hub<IGatewayHubClient>
                 _logger.LogWarning(ex, "Failed to gracefully release session {SessionId} during disconnection", sessionId);
             }
         }
+
         await base.OnDisconnectedAsync(exception);
     }
+
     #endregion
 
     #region Data Plane (GatewayUser)
+
     [Authorize(Policy = "GatewayUser")]
     public async Task JoinSession(string sessionId, string repoId)
     {
         try
         {
+            var snapshot = _stateManager.GetSnapshot();
+
+            // 1. Top-Level Operational Status Guards (Preconditions)
+            if (snapshot.Status == GatewayOperationalStatus.ModelDownloading)
+            {
+                string progressStr = snapshot.ProgressPercentage.ToString("F1", CultureInfo.InvariantCulture);
+                await Clients.Caller.ReceiveError(
+                    $"Server is downloading startup model '{snapshot.ActiveModelId}' ({progressStr}%). Please wait.");
+                return;
+            }
+
+            if (snapshot.Status == GatewayOperationalStatus.ModelLoading)
+            {
+                await Clients.Caller.ReceiveError(
+                    $"Server is loading startup model '{snapshot.ActiveModelId}' into memory. Please wait.");
+                return;
+            }
+
+            if (snapshot.Status == GatewayOperationalStatus.Faulted)
+            {
+                await Clients.Caller.ReceiveError(
+                    $"Server startup failed: {snapshot.ErrorMessage}");
+                return;
+            }
+
+            // 2. Active Model Resolution
             if (string.IsNullOrWhiteSpace(repoId))
             {
                 var activeSettings = _modelManager.GetActiveSettings();
@@ -110,7 +156,17 @@ public class GatewayHub : Hub<IGatewayHubClient>
                     await Clients.Caller.ReceiveError("No active model is loaded on Remote Gateway. Server has no model in memory.");
                     return;
                 }
+
                 repoId = activeSettings.RepoId;
+            }
+            else
+            {
+                var activeSettings = _modelManager.GetActiveSettings();
+                if (activeSettings == null || !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await Clients.Caller.ReceiveError($"Requested model '{repoId}' is not active on Remote Gateway.");
+                    return;
+                }
             }
 
             var request = new SessionStartRequest(sessionId, repoId);
@@ -144,6 +200,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
             {
                 await Clients.Caller.ReceiveTokenDelta(new SessionTokenDelta(sessionId, token));
             }
+
             await Clients.Caller.ReceiveTokenDelta(new SessionTokenDelta(sessionId, string.Empty, IsDone: true, FinishReason: "stop"));
         }
         catch (ContextOverflowException ex)
@@ -193,9 +250,17 @@ public class GatewayHub : Hub<IGatewayHubClient>
     {
         return Task.FromResult(_sessionManager.GetPastTokensCount(sessionId));
     }
+
     #endregion
 
-    #region User Observability (Groups)
+    #region User Observability & Gateway Status
+
+    [Authorize(Policy = "GatewayUser")]
+    public Task<GatewayStatusDetails> GetGatewayStatus()
+    {
+        return Task.FromResult(_stateManager.GetSnapshot());
+    }
+
     [Authorize(Policy = "GatewayUser")]
     public async Task SubscribeToModelDownload(string repoId)
     {
@@ -211,9 +276,11 @@ public class GatewayHub : Hub<IGatewayHubClient>
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
         _logger.LogDebug("Connection {ConnectionId} unsubscribed from {GroupName}", Context.ConnectionId, groupName);
     }
+
     #endregion
 
     #region Control Plane (GatewayAdmin)
+
     [Authorize(Policy = "GatewayAdmin")]
     public Task<IEnumerable<ModelRegistryStatus>> GetModelsAsync()
     {
@@ -234,8 +301,19 @@ public class GatewayHub : Hub<IGatewayHubClient>
         {
             throw new HubException($"Model '{repoId}' not found in catalog.");
         }
+
         var config = BuildModelSettings(targetModel, profile);
-        await _modelManager.LoadModelAsync(config, Context.ConnectionAborted);
+        _stateManager.SetLoading(repoId, $"Loading model '{repoId}' into memory");
+        try
+        {
+            await _modelManager.LoadModelAsync(config, Context.ConnectionAborted);
+            _stateManager.SetReady(repoId);
+        }
+        catch (Exception ex)
+        {
+            _stateManager.SetFaulted(repoId, $"Failed to load model '{repoId}'", ex);
+            throw;
+        }
     }
 
     [Authorize(Policy = "GatewayAdmin")]
@@ -246,14 +324,26 @@ public class GatewayHub : Hub<IGatewayHubClient>
         {
             throw new HubException($"Model '{repoId}' not found in catalog.");
         }
+
         var config = BuildModelSettings(targetModel, profile);
-        await _modelManager.SwapModelAsync(config, Context.ConnectionAborted);
+        _stateManager.SetLoading(repoId, $"Swapping to model '{repoId}'");
+        try
+        {
+            await _modelManager.SwapModelAsync(config, Context.ConnectionAborted);
+            _stateManager.SetReady(repoId);
+        }
+        catch (Exception ex)
+        {
+            _stateManager.SetFaulted(repoId, $"Failed to swap to model '{repoId}'", ex);
+            throw;
+        }
     }
 
     [Authorize(Policy = "GatewayAdmin")]
     public async Task UnloadModelAsync(string repoId)
     {
         await _modelManager.UnloadModelAsync(repoId, Context.ConnectionAborted);
+        _stateManager.Reset();
     }
 
     [Authorize(Policy = "GatewayAdmin")]
@@ -289,12 +379,15 @@ public class GatewayHub : Hub<IGatewayHubClient>
         {
             throw new HubException("Queue limit must be greater than zero.");
         }
+
         _queueManager.UpdateQueueLimit(limit);
         return Task.CompletedTask;
     }
+
     #endregion
 
     #region Helpers
+
     private ModelSettings BuildModelSettings(CatalogModelEntry targetModel, string? profile)
     {
         var profileName = profile ?? "Default";
@@ -317,5 +410,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
             MaxContexts = hwProfile.MaxContexts
         };
     }
+
     #endregion
 }

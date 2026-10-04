@@ -5,6 +5,7 @@ using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.Services;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Exceptions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -40,9 +41,10 @@ public class CliHostedService : IHostedService
         _session = session;
         _gatewayClient = gatewayClient;
         _memoryCoordinator = memoryCoordinator;
+        _logger = logger;
 
         _gatewayClient.QueuePositionReceived += OnQueuePositionReceived;
-        _logger = logger;
+        _gatewayClient.LogReceived += OnLogReceived;
     }
 
     private void OnQueuePositionReceived(int position)
@@ -57,6 +59,7 @@ public class CliHostedService : IHostedService
             _activeQueueStatus = null;
         }
     }
+
     private void OnLogReceived(string level, string category, string message)
     {
         _logger.LogInformation("[{Level}] {Category}: {Message}", level, category, message);
@@ -91,6 +94,11 @@ public class CliHostedService : IHostedService
         {
             RenderHeader();
 
+            if (_session.IsRemoteMode)
+            {
+                await CheckInitialRemoteStatusAsync(cancellationToken);
+            }
+
             while (!cancellationToken.IsCancellationRequested && !_session.IsExitRequested)
             {
                 try
@@ -117,9 +125,38 @@ public class CliHostedService : IHostedService
                 }
             }
         }
+        catch (OperationCanceledException)
+        {
+        }
         finally
         {
             _appLifetime.StopApplication();
+        }
+    }
+
+    private async Task CheckInitialRemoteStatusAsync(CancellationToken ct)
+    {
+        try
+        {
+            var status = await _gatewayClient.GetGatewayStatusAsync(ct);
+            if (status.Status == GatewayOperationalStatus.ModelDownloading)
+            {
+                AnsiConsole.MarkupLine($"[yellow]Notice:[/] Remote Gateway is currently downloading startup model [bold cyan]{Markup.Escape(status.ActiveModelId ?? string.Empty)}[/] ({status.ProgressPercentage:F1}%).");
+                AnsiConsole.MarkupLine("[dim]Type [cyan]/connect[/] to view real-time download progress or wait for completion.[/]\n");
+            }
+            else if (status.Status == GatewayOperationalStatus.ModelLoading)
+            {
+                AnsiConsole.MarkupLine($"[yellow]Notice:[/] Remote Gateway is loading model [bold cyan]{Markup.Escape(status.ActiveModelId ?? string.Empty)}[/] into memory.\n");
+            }
+            else if (status.Status == GatewayOperationalStatus.Ready)
+            {
+                _session.ActiveModelId = status.ActiveModelId;
+                AnsiConsole.MarkupLine($"[green]Connected to Remote Gateway. Active model:[/] [bold cyan]{Markup.Escape(status.ActiveModelId ?? string.Empty)}[/] [dim](Ready)[/]\n");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogTrace(ex, "Could not query initial remote gateway status.");
         }
     }
 
@@ -167,7 +204,7 @@ public class CliHostedService : IHostedService
         }
         catch (ContextOverflowException ex)
         {
-            AnsiConsole.MarkupLine($"\n[bold yellow]Context Window Boundary Reached![/] [{ex.PastTokens} + {ex.IncomingTokens} + {ex.ReservedTokens} > {ex.ContextSize} tokens]");
+            CliMarkup.Line($"\n[bold yellow]Context Window Boundary Reached![/] [[{ex.PastTokens} + {ex.IncomingTokens} + {ex.ReservedTokens} > {ex.ContextSize} tokens]]");
             await HandleContextOverflowMitigationAsync(ex, cancellationToken);
         }
         catch (Exception ex) when (ex.Message.Contains("was not found", StringComparison.OrdinalIgnoreCase))
@@ -175,7 +212,6 @@ public class CliHostedService : IHostedService
             AnsiConsole.MarkupLine("\n[bold red]Server State Lost:[/] The server was restarted or lost the session. Physical KV-cache destroyed.");
             AnsiConsole.MarkupLine("[yellow]Local history has been cleared. Please start a new dialogue.[/]");
 
-            // Remove the problematic prompt and force a new SessionId generation
             if (_session.ChatHistory.Count > 0)
             {
                 _session.ChatHistory.RemoveAt(_session.ChatHistory.Count - 1);

@@ -9,7 +9,9 @@ using InstantAIGate.Server.Middleware;
 using InstantAIGate.Server.Services.Workers;
 using InstantAIGate.SSR.DependencyInjection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.Threading.Channels;
 
 public class Program
@@ -37,6 +39,7 @@ public class Program
 
         builder.Services.AddInstantAIGateInference();
         builder.Services.AddInstantAIGateSSR();
+
         builder.Services.AddSignalR();
 
         var signalRLoggerProvider = new SignalRLoggerProvider();
@@ -75,7 +78,13 @@ public class Program
 
         app.MapHealthChecks("/health/ready", new HealthCheckOptions
         {
-            Predicate = check => check.Name == "model_ready"
+            Predicate = check => check.Name == "model_ready",
+            ResultStatusCodes =
+            {
+                [HealthStatus.Healthy] = StatusCodes.Status200OK,
+                [HealthStatus.Degraded] = StatusCodes.Status503ServiceUnavailable,
+                [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+            }
         });
 
         app.MapHub<GatewayHub>("/hub/gateway");
@@ -83,5 +92,3 @@ public class Program
         app.Run();
     }
 }
-
-
