@@ -189,15 +189,24 @@ public sealed class ModelStartupWorker : BackgroundService
 
     private ModelSettings BuildStartupModelSettings(CatalogModelEntry targetModel)
     {
-        var modelSection = _configuration.GetSection($"InstantAIGate:Models:{targetModel.Id}");
-        var modelSettings = modelSection.Get<ModelSettings>() ?? new ModelSettings();
+        var profileName = string.IsNullOrWhiteSpace(_startupSettings.Profile) ? "Default" : _startupSettings.Profile;
+        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
 
-        return modelSettings with
+        return new ModelSettings
         {
-            RepoId = string.IsNullOrWhiteSpace(modelSettings.RepoId) ? targetModel.Id : modelSettings.RepoId,
-            ContextSize = modelSettings.ContextSize <= 0 ? 4096 : modelSettings.ContextSize,
+            RepoId = targetModel.Id,
             VisionSupport = targetModel.RequiresVisionProjector,
-            Type = targetModel.RequiresVisionProjector ? ModelType.Vlm : ModelType.Llm
+            Type = targetModel.RequiresVisionProjector ? ModelType.Vlm : ModelType.Llm,
+            GpuLayerCount = hwProfile.GpuLayerCount,
+            MainGPU = hwProfile.MainGPU,
+            ContextSize = hwProfile.ContextSize,
+            BatchSize = hwProfile.BatchSize,
+            Threads = hwProfile.Threads,
+            FlashAttention = hwProfile.FlashAttention,
+            Embeddings = hwProfile.Embeddings,
+            KvCacheQuantization = hwProfile.KvCacheQuantization,
+            UseMemoryLock = hwProfile.UseMemoryLock,
+            MaxContexts = hwProfile.MaxContexts
         };
     }
 }
