@@ -1,5 +1,6 @@
 ﻿namespace InstantAIGate.Cli.Commands;
 
+using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.Services;
 using InstantAIGate.Cli.State;
 using Spectre.Console;
@@ -45,7 +46,7 @@ public sealed class ContextCommand : IConsoleCommand
                 break;
 
             default:
-                AnsiConsole.MarkupLine("[red]Unknown subcommand. Usage: /ctx [info | shift <pos> <count> | rollback <pos> | clear][/]");
+                CliMarkup.Line("[red]Unknown subcommand. Usage: /ctx [[info | shift <pos> <count> | rollback <pos> | clear]][/]");
                 break;
         }
     }

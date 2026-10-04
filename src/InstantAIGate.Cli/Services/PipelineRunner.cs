@@ -25,7 +25,7 @@ public class PipelineRunner
             }
             catch (Exception ex)
             {
-                AnsiConsole.MarkupLine($"\n[bold red]Pipeline Halted at '{step.Name}':[/] {ex.Message}");
+                CliMarkup.Line($"\n[bold red]Pipeline Halted at '{step.Name}':[/] {ex.Message}");
                 throw;
             }
         }

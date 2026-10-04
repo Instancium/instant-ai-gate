@@ -167,7 +167,7 @@ public class CliHostedService : IHostedService
         }
         catch (ContextOverflowException ex)
         {
-            AnsiConsole.MarkupLine($"\n[bold yellow]Context Window Boundary Reached![/] [{ex.PastTokens} + {ex.IncomingTokens} + {ex.ReservedTokens} > {ex.ContextSize} tokens]");
+            CliMarkup.Line($"\n[bold yellow]Context Window Boundary Reached![/] [[{ex.PastTokens} + {ex.IncomingTokens} + {ex.ReservedTokens} > {ex.ContextSize} tokens]]");
             await HandleContextOverflowMitigationAsync(ex, cancellationToken);
         }
         catch (Exception ex) when (ex.Message.Contains("was not found", StringComparison.OrdinalIgnoreCase))

@@ -31,6 +31,6 @@ public class GenerateCommitMessageStep : IPipelineStep
 
         string diffStat = await _gitService.GetCachedDiffStatAsync(cancellationToken);
         context.CommitMessage = await _diffAnalyzer.AnalyzeAndSummarizeAsync(diff, diffStat, cancellationToken);
-        Spectre.Console.AnsiConsole.MarkupLine($"[green]Generated Message:[/] {context.CommitMessage}");
+        CliMarkup.Line($"[green]Generated Message:[/] {context.CommitMessage}");
     }
 }

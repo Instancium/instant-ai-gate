@@ -50,7 +50,7 @@ public sealed class LoadCommand : IConsoleCommand
 
             _session.ActiveModelId = modelId;
             _session.ClearHistory();
-            AnsiConsole.MarkupLine($"[green]Model {displayName} successfully loaded and ready for inference![/]");
+            CliMarkup.Line($"[green]Model {displayName} successfully loaded and ready for inference![/]");
         }
         catch (Exception ex)
         {
