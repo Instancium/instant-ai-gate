@@ -9,7 +9,8 @@ namespace InstantAIGate.Core.Dtos.Inference;
 public sealed class ModelContext : IDisposable
 {
     private bool _disposed;
-    private Action<IContextHandle>? _onDispose;
+    private Action<IContextHandle, bool>? _onDispose;
+    public bool SuppressPool { get; set; }
     private readonly IContextHandle _handle;
 
     /// <summary>
@@ -17,14 +18,15 @@ public sealed class ModelContext : IDisposable
     /// </summary>
     public IContextHandle Handle => _handle;
 
+
     /// <summary>
     /// Initializes a new instance of the model context.
     /// </summary>
     /// <param name="handle">Native context handle.</param>
     /// <param name="onDispose">Callback to execute on disposal.</param>
-    public ModelContext(IContextHandle handle, Action<IContextHandle> onDispose)
+    public ModelContext(IContextHandle handle, Action<IContextHandle, bool> onDispose)
     {
-        _handle = handle;
+        _handle = handle ?? throw new ArgumentNullException(nameof(handle));
         _onDispose = onDispose;
     }
 
@@ -35,9 +37,9 @@ public sealed class ModelContext : IDisposable
     public void AttachOnDispose(Action callback)
     {
         var originalOnDispose = _onDispose;
-        _onDispose = ptr =>
+        _onDispose = (ptr, suppress) =>
         {
-            originalOnDispose?.Invoke(ptr);
+            originalOnDispose?.Invoke(ptr, suppress);
             callback?.Invoke();
         };
     }
@@ -49,7 +51,7 @@ public sealed class ModelContext : IDisposable
     {
         if (_disposed) return;
 
-        _onDispose?.Invoke(_handle);
+        _onDispose?.Invoke(_handle, SuppressPool);
         _disposed = true;
     }
 }

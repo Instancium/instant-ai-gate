@@ -21,4 +21,5 @@ public interface IModelManager : IDisposable
     IEnumerable<ModelRegistryStatus> GetActiveModelsStatus();
     IEnumerable<string> GetActiveModels();
     IEnumerable<NativeModelDetails> GetNativeDetails();
+    Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default);
 }

@@ -223,6 +223,25 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         }
     }
 
+    public Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default)
+    {
+        if (_hubConnection == null)
+        {
+            throw new InvalidOperationException("Cannot purge VRAM: not connected to Remote Gateway.");
+        }
+        return _hubConnection.InvokeAsync("PurgeIdleContextsAsync", repoId, ct);
+    }
+
+    public Task DestroySessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (_hubConnection == null)
+        {
+            throw new InvalidOperationException("Cannot destroy session: not connected to Remote Gateway.");
+        }
+
+        return _hubConnection.InvokeAsync("DestroySession", sessionId, ct);
+    }
+
     public async IAsyncEnumerable<string> StreamChatAsync(
         string sessionId, string repoId, ChatMessage deltaMessage, [EnumeratorCancellation] CancellationToken ct)
     {

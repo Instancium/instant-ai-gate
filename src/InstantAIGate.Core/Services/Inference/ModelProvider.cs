@@ -1,5 +1,4 @@
-﻿// File: src/InstantAIGate.Core/Services/Inference/ModelProvider.cs
-namespace InstantAIGate.Core.Services.Inference;
+﻿namespace InstantAIGate.Core.Services.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
@@ -142,7 +141,6 @@ public class ModelProvider : IModelProvider, IDisposable
             throw new ArgumentException("Config and RepoId required.", nameof(config));
 
         // NO MORE DIRECTORY SCANNING HERE. The paths are strictly resolved by IModelLocator.
-
         var repoId = config.RepoId;
         var initLock = _initLocks.GetOrAdd(repoId, _ => new SemaphoreSlim(1, 1));
 
@@ -203,7 +201,7 @@ public class ModelProvider : IModelProvider, IDisposable
         if (_pools.TryGetValue(repoId, out var pool) && pool.TryTake(out IContextHandle? ctxHandle))
         {
             _backendFacade.ClearContextMemory(ctxHandle, true);
-            textContext = new ModelContext(ctxHandle, ptr => ReturnContextToPool(repoId, ptr));
+            textContext = new ModelContext(ctxHandle, (ptr, suppress) => ReturnContextToPool(repoId, ptr, suppress));
         }
         else
         {
@@ -214,17 +212,16 @@ public class ModelProvider : IModelProvider, IDisposable
                 if (_pools.TryGetValue(repoId, out pool) && pool.TryTake(out ctxHandle))
                 {
                     _backendFacade.ClearContextMemory(ctxHandle, true);
-                    textContext = new ModelContext(ctxHandle, ptr => ReturnContextToPool(repoId, ptr));
+                    textContext = new ModelContext(ctxHandle, (ptr, suppress) => ReturnContextToPool(repoId, ptr, suppress));
                 }
                 else if (_modelCache.TryGetValue(repoId, out IModelHandle? modelHandle) && _configCache.TryGetValue(repoId, out var config))
                 {
-                    // Core no longer knows about 'flashAttn' enums or 'ggml_type'. It just passes the config.
                     IContextHandle newCtxHandle = _backendFacade.CreateContext(modelHandle, config);
 
                     if (newCtxHandle == null)
                         throw new InvalidOperationException($"Failed to create context for '{repoId}'.");
 
-                    textContext = new ModelContext(newCtxHandle, ptr => ReturnContextToPool(repoId, ptr));
+                    textContext = new ModelContext(newCtxHandle, (ptr, suppress) => ReturnContextToPool(repoId, ptr, suppress));
                 }
                 else
                 {
@@ -245,15 +242,16 @@ public class ModelProvider : IModelProvider, IDisposable
         return new InferenceContext(textContext, requestVisionContext);
     }
 
-    private void ReturnContextToPool(string repoId, IContextHandle ctxHandle)
+    private void ReturnContextToPool(string repoId, IContextHandle ctxHandle, bool suppressPool)
     {
         if (ctxHandle == null) return;
 
         try
         {
-            if (!_modelCache.ContainsKey(repoId))
+            if (suppressPool || !_modelCache.ContainsKey(repoId))
             {
-                _logger.LogInformation("Model '{RepoId}' is no longer active. Freeing orphaned context.", repoId);
+                _logger.LogInformation("Context explicitly destroyed or model inactive. Releasing VRAM handle directly for '{RepoId}'.", repoId);
+                _backendFacade.ClearContextMemory(ctxHandle, true);
                 _backendFacade.FreeContext(ctxHandle);
                 return;
             }
@@ -265,6 +263,24 @@ public class ModelProvider : IModelProvider, IDisposable
         {
             _logger.LogError(ex, "Failed to pool context for '{RepoId}'. Freeing natively.", repoId);
             _backendFacade.FreeContext(ctxHandle);
+        }
+    }
+
+    public void PurgeIdleContexts(string repoId)
+    {
+        if (_pools.TryGetValue(repoId, out var pool))
+        {
+            int purgedCount = 0;
+            while (pool.TryTake(out IContextHandle? ctxHandle))
+            {
+                _backendFacade.ClearContextMemory(ctxHandle, true);
+                _backendFacade.FreeContext(ctxHandle);
+                purgedCount++;
+            }
+            if (purgedCount > 0)
+            {
+                _logger.LogInformation("Purged {Count} idle contexts for model '{RepoId}'.", purgedCount, repoId);
+            }
         }
     }
 
@@ -323,7 +339,7 @@ public class ModelProvider : IModelProvider, IDisposable
             RepoId = r,
             ContextSize = c?.ContextSize ?? 2048,
             GpuLayers = c?.GpuLayerCount ?? 0,
-            TotalLayers = totalLayers, 
+            TotalLayers = totalLayers,
             Threads = c?.Threads ?? 4,
             FlashAttention = c?.FlashAttention ?? false,
             IdleContextsCount = p?.Count ?? 0,

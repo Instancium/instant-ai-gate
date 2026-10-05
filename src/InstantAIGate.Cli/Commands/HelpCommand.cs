@@ -14,7 +14,7 @@ public class HelpCommand : IConsoleCommand
 
     private static readonly HashSet<string> ReleaseCommands = new(StringComparer.OrdinalIgnoreCase)
     {
-        "/vc", "/release", "/commit"
+        "/vc", "/release"
     };
 
     public HelpCommand(IServiceProvider serviceProvider)

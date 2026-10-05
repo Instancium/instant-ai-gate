@@ -9,14 +9,6 @@
 |    \--- model_catalog.json
 +--- deploy
 |    +--- docker
-|    |    +--- data
-|    |    |    \--- models
-|    |    |         +--- _assets
-|    |    |         \--- qwen3-vl-8b-instruct
-|    |    |              +--- mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf.tmp
-|    |    |              +--- mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf.tmp.meta.json
-|    |    |              +--- Qwen3VL-8B-Instruct-Q4_K_M.gguf.tmp
-|    |    |              \--- Qwen3VL-8B-Instruct-Q4_K_M.gguf.tmp.meta.json
 |    |    +--- .env
 |    |    +--- docker-compose.yml
 |    |    \--- Dockerfile

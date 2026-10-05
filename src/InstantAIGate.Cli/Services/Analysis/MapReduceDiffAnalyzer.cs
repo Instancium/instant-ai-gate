@@ -125,7 +125,7 @@ public class MapReduceDiffAnalyzer : IDiffAnalyzer
         }
         finally
         {
-            await _gatewayClient.EndSessionAsync(pipelineSessionId, CancellationToken.None);
+            await _gatewayClient.DestroySessionAsync(pipelineSessionId, ct);
         }
     }
 

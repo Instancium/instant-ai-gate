@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 
@@ -25,7 +26,6 @@ using System.Threading.Tasks;
 public class GatewayHub : Hub<IGatewayHubClient>
 {
     public const string AdminGroupName = "GatewayAdminGroup";
-
     private readonly ISessionInferenceManager _sessionManager;
     private readonly IInferenceEngine _inferenceEngine;
     private readonly IModelManager _modelManager;
@@ -91,25 +91,33 @@ public class GatewayHub : Hub<IGatewayHubClient>
                 _logger.LogTrace(ex, "Failed to send initial metrics snapshot to admin caller {ConnectionId}", Context.ConnectionId);
             }
         }
-
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        if (Context.Items.TryGetValue("SessionId", out var sessionIdObj) && sessionIdObj is string sessionId)
+        if (Context.Items.TryGetValue("SessionIds", out var sessionsObj) && sessionsObj is HashSet<string> sessions)
         {
-            try
+            string[] sessionsToRelease;
+            lock (sessions)
             {
-                await _sessionManager.ReleaseSessionAsync(sessionId, Context.ConnectionAborted);
-                _logger.LogInformation("Cleaned up orphaned session {SessionId} on disconnect for connection {ConnectionId}", sessionId, Context.ConnectionId);
+                sessionsToRelease = sessions.ToArray();
             }
-            catch (Exception ex)
+
+            foreach (var sessionId in sessionsToRelease)
             {
-                _logger.LogWarning(ex, "Failed to gracefully release session {SessionId} during disconnection", sessionId);
+                try
+                {
+                    // Regular pool return on disconnect
+                    await _sessionManager.ReleaseSessionAsync(sessionId, false, Context.ConnectionAborted);
+                    _logger.LogInformation("Cleaned up orphaned session {SessionId} on disconnect for connection {ConnectionId}", sessionId, Context.ConnectionId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to gracefully release session {SessionId} during disconnection", sessionId);
+                }
             }
         }
-
         await base.OnDisconnectedAsync(exception);
     }
 
@@ -123,31 +131,23 @@ public class GatewayHub : Hub<IGatewayHubClient>
         try
         {
             var snapshot = _stateManager.GetSnapshot();
-
-            // 1. Top-Level Operational Status Guards (Preconditions)
             if (snapshot.Status == GatewayOperationalStatus.ModelDownloading)
             {
                 string progressStr = snapshot.ProgressPercentage.ToString("F1", CultureInfo.InvariantCulture);
-                await Clients.Caller.ReceiveError(
-                    $"Server is downloading startup model '{snapshot.ActiveModelId}' ({progressStr}%). Please wait.");
+                await Clients.Caller.ReceiveError($"Server is downloading startup model '{snapshot.ActiveModelId}' ({progressStr}%). Please wait.");
                 return;
             }
-
             if (snapshot.Status == GatewayOperationalStatus.ModelLoading)
             {
-                await Clients.Caller.ReceiveError(
-                    $"Server is loading startup model '{snapshot.ActiveModelId}' into memory. Please wait.");
+                await Clients.Caller.ReceiveError($"Server is loading startup model '{snapshot.ActiveModelId}' into memory. Please wait.");
                 return;
             }
-
             if (snapshot.Status == GatewayOperationalStatus.Faulted)
             {
-                await Clients.Caller.ReceiveError(
-                    $"Server startup failed: {snapshot.ErrorMessage}");
+                await Clients.Caller.ReceiveError($"Server startup failed: {snapshot.ErrorMessage}");
                 return;
             }
 
-            // 2. Active Model Resolution
             if (string.IsNullOrWhiteSpace(repoId))
             {
                 var activeSettings = _modelManager.GetActiveSettings();
@@ -156,7 +156,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
                     await Clients.Caller.ReceiveError("No active model is loaded on Remote Gateway. Server has no model in memory.");
                     return;
                 }
-
                 repoId = activeSettings.RepoId;
             }
             else
@@ -171,7 +170,21 @@ public class GatewayHub : Hub<IGatewayHubClient>
 
             var request = new SessionStartRequest(sessionId, repoId);
             await _sessionManager.CreateSessionAsync(request, Context.ConnectionAborted);
-            Context.Items["SessionId"] = sessionId;
+
+            // Session multiplexing for the connection
+            lock (Context.Items)
+            {
+                if (!Context.Items.TryGetValue("SessionIds", out var obj) || obj is not HashSet<string> sessionIds)
+                {
+                    sessionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    Context.Items["SessionIds"] = sessionIds;
+                }
+                lock (sessionIds)
+                {
+                    sessionIds.Add(sessionId);
+                }
+            }
+
             _logger.LogInformation("Client {ConnectionId} joined session {SessionId} for repo {RepoId}", Context.ConnectionId, sessionId, repoId);
         }
         catch (Exception ex)
@@ -185,9 +198,35 @@ public class GatewayHub : Hub<IGatewayHubClient>
     public async Task LeaveSession(string sessionId)
     {
         _logger.LogInformation("Client explicitly requested release of session {SessionId}", sessionId);
-        await _sessionManager.ReleaseSessionAsync(sessionId, Context.ConnectionAborted);
-        Context.Items.Remove("SessionId");
+
+        // Standard exit returns the slot to the pool
+        await _sessionManager.ReleaseSessionAsync(sessionId, false, Context.ConnectionAborted);
+
+        RemoveSessionFromConnection(sessionId);
         await Clients.Caller.ReceiveSessionClosed(sessionId);
+    }
+
+    [Authorize(Policy = "GatewayUser")]
+    public async Task DestroySession(string sessionId)
+    {
+        _logger.LogInformation("Client explicitly requested DESTRUCTION of session slot {SessionId}", sessionId);
+
+        // destroySlot: true ensures bypass pool execution
+        await _sessionManager.ReleaseSessionAsync(sessionId, true, Context.ConnectionAborted);
+
+        RemoveSessionFromConnection(sessionId);
+        await Clients.Caller.ReceiveSessionClosed(sessionId);
+    }
+
+    private void RemoveSessionFromConnection(string sessionId)
+    {
+        if (Context.Items.TryGetValue("SessionIds", out var obj) && obj is HashSet<string> sessions)
+        {
+            lock (sessions)
+            {
+                sessions.Remove(sessionId);
+            }
+        }
     }
 
     [Authorize(Policy = "GatewayUser")]
@@ -200,7 +239,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
             {
                 await Clients.Caller.ReceiveTokenDelta(new SessionTokenDelta(sessionId, token));
             }
-
             await Clients.Caller.ReceiveTokenDelta(new SessionTokenDelta(sessionId, string.Empty, IsDone: true, FinishReason: "stop"));
         }
         catch (ContextOverflowException ex)
@@ -282,6 +320,13 @@ public class GatewayHub : Hub<IGatewayHubClient>
     #region Control Plane (GatewayAdmin)
 
     [Authorize(Policy = "GatewayAdmin")]
+    public async Task PurgeIdleContextsAsync(string repoId)
+    {
+        _logger.LogInformation("Admin requested idle context purge for repo {RepoId}", repoId);
+        await _modelManager.PurgeIdleContextsAsync(repoId, Context.ConnectionAborted);
+    }
+
+    [Authorize(Policy = "GatewayAdmin")]
     public Task<IEnumerable<ModelRegistryStatus>> GetModelsAsync()
     {
         return Task.FromResult(_modelManager.GetActiveModelsStatus());
@@ -304,6 +349,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
 
         var config = BuildModelSettings(targetModel, profile);
         _stateManager.SetLoading(repoId, $"Loading model '{repoId}' into memory");
+
         try
         {
             await _modelManager.LoadModelAsync(config, Context.ConnectionAborted);
@@ -327,6 +373,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
 
         var config = BuildModelSettings(targetModel, profile);
         _stateManager.SetLoading(repoId, $"Swapping to model '{repoId}'");
+
         try
         {
             await _modelManager.SwapModelAsync(config, Context.ConnectionAborted);
@@ -379,7 +426,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
         {
             throw new HubException("Queue limit must be greater than zero.");
         }
-
         _queueManager.UpdateQueueLimit(limit);
         return Task.CompletedTask;
     }

@@ -137,7 +137,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            await _sessionManager.ReleaseSessionAsync(sessionId, CancellationToken.None);
+            await _sessionManager.ReleaseSessionAsync(sessionId, destroySlot: true, CancellationToken.None);
         }
 
         string fullResponse = responseBuilder.ToString();

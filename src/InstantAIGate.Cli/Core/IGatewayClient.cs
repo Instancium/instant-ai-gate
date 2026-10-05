@@ -29,4 +29,7 @@ public interface IGatewayClient
     event Action<string, string, string>? LogReceived;
     event Action<DownloadProgress>? DownloadProgressReceived;
     event Action<GatewayStatusDetails>? GatewayStatusReceived;
+    Task DestroySessionAsync(string sessionId, CancellationToken ct = default);
+
+    Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default);
 }
