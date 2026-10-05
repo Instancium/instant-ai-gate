@@ -63,28 +63,38 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _idleTimeout = idleTimeout ?? TimeSpan.FromMinutes(10);
-        _cleanupTimer = _timeProvider.CreateTimer(
-            _ => _ = CleanupIdleSessionsAsync(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
-    }
 
+        _cleanupTimer = _timeProvider.CreateTimer(
+            _ => _ = CleanupIdleSessionsAsync(),
+            null,
+            TimeSpan.FromMinutes(1),
+            TimeSpan.FromMinutes(1));
+    }
 
     public Task CreateSessionAsync(SessionStartRequest request, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var entry = new StatefulSessionEntry(request, _timeProvider.GetUtcNow());
+
         if (!_sessions.TryAdd(request.SessionId, entry))
         {
             throw new InvalidOperationException($"Session '{request.SessionId}' is already registered.");
         }
+
         return Task.CompletedTask;
     }
 
-    public Task ReleaseSessionAsync(string sessionId, CancellationToken ct = default)
+    public Task ReleaseSessionAsync(string sessionId, bool destroySlot = false, CancellationToken ct = default)
     {
         if (_sessions.TryRemove(sessionId, out var session))
         {
+            if (destroySlot && session.ActiveContext != null)
+            {
+                session.ActiveContext.SuppressPool = true;
+            }
+
             session.Dispose();
-            _logger.LogInformation("Released session state for {SessionId}", sessionId);
+            _logger.LogInformation("Released session state for {SessionId} (DestroySlot: {DestroySlot})", sessionId, destroySlot);
         }
         return Task.CompletedTask;
     }
@@ -103,10 +113,12 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
     public async Task<IDisposable> AcquireSessionExecutionGateAsync(string sessionId, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (!_sessions.TryGetValue(sessionId, out var session))
         {
             throw new KeyNotFoundException($"Session '{sessionId}' is not active.");
         }
+
         session.Touch(_timeProvider.GetUtcNow());
         await session.ExecutionGate.WaitAsync(ct);
         return new Releaser(session.ExecutionGate);
@@ -115,12 +127,14 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
     public async Task<InferenceContext> GetOrCreateContextAsync(string sessionId, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (!_sessions.TryGetValue(sessionId, out var session))
         {
             throw new KeyNotFoundException($"Session '{sessionId}' is not active.");
         }
 
         session.Touch(_timeProvider.GetUtcNow());
+
         if (session.ActiveContext != null)
         {
             return session.ActiveContext;
@@ -144,6 +158,7 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
     public async Task RollbackToPositionAsync(string sessionId, int targetTokenPosition, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (!_sessions.TryGetValue(sessionId, out var session))
         {
             throw new KeyNotFoundException($"Session '{sessionId}' was not found.");
@@ -162,11 +177,11 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
 
                 if (session.ActiveContext?.TextContext?.Handle is IContextHandle handle)
                 {
-                    // llama_memory_seq_rm(seq_id=0, p0=targetTokenPosition, p1=-1)
                     _backendFacade.RemoveContextMemoryRange(handle, 0, targetTokenPosition, -1);
                 }
 
                 session.PastTokens = targetTokenPosition;
+
                 if (session.TokenSequence.Count > targetTokenPosition)
                 {
                     session.TokenSequence.RemoveRange(
@@ -183,6 +198,7 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
     public async Task ShiftMemoryRangeAsync(string sessionId, int startPos, int count, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (!_sessions.TryGetValue(sessionId, out var session))
         {
             throw new KeyNotFoundException($"Session '{sessionId}' was not found.");
@@ -201,7 +217,6 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
 
                 if (session.ActiveContext?.TextContext?.Handle is IContextHandle handle)
                 {
-                    // Fail-Safe Guard: Check native shift capability prior to mutating state
                     if (!_backendFacade.CanShiftContextMemory(handle))
                     {
                         throw new NotSupportedException(
@@ -213,20 +228,21 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
                     bool removed = _backendFacade.RemoveContextMemoryRange(handle, 0, startPos, startPos + count);
                     if (!removed)
                     {
-                        throw new InvalidOperationException(
-                            $"Failed to remove KV memory range [{startPos}, {startPos + count}) natively.");
+                        throw new InvalidOperationException($"Failed to remove KV memory range [{startPos}, {startPos + count}) natively.");
                     }
 
                     _backendFacade.ShiftContextMemoryRange(handle, 0, startPos + count, -1, -count);
                 }
 
                 session.PastTokens -= count;
+
                 if (session.TokenSequence.Count >= (startPos + count))
                 {
                     session.TokenSequence.RemoveRange(startPos, count);
                 }
 
                 session.Touch(_timeProvider.GetUtcNow());
+
                 _logger.LogDebug(
                     "Session {SessionId} shifted KV range: removed {Count} tokens starting at {StartPos}",
                     sessionId, count, startPos);
@@ -290,7 +306,8 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
             if (now - kvp.Value.LastAccessed > _idleTimeout)
             {
                 _logger.LogInformation("Evicting expired idle session {SessionId}", kvp.Key);
-                await ReleaseSessionAsync(kvp.Key);
+                // Return to pool for idle evictions
+                await ReleaseSessionAsync(kvp.Key, destroySlot: false);
             }
         }
     }
@@ -300,10 +317,12 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
         if (_disposed) return;
         _disposed = true;
         _cleanupTimer.Dispose();
+
         foreach (var session in _sessions.Values)
         {
             session.Dispose();
         }
+
         _sessions.Clear();
     }
 

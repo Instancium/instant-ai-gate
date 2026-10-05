@@ -17,6 +17,13 @@ public sealed class InferenceContext : IDisposable
     /// </summary>
     public VisionContext? VisionContext { get; }
 
+
+    public bool SuppressPool
+    {
+        get => TextContext.SuppressPool;
+        set => TextContext.SuppressPool = value;
+    }
+
     /// <summary>
     /// Initializes a new instance of the inference context.
     /// </summary>

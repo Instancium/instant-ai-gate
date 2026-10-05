@@ -40,6 +40,11 @@ public class GatewayClientProxy : IGatewayClient
         client.GatewayStatusReceived += s => GatewayStatusReceived?.Invoke(s);
     }
 
+    public Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default) =>
+    _activeClient.PurgeIdleContextsAsync(repoId, ct);
+
+    public Task DestroySessionAsync(string sessionId, CancellationToken ct = default) => _activeClient.DestroySessionAsync(sessionId, ct);
+
     public async Task SwitchToRemoteAsync(string baseUrl, string apiKey, CancellationToken ct = default)
     {
         using var probeClient = _httpClientFactory.CreateClient();

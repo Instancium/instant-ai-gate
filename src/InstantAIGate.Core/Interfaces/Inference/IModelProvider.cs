@@ -54,4 +54,6 @@ public interface IModelProvider : IDisposable
     /// Gets native backend details for all loaded models.
     /// </summary>
     IEnumerable<NativeModelDetails> GetNativeDetails();
+
+    void PurgeIdleContexts(string repoId);
 }

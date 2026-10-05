@@ -81,10 +81,20 @@ public class LocalGatewayClient : IGatewayClient
             yield return chunk;
         }
     }
+    public Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default)
+    {
+        return _modelManager.PurgeIdleContextsAsync(repoId, ct);
+    }
+
 
     public Task EndSessionAsync(string sessionId, CancellationToken ct = default)
     {
-        return _sessionManager.ReleaseSessionAsync(sessionId, ct);
+        return _sessionManager.ReleaseSessionAsync(sessionId,destroySlot: false, ct);
+    }
+
+    public Task DestroySessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        return _sessionManager.ReleaseSessionAsync(sessionId, destroySlot: true, ct);
     }
 
     public Task ConnectTelemetryAsync(

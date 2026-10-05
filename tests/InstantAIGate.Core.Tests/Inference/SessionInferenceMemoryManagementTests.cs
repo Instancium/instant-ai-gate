@@ -29,7 +29,7 @@ public sealed class SessionInferenceMemoryManagementTests : IDisposable
         _mockContextHandle = new Mock<IContextHandle>();
         _timeProvider = new FakeTimeProvider();
 
-        var textModelContext = new ModelContext(_mockContextHandle.Object, _ => { });
+        var textModelContext = new ModelContext(_mockContextHandle.Object, (ptr, suppress) => { });
         var inferenceContext = new InferenceContext(textModelContext, visionContext: null);
 
         _mockModelManager

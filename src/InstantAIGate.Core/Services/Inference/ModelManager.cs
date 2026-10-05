@@ -39,6 +39,13 @@ public sealed class ModelManager : IDisposable, IModelManager
         _isDraining = false;
     }
 
+
+    public Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default)
+    {
+        _modelProvider.PurgeIdleContexts(repoId);
+        return Task.CompletedTask;
+    }
+
     public NativeModelDetails GetActiveModelDetails()
     {
         if (_activeConfig == null)
