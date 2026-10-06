@@ -7,7 +7,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 $ErrorActionPreference = "Continue"
 
 $ServiceName = "InstantAIGate.Server"
-$InstallDir  = "C:\ProgramData\InstantAIGate\Server"
+$InstallDir  = "C:\ProgramData\Instancium\InstantAIGate\Server"
 
 Write-Host ">>> Stopping and removing Windows Service: $ServiceName..." -ForegroundColor Cyan
 
