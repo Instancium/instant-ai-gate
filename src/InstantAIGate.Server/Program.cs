@@ -1,6 +1,8 @@
 namespace InstantAIGate.Server;
 
 using InstantAIGate.Core.Dtos.Config;
+using InstantAIGate.Core.Interfaces.Session;
+using InstantAIGate.Core.Services.Session;
 using InstantAIGate.Native.DependencyInjection;
 using InstantAIGate.Server.Configuration;
 using InstantAIGate.Server.Diagnostics;
@@ -39,12 +41,16 @@ public class Program
 
         builder.Services.AddInstantAIGateInference();
         builder.Services.AddInstantAIGateSSR();
-
         builder.Services.AddSignalR();
+
+        builder.Services.AddSingleton<IEphemeralSessionRegistry, EphemeralSessionRegistry>();
+        builder.Services.AddSingleton<ISessionReaperService, SessionReaperService>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<ISessionReaperService>());
 
         var signalRLoggerProvider = new SignalRLoggerProvider();
         builder.Services.AddSingleton<ILoggerProvider>(signalRLoggerProvider);
         builder.Services.AddHostedService(sp => signalRLoggerProvider);
+
         builder.Services.AddHostedService<MetricsBroadcasterWorker>();
 
         var downloadChannel = Channel.CreateUnbounded<DownloadJob>();

@@ -6,6 +6,7 @@ using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Exceptions;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Interfaces.Session;
 using InstantAIGate.Server.Services.Workers;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
@@ -36,6 +37,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
     private readonly ChannelWriter<DownloadJob> _downloadChannelWriter;
     private readonly IGatewayStateManager _stateManager;
     private readonly ILogger<GatewayHub> _logger;
+    private readonly IEphemeralSessionRegistry _ephemeralRegistry;
 
     public GatewayHub(
         ISessionInferenceManager sessionManager,
@@ -47,7 +49,8 @@ public class GatewayHub : Hub<IGatewayHubClient>
         IOptions<StorageSettings> storageSettings,
         ChannelWriter<DownloadJob> downloadChannelWriter,
         IGatewayStateManager stateManager,
-        ILogger<GatewayHub> logger)
+        ILogger<GatewayHub> logger,
+        IEphemeralSessionRegistry ephemeralRegistry)
     {
         _sessionManager = sessionManager;
         _inferenceEngine = inferenceEngine;
@@ -59,6 +62,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         _downloadChannelWriter = downloadChannelWriter;
         _stateManager = stateManager;
         _logger = logger;
+        _ephemeralRegistry = ephemeralRegistry;
     }
 
     #region Connection Lifecycle
@@ -79,7 +83,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, AdminGroupName);
             _logger.LogInformation("Admin connection {ConnectionId} added to {Group}", Context.ConnectionId, AdminGroupName);
-
             try
             {
                 var metrics = _modelManager.GetMetrics();
@@ -91,6 +94,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
                 _logger.LogTrace(ex, "Failed to send initial metrics snapshot to admin caller {ConnectionId}", Context.ConnectionId);
             }
         }
+
         await base.OnConnectedAsync();
     }
 
@@ -108,7 +112,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
             {
                 try
                 {
-                    // Regular pool return on disconnect
                     await _sessionManager.ReleaseSessionAsync(sessionId, false, Context.ConnectionAborted);
                     _logger.LogInformation("Cleaned up orphaned session {SessionId} on disconnect for connection {ConnectionId}", sessionId, Context.ConnectionId);
                 }
@@ -118,7 +121,35 @@ public class GatewayHub : Hub<IGatewayHubClient>
                 }
             }
         }
+
+        var ephemeralSessionsToDestroy = _ephemeralRegistry.NotifyConnectionDisconnected(Context.ConnectionId);
+        foreach (var sessionId in ephemeralSessionsToDestroy)
+        {
+            try
+            {
+                await _sessionManager.ReleaseSessionAsync(sessionId, true, CancellationToken.None);
+                _logger.LogInformation("Destroyed ephemeral session {SessionId} on disconnect for connection {ConnectionId}", sessionId, Context.ConnectionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to destroy ephemeral session {SessionId} during disconnection", sessionId);
+            }
+        }
+
         await base.OnDisconnectedAsync(exception);
+    }
+
+    #endregion
+
+    #region Ephemeral Session Management
+
+    [Authorize(Policy = "GatewayUser")]
+    public Task MarkSessionAsEphemeral(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        _ephemeralRegistry.RegisterEphemeralSession(Context.ConnectionId, sessionId);
+        _logger.LogInformation("Session {SessionId} marked as ephemeral for connection {ConnectionId}", sessionId, Context.ConnectionId);
+        return Task.CompletedTask;
     }
 
     #endregion
@@ -137,11 +168,13 @@ public class GatewayHub : Hub<IGatewayHubClient>
                 await Clients.Caller.ReceiveError($"Server is downloading startup model '{snapshot.ActiveModelId}' ({progressStr}%). Please wait.");
                 return;
             }
+
             if (snapshot.Status == GatewayOperationalStatus.ModelLoading)
             {
                 await Clients.Caller.ReceiveError($"Server is loading startup model '{snapshot.ActiveModelId}' into memory. Please wait.");
                 return;
             }
+
             if (snapshot.Status == GatewayOperationalStatus.Faulted)
             {
                 await Clients.Caller.ReceiveError($"Server startup failed: {snapshot.ErrorMessage}");
@@ -171,7 +204,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
             var request = new SessionStartRequest(sessionId, repoId);
             await _sessionManager.CreateSessionAsync(request, Context.ConnectionAborted);
 
-            // Session multiplexing for the connection
             lock (Context.Items)
             {
                 if (!Context.Items.TryGetValue("SessionIds", out var obj) || obj is not HashSet<string> sessionIds)
@@ -179,6 +211,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
                     sessionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     Context.Items["SessionIds"] = sessionIds;
                 }
+
                 lock (sessionIds)
                 {
                     sessionIds.Add(sessionId);
@@ -198,10 +231,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
     public async Task LeaveSession(string sessionId)
     {
         _logger.LogInformation("Client explicitly requested release of session {SessionId}", sessionId);
-
-        // Standard exit returns the slot to the pool
         await _sessionManager.ReleaseSessionAsync(sessionId, false, Context.ConnectionAborted);
-
         RemoveSessionFromConnection(sessionId);
         await Clients.Caller.ReceiveSessionClosed(sessionId);
     }
@@ -210,10 +240,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
     public async Task DestroySession(string sessionId)
     {
         _logger.LogInformation("Client explicitly requested DESTRUCTION of session slot {SessionId}", sessionId);
-
-        // destroySlot: true ensures bypass pool execution
         await _sessionManager.ReleaseSessionAsync(sessionId, true, Context.ConnectionAborted);
-
         RemoveSessionFromConnection(sessionId);
         await Clients.Caller.ReceiveSessionClosed(sessionId);
     }
@@ -239,6 +266,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
             {
                 await Clients.Caller.ReceiveTokenDelta(new SessionTokenDelta(sessionId, token));
             }
+
             await Clients.Caller.ReceiveTokenDelta(new SessionTokenDelta(sessionId, string.Empty, IsDone: true, FinishReason: "stop"));
         }
         catch (ContextOverflowException ex)
@@ -349,7 +377,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
 
         var config = BuildModelSettings(targetModel, profile);
         _stateManager.SetLoading(repoId, $"Loading model '{repoId}' into memory");
-
         try
         {
             await _modelManager.LoadModelAsync(config, Context.ConnectionAborted);
@@ -373,7 +400,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
 
         var config = BuildModelSettings(targetModel, profile);
         _stateManager.SetLoading(repoId, $"Swapping to model '{repoId}'");
-
         try
         {
             await _modelManager.SwapModelAsync(config, Context.ConnectionAborted);
@@ -438,7 +464,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
     {
         var profileName = profile ?? "Default";
         var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
-
         return new ModelSettings
         {
             RepoId = targetModel.Id,
