@@ -44,7 +44,7 @@ public class ParallelModelDownloaderTests : IDisposable
         string tempPath = destPath + ".tmp";
         string manifestPath = tempPath + ".meta.json";
 
-       
+
         long totalSize = SynthOptions.ParallelDownloadFileSizeBytes;
         long chunkSize = totalSize / 4; // MaxDegreesOfParallelism = 4
         long preDownloaded = chunkSize / 2;
@@ -66,11 +66,11 @@ public class ParallelModelDownloaderTests : IDisposable
 
         // Assert
         Assert.True(File.Exists(destPath));
-        Assert.False(File.Exists(tempPath));      
-        Assert.False(File.Exists(manifestPath));  
+        Assert.False(File.Exists(tempPath));
+        Assert.False(File.Exists(manifestPath));
         Assert.Equal(totalSize, new FileInfo(destPath).Length);
 
-  
+
         Assert.NotEmpty(progressList);
         var finalProgress = progressList.Last();
         Assert.Equal(100f, finalProgress.Percentage);

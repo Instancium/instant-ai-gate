@@ -1,18 +1,18 @@
 namespace InstantAIGate.Core.Tests.Server;
 
+using InstantAIGate.Core.Tests.TestConfiguration;
+using InstantAIGate.Server;
+using InstantAIGate.SSR.Contracts;
+using InstantAIGate.SSR.Dtos;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using InstantAIGate.Core.Tests.TestConfiguration;
-using InstantAIGate.SSR.Contracts;
-using InstantAIGate.SSR.Dtos;
-using InstantAIGate.Server;
 
 public class GatewayTestFixture : WebApplicationFactory<Program>
 {

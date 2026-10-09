@@ -5,7 +5,6 @@ using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Tests.TestConfiguration;
 using InstantAIGate.Server;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

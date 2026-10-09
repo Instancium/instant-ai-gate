@@ -74,7 +74,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                 long size = 0;
                 bool acceptRanges = false;
 
-    
+
                 using var rangeRequest = new HttpRequestMessage(HttpMethod.Get, url);
                 rangeRequest.Headers.Range = new RangeHeaderValue(0, 0);
                 using var rangeResponse = await _httpClient.SendAsync(rangeRequest, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
@@ -86,7 +86,7 @@ public class ParallelModelDownloader : IModelDownloader, IDisposable
                 }
                 else if (rangeResponse.IsSuccessStatusCode)
                 {
-            
+
                     size = rangeResponse.Content.Headers.ContentLength ?? 0;
                 }
                 else

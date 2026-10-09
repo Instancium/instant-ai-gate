@@ -1,11 +1,11 @@
 ﻿namespace InstantAIGate.Server.Middleware;
 
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
 
 public class ApiKeyAuthMiddleware
 {

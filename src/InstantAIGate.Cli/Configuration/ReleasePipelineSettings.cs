@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.Cli.Configuration
+﻿namespace InstantAIGate.Cli.Configuration
 {
     public class ReleasePipelineSettings
     {

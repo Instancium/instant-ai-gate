@@ -152,7 +152,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
         string formattedDelta = await ApplyChatTemplateAsync(repoId, new[] { deltaMessage }, ct);
         int[] deltaTokens = await TokenizeDataAsync(repoId, formattedDelta, ct);
 
-        
+
         if (pastTokens > 0 && deltaTokens.Length > 0)
         {
             int bosTokenId = LlamaNative.llama_vocab_bos(vocab);
@@ -307,7 +307,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
             var singleTokenBatch = LlamaNative.llama_batch_init(1, 0, 1);
 
-         
+
             try
             {
                 while (generatedCount < maxTokensToGenerate)
@@ -359,11 +359,11 @@ public class LlamaInference : IInferenceEngine, IDisposable
             }
             finally
             {
-              
+
                 LlamaNative.llama_batch_free(singleTokenBatch);
             }
 
-       
+
             int finalChars = utf8Decoder.GetChars(Array.Empty<byte>(), 0, 0, charBuffer, 0, flush: true);
             if (finalChars > 0)
             {

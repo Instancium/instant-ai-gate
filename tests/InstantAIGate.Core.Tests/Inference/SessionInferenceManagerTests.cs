@@ -1,6 +1,5 @@
 ﻿namespace InstantAIGate.Core.Tests.Inference;
 
-using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Services.Inference;

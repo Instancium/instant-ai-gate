@@ -1,7 +1,5 @@
 namespace InstantAIGate.Core.Tests.TestConfiguration;
 
-using System;
-
 public sealed class TestServerOptions
 {
     public const string SectionName = "InstantAIGate:TestServer";
