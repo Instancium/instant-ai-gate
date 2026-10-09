@@ -25,4 +25,12 @@ public interface IEphemeralSessionRegistry
     /// <param name="connectionId">The SignalR connection identifier that was disconnected.</param>
     /// <returns>A list of session identifiers that must be forcibly destroyed.</returns>
     IReadOnlyList<string> NotifyConnectionDisconnected(string connectionId);
+
+    /// <summary>
+    /// Drains and returns ephemeral sessions that have been registered longer than the specified timeout.
+    /// Used by the background reaper to recover sessions missed by hard process crashes.
+    /// </summary>
+    /// <param name="olderThan">The maximum age of sessions to consider orphaned.</param>
+    /// <returns>A list of session identifiers that must be forcibly destroyed.</returns>
+    IReadOnlyList<string> DrainOrphanedSessions(TimeSpan olderThan);
 }
