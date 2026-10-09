@@ -8,7 +8,6 @@ using InstantAIGate.Core.Dtos.Inference;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -56,7 +55,7 @@ public class MergeAndPublishStep : IPipelineStep
                 await _gitService.MergeNoFastForwardAsync(originalBranch, $"chore(release): merge {originalBranch} into {targetBranch} for {versionTag}", cancellationToken);
                 await _gitService.PushBranchAsync(targetBranch, cancellationToken);
 
-           
+
                 ctx.Status("Generating AI Release Notes...");
                 string lastTag = string.Empty;
                 try
@@ -65,7 +64,7 @@ public class MergeAndPublishStep : IPipelineStep
                 }
                 catch { }
 
-              
+
                 string gitLog = await _gitService.GetGitLogWithStatusAsync(lastTag, cancellationToken);
                 string releaseNotes = await GenerateChangelogAsync(gitLog, cancellationToken);
 

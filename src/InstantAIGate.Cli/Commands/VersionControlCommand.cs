@@ -7,7 +7,6 @@ using InstantAIGate.Cli.Services;
 using InstantAIGate.Cli.State;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -38,9 +37,9 @@ public class VersionControlCommand : IConsoleCommand
         CliSession session,
         GitAddAllStep addStep,
         GenerateCommitMessageStep generateCommitStep,
-        GitCommitAndPushStep pushStep, 
-        BumpVersionStep bumpStep, 
-        RunUnitTestsStep testStep, 
+        GitCommitAndPushStep pushStep,
+        BumpVersionStep bumpStep,
+        RunUnitTestsStep testStep,
         MergeAndPublishStep publishStep, IGitService gitService)
     {
         _gatewayClient = gatewayClient;

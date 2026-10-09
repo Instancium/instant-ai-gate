@@ -1,7 +1,7 @@
 ﻿namespace InstantAIGate.Core.Dtos.Session;
 
-using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Config;
+using InstantAIGate.Core.Dtos.Inference;
 
 public sealed record SessionPromptDelta(
     string SessionId,

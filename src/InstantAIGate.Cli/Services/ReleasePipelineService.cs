@@ -7,7 +7,6 @@ using InstantAIGate.Core.Dtos.Inference;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -298,7 +297,7 @@ public class ReleasePipelineService
                     await ExecuteProcessAsync("gh", $"release create v{state.NewVersion} -t \"Release v{state.NewVersion}\" -F \"{finalNotesFile}\" {preReleaseFlag}", cancellationToken);
 
                     ctx.Status("Uploading Windows asset...");
-       
+
                     await ExecuteProcessAsync("gh", $"release upload v{state.NewVersion} \"{zipPath}\"", cancellationToken);
                     File.Delete(finalNotesFile);
 
@@ -500,16 +499,16 @@ public class ReleasePipelineService
         Commit Log:
         {gitLog}";
 
-        
+
         var deltaMessage = new ChatMessage("user", prompt);
         var sb = new StringBuilder();
 
-       
+
         string pipelineSessionId = $"release-notes-{Guid.NewGuid():N}";
 
         await _gatewayClient.LoadModelAsync(_settings.AiModelId, cancellationToken);
 
-       
+
         await foreach (var chunk in _gatewayClient.StreamChatAsync(pipelineSessionId, _settings.AiModelId, deltaMessage, cancellationToken))
         {
             sb.Append(chunk);

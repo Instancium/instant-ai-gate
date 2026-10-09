@@ -13,7 +13,7 @@ $Port        = 5000
 $AdminApiKey = "ChangeMeSuperSecureAdminApiKey123"
 
 # Installation paths
-$InstallDir  = "C:\ProgramData\InstantAIGate\Server"
+$InstallDir  = "C:\ProgramData\Instancium\InstantAIGate\Server"
 $ExePath     = Join-Path $InstallDir "InstantAIGate.Server.exe"
 $ConfigPath  = Join-Path $InstallDir "appsettings.json"
 

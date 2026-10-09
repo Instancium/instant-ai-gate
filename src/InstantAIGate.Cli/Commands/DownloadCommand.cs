@@ -3,7 +3,6 @@
 using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Config;
-using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
 using Microsoft.Extensions.Options;

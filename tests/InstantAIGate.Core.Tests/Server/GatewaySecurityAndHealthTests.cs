@@ -1,10 +1,10 @@
 namespace InstantAIGate.Core.Tests.Server;
 
+using InstantAIGate.Core.Tests.TestConfiguration;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
-using InstantAIGate.Core.Tests.TestConfiguration;
 using Xunit;
 
 public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>

@@ -1,7 +1,6 @@
 ﻿namespace InstantAIGate.Server.Services.Workers;
 
 using InstantAIGate.Core.Dtos.Config;
-using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Server.Configuration;
 using InstantAIGate.Server.Hubs;

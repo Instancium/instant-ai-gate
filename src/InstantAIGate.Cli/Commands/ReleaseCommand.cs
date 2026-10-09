@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-
-namespace InstantAIGate.Cli.Commands;
+﻿namespace InstantAIGate.Cli.Commands;
 
 using InstantAIGate.Cli.Services;
 using Spectre.Console;

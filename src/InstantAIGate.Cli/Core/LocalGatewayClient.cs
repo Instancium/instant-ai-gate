@@ -89,7 +89,7 @@ public class LocalGatewayClient : IGatewayClient
 
     public Task EndSessionAsync(string sessionId, CancellationToken ct = default)
     {
-        return _sessionManager.ReleaseSessionAsync(sessionId,destroySlot: false, ct);
+        return _sessionManager.ReleaseSessionAsync(sessionId, destroySlot: false, ct);
     }
 
     public Task DestroySessionAsync(string sessionId, CancellationToken ct = default)

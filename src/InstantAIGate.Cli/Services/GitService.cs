@@ -96,7 +96,7 @@ public class GitService : IGitService
         return await _processRunner.ExecuteWithOutputAsync("git", arguments, _workingDirectory, ct);
     }
 
-  
+
     public async Task<string> GetGitLogWithStatusAsync(string fromTag, CancellationToken ct)
     {
         string range = string.IsNullOrWhiteSpace(fromTag) ? "-n 20" : $"{fromTag.Trim()}..HEAD";

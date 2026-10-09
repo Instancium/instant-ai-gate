@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace InstantAIGate.Cli.Services;
+﻿namespace InstantAIGate.Cli.Services;
 
 using System.Threading;
 using System.Threading.Tasks;

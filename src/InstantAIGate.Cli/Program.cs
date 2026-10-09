@@ -108,7 +108,7 @@ public static class Program
 
                     var proxy = new GatewayClientProxy(sp, httpClientFactory, initial);
 
-     
+
                     proxy.LogReceived += (level, category, message) =>
                     {
                         if (debugState.IsEnabled)

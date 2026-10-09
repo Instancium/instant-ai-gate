@@ -2,7 +2,6 @@
 
 using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.State;
-using InstantAIGate.Core.Dtos.Status;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Threading;
