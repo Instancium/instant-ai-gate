@@ -58,8 +58,19 @@ Dedicated, secure telemetry hub (`/hub/telemetry`) streaming high-fidelity data 
 InstantAIGate is designed around a decoupled, stateful architecture that isolates client orchestration from the gateway server and underlying native execution backends.
 
 <p align="center">
-<img src="media/architecture-diagram.jpg" alt="InstantAIGate Architecture Diagram" width="800"/>
+<img src="media/architecture.svg" alt="InstantAIGate Architecture Diagram" width="800"/>
 </p>
+
+#### Client Integration & Protocol Contract
+The complete wire contract of the InstantAIGate gateway is formally documented in the **[Client Integration Guide](docs/client-integration-guide.md)**. This document serves as the single source of truth for external developers and covers:
+* Authentication mechanisms and role-based access control (RBAC).
+* Complete SignalR Hub method signatures (Client → Server) and callbacks (Server → Client).
+* Strict DTO schemas and the session memory model (KV-cache lifecycle, VRAM slots, ephemeral sessions).
+* Canonical client patterns for interactive chat, Map-Reduce pipelines, and reconnection logic.
+
+#### Typed Contracts for .NET
+For C# / .NET developers, we provide the **[InstantAIGate.Core](https://www.nuget.org/packages/InstantAIGate.Core/)** NuGet package. It contains all strongly-typed DTOs (`InstantAIGate.Core.Dtos.*`) and interfaces, eliminating the need to manually parse JSON payloads and ensuring compile-time safety when interacting with the gateway.
+
 
 #### System Layers
 
