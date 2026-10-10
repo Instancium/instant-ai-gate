@@ -58,7 +58,7 @@ Dedicated, secure telemetry hub (`/hub/telemetry`) streaming high-fidelity data 
 InstantAIGate is designed around a decoupled, stateful architecture that isolates client orchestration from the gateway server and underlying native execution backends.
 
 <p align="center">
-<img src="media/architecture-diagram-alt.jpg" alt="InstantAIGate Architecture Diagram" width="800"/>
+<img src="media/architecture.svg" alt="InstantAIGate Architecture Diagram" width="800"/>
 </p>
 
 #### Client Integration & Protocol Contract
