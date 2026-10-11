@@ -148,8 +148,23 @@ Loading: `LoadModelAsync`; reloading/reallocation: only `SwapModelAsync(repoId, 
 - [ ] Admin functions use Swap for reloading; Load is not used as reload.
 - [ ] No session leaks: audit of active sessionIds upon client process termination is empty.
 
-### 12. Glossary
-*   **KV-slot** — allocated `llama_context` of a session (256–512 MB VRAM).
-*   **Ephemeral session** — a session with a server guarantee of `destroySlot:true` upon connection drop.
-*   **Checkpoint** — token position up to which `RollbackSession` is executed to reuse the prefix.
-*   **Pool** — a set of warm model contexts with cleared KV.
+## 12. Glossary
+
+#### Core Entities
+*   **RepoId** — unique identifier for a model (e.g., `qwen3-vl-8b-instruct`, `qwen3-32b`).
+*   **Session** — a logical conversation context tied to a specific `RepoId` and `SessionId`. Maintains `PastTokens` counter and `TokenSequence` (the logical token history mirror).
+*   **KV-slot** — an allocated `llama_context` bound to a session. Physically holds the KV-cache in VRAM.
+*   **Checkpoint** — a token position up to which `RollbackSession` truncates the KV-cache to reuse the prefix.
+*   **Pool** — a set of warm `llama_context` handles with cleared KV-cache, kept ready to accelerate new session creation.
+
+#### Session Lifecycle
+*   **Ephemeral Session** — a session explicitly marked by the client (`MarkSessionAsEphemeral`) with a server-side guarantee of `destroySlot: true` upon SignalR disconnection. VRAM is freed deterministically.
+*   **Context Shift (Sliding Window)** — the operation of removing a range of tokens from the middle of the KV-cache (`llama_memory_seq_rm`) and shifting the remaining tokens (`llama_memory_seq_add`) to free up space without losing the system prompt. Requires `llama_memory_can_shift() == true` (disabled under FlashAttention or heavy GPU offload).
+*   **Prefix Tree Pool** — a caching mechanism (`PrefixTreeContextPool`) that reuses partially computed KV-cache states based on matching token prefixes to accelerate Time-To-First-Token (TTFT).
+
+#### Infrastructure
+*   **SSR (in this context)** — Server-Side Rendering of model downloads and catalog management (`InstantAIGate.SSR` project). NOT React/Blazor SSR.
+*   **GatewayHub** — the central SignalR hub orchestrating the data plane (inference streaming) and control plane (model loading, queue management).
+*   **Hardware Profile** — a named configuration bundle (`HardwareProfileSettings`) defining context size, KV quantization, GPU layers, and max concurrent contexts for a given model class.
+
+---
