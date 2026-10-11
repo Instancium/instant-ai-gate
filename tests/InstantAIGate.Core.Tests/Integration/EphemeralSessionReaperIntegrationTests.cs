@@ -1,6 +1,5 @@
 ﻿namespace InstantAIGate.Core.Tests.Integration;
 
-using FluentAssertions;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Interfaces.Session;
 using InstantAIGate.Core.Services.Session;
@@ -25,11 +24,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
-/// <summary>
-/// Chaos tests verifying deterministic VRAM release when physical connections drop abruptly.
-/// Hard disconnects are simulated server-side by aborting the underlying connection,
-/// ensuring the client never gets a chance to call DestroySession gracefully.
-/// </summary>
 public class EphemeralSessionReaperIntegrationTests : IClassFixture<ChaosTestFixture>
 {
     private readonly ChaosTestFixture _fixture;
@@ -44,7 +38,6 @@ public class EphemeralSessionReaperIntegrationTests : IClassFixture<ChaosTestFix
     [Fact]
     public async Task HardDisconnect_EphemeralSession_DestroysWithinTwoSeconds()
     {
-        // Arrange
         var mockSessionManager = _fixture.MockSessionInferenceManager;
         mockSessionManager.Reset();
 
@@ -67,16 +60,14 @@ public class EphemeralSessionReaperIntegrationTests : IClassFixture<ChaosTestFix
             })
             .Returns(Task.CompletedTask);
 
-        // Act: abort the physical connection server-side, without any graceful client close
         if (!_fixture.TryAbortConnection(connection.ConnectionId!))
         {
             await connection.StopAsync();
         }
 
-        // Assert
         var completedTask = await Task.WhenAny(releaseCalled.Task, Task.Delay(2000));
-        completedTask.Should().Be(releaseCalled.Task, "ephemeral session must be destroyed within 2000ms after hard disconnect");
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(2000, "VRAM must be released deterministically");
+        Assert.Same(releaseCalled.Task, completedTask);
+        Assert.True(stopwatch.ElapsedMilliseconds < 2000, "VRAM must be released deterministically");
 
         mockSessionManager.Verify(
             m => m.ReleaseSessionAsync(sessionId, true, It.IsAny<CancellationToken>()),
@@ -90,7 +81,6 @@ public class EphemeralSessionReaperIntegrationTests : IClassFixture<ChaosTestFix
     [Fact]
     public async Task HardDisconnect_MultipleEphemeralSessions_AllDestroyedDeterministically()
     {
-        // Arrange
         var mockSessionManager = _fixture.MockSessionInferenceManager;
         mockSessionManager.Reset();
 
@@ -112,16 +102,14 @@ public class EphemeralSessionReaperIntegrationTests : IClassFixture<ChaosTestFix
                 .Returns(Task.CompletedTask);
         }
 
-        // Act
         if (!_fixture.TryAbortConnection(connection.ConnectionId!))
         {
             await connection.StopAsync();
         }
 
-        // Assert
-        releaseCountdown.Wait(2000).Should().BeTrue("all ephemeral sessions must be destroyed within 2000ms");
+        Assert.True(releaseCountdown.Wait(2000), "all ephemeral sessions must be destroyed within 2000ms");
         stopwatch.Stop();
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(2000, "all VRAM slots must be released deterministically");
+        Assert.True(stopwatch.ElapsedMilliseconds < 2000, "all VRAM slots must be released deterministically");
 
         foreach (var sessionId in sessionIds)
         {
@@ -137,7 +125,6 @@ public class EphemeralSessionReaperIntegrationTests : IClassFixture<ChaosTestFix
     [Fact]
     public async Task HardDisconnect_NonEphemeralSession_IsNotForceDestroyed()
     {
-        // Arrange
         var mockSessionManager = _fixture.MockSessionInferenceManager;
         mockSessionManager.Reset();
 
@@ -147,7 +134,6 @@ public class EphemeralSessionReaperIntegrationTests : IClassFixture<ChaosTestFix
         const string sessionId = "persistent-session-1";
         await connection.InvokeAsync("JoinSession", sessionId, string.Empty);
 
-        // Act
         if (!_fixture.TryAbortConnection(connection.ConnectionId!))
         {
             await connection.StopAsync();
@@ -155,7 +141,6 @@ public class EphemeralSessionReaperIntegrationTests : IClassFixture<ChaosTestFix
 
         await Task.Delay(500);
 
-        // Assert: regular sessions must never be force-destroyed on disconnect
         mockSessionManager.Verify(
             m => m.ReleaseSessionAsync(sessionId, true, It.IsAny<CancellationToken>()),
             Times.Never,
@@ -165,15 +150,11 @@ public class EphemeralSessionReaperIntegrationTests : IClassFixture<ChaosTestFix
     }
 }
 
-/// <summary>
-/// Deterministic tests for the background reaper cleanup pass, driven by a fake clock.
-/// </summary>
 public class SessionReaperCleanupTests
 {
     [Fact]
     public async Task CleanupOrphanedSessions_SessionsOlderThanThreshold_AreForceReleased()
     {
-        // Arrange
         var timeProvider = new FakeTimeProvider();
         var registry = new EphemeralSessionRegistry(timeProvider);
         var mockSessionManager = new Mock<ISessionInferenceManager>();
@@ -182,10 +163,8 @@ public class SessionReaperCleanupTests
         registry.RegisterEphemeralSession("dead-connection", "orphan-1");
         timeProvider.Advance(TimeSpan.FromMinutes(3));
 
-        // Act
         await reaper.CleanupOrphanedSessionsAsync(CancellationToken.None);
 
-        // Assert
         mockSessionManager.Verify(
             m => m.ReleaseSessionAsync("orphan-1", true, It.IsAny<CancellationToken>()),
             Times.Once,
@@ -195,7 +174,6 @@ public class SessionReaperCleanupTests
     [Fact]
     public async Task CleanupOrphanedSessions_FreshSessions_AreNotReleased()
     {
-        // Arrange
         var timeProvider = new FakeTimeProvider();
         var registry = new EphemeralSessionRegistry(timeProvider);
         var mockSessionManager = new Mock<ISessionInferenceManager>();
@@ -203,10 +181,8 @@ public class SessionReaperCleanupTests
 
         registry.RegisterEphemeralSession("alive-connection", "fresh-1");
 
-        // Act
         await reaper.CleanupOrphanedSessionsAsync(CancellationToken.None);
 
-        // Assert
         mockSessionManager.Verify(
             m => m.ReleaseSessionAsync(It.IsAny<string>(), true, It.IsAny<CancellationToken>()),
             Times.Never,
@@ -214,16 +190,11 @@ public class SessionReaperCleanupTests
     }
 }
 
-/// <summary>
-/// Test-only fixture exposing a server-side connection abort capability.
-/// </summary>
 public class ChaosTestFixture : WebApplicationFactory<Program>
 {
     public Mock<ISessionInferenceManager> MockSessionInferenceManager { get; } = new();
     public TestServerOptions ServerOptions { get; } = TestConfig.Server;
-
     public ILoggerFactory LoggerFactory => Server.Services.GetRequiredService<ILoggerFactory>();
-
     private ConnectionAbortRegistry AbortRegistry => Server.Services.GetRequiredService<ConnectionAbortRegistry>();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -254,20 +225,12 @@ public class ChaosTestFixture : WebApplicationFactory<Program>
             .Build();
     }
 
-    /// <summary>
-    /// Aborts the physical connection on the server side, simulating a hard network drop.
-    /// </summary>
-    /// <param name="connectionId">The server-assigned connection identifier.</param>
-    /// <returns>True when the abort was initiated server-side; false when a client-side fallback is required.</returns>
     public bool TryAbortConnection(string connectionId)
     {
         return AbortRegistry.TryAbort(connectionId);
     }
 }
 
-/// <summary>
-/// Test-only registry holding server-side abort handles captured at connection time.
-/// </summary>
 public sealed class ConnectionAbortRegistry
 {
     private readonly ConcurrentDictionary<string, AbortEntry> _entries = new();
@@ -307,10 +270,6 @@ public sealed class ConnectionAbortRegistry
     private sealed record AbortEntry(IConnectionLifetimeFeature? LifetimeFeature, HttpContext? HttpContext);
 }
 
-/// <summary>
-/// Test-only hub filter capturing the abort handles for each established connection.
-/// Registered exclusively in the test fixture, production DI never sees this type.
-/// </summary>
 public sealed class ConnectionCaptureFilter : IHubFilter
 {
     private readonly ConnectionAbortRegistry _registry;

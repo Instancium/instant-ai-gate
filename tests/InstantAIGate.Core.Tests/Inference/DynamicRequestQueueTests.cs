@@ -1,7 +1,5 @@
-﻿// tests/InstantAIGate.Core.Tests/Inference/DynamicRequestQueueTests.cs
-namespace InstantAIGate.Core.Tests.Inference;
+﻿namespace InstantAIGate.Core.Tests.Inference;
 
-using FluentAssertions;
 using InstantAIGate.Core.Exceptions;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Services.Inference;
@@ -13,16 +11,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
-/// <summary>
-/// Integration tests verifying the lock-free concurrency, deterministic timeouts, 
-/// and dynamic resizing capabilities of the DynamicRequestQueue.
-/// </summary>
 public class DynamicRequestQueueTests
 {
-    /// <summary>
-    /// Verifies that the queue strictly enforces its capacity limit under heavy concurrent load.
-    /// Expects exactly 'limit' number of successful allocations and the rest to be rejected with QueueFullException.
-    /// </summary>
     [Fact]
     public async Task EnqueueRequestAsync_WithConcurrentRequests_StrictlyEnforcesQueueLimit()
     {
@@ -54,10 +44,6 @@ public class DynamicRequestQueueTests
         Assert.Equal(50, queue.PendingCount);
     }
 
-    /// <summary>
-    /// Verifies that a paused queue will correctly time out waiting requests.
-    /// Expects a TimeoutException to be thrown when the virtual time advances past the timeout duration.
-    /// </summary>
     [Fact]
     public async Task EnqueueRequestAsync_WhenPaused_ThrowsTimeoutExceptionAfterDeterministicWait()
     {
@@ -66,19 +52,13 @@ public class DynamicRequestQueueTests
         queue.Pause();
 
         var enqueueTask = queue.EnqueueRequestAsync("tenant-1", TimeSpan.FromSeconds(10));
-
         Assert.False(enqueueTask.IsCompleted);
 
         timeProvider.Advance(TimeSpan.FromSeconds(11));
-
         await Assert.ThrowsAsync<TimeoutException>(() => enqueueTask);
         Assert.Equal(0, queue.PendingCount);
     }
 
-    /// <summary>
-    /// Verifies that dynamically reducing the queue capacity takes immediate effect.
-    /// Expects new requests to be rejected immediately if the new capacity is lower than or equal to current load.
-    /// </summary>
     [Fact]
     public async Task UpdateQueueLimit_ReducesCapacity_CorrectlyRejectsNewRequests()
     {
@@ -90,11 +70,9 @@ public class DynamicRequestQueueTests
         {
             leases.Add(await queue.EnqueueRequestAsync($"tenant-{i}", TimeSpan.FromSeconds(1)));
         }
-
         Assert.Equal(5, queue.PendingCount);
 
         queue.UpdateQueueLimit(5);
-
         await Assert.ThrowsAsync<QueueFullException>(() =>
             queue.EnqueueRequestAsync("tenant-6", TimeSpan.FromSeconds(1)));
 
@@ -106,24 +84,20 @@ public class DynamicRequestQueueTests
         Assert.Equal(5, queue.PendingCount);
     }
 
-
     [Fact]
     public async Task EnqueueRequestAsync_NotifiesMetricsEventSourceOnStateChange()
     {
         var eventSource = new MetricsEventSource();
         using var queue = new DynamicRequestQueue(10, TimeProvider.System, eventSource);
 
-        eventSource.Reader.TryRead(out _).Should().BeFalse();
+        Assert.False(eventSource.Reader.TryRead(out _));
 
         var lease = await queue.EnqueueRequestAsync("tenant-1", TimeSpan.FromSeconds(1));
-
-        eventSource.Reader.TryRead(out bool signaledOnEnqueue).Should().BeTrue();
-        signaledOnEnqueue.Should().BeTrue();
+        Assert.True(eventSource.Reader.TryRead(out bool signaledOnEnqueue));
+        Assert.True(signaledOnEnqueue);
 
         lease.Dispose();
-
-        eventSource.Reader.TryRead(out bool signaledOnRelease).Should().BeTrue();
-        signaledOnRelease.Should().BeTrue();
+        Assert.True(eventSource.Reader.TryRead(out bool signaledOnRelease));
+        Assert.True(signaledOnRelease);
     }
-
 }

@@ -1,6 +1,5 @@
 ﻿namespace InstantAIGate.Core.Tests.Inference;
 
-using FluentAssertions;
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
@@ -20,7 +19,6 @@ public class LlamaInferenceProtectionTests : IClassFixture<GatewayTestFixture>
     public LlamaInferenceProtectionTests(GatewayTestFixture fixture)
     {
         _fixture = fixture;
-        // Ensure native libraries are loaded for P/Invoke execution
         InstantAIGate.Native.Bindings.NativeLibraryLoader.Load();
     }
 
@@ -34,7 +32,6 @@ public class LlamaInferenceProtectionTests : IClassFixture<GatewayTestFixture>
         string repoId = TestConfig.Model.RepoId;
         string sessionId = $"overflow-test-{Guid.NewGuid():N}";
 
-        // 1. Load model directly via domain service, bypassing HTTP and Auth Middleware
         var activeConfig = modelManager.GetActiveSettings();
         if (activeConfig == null || activeConfig.RepoId != repoId)
         {
@@ -49,7 +46,6 @@ public class LlamaInferenceProtectionTests : IClassFixture<GatewayTestFixture>
                 VisionSupport = loadOptions.VisionSupport,
                 Type = loadOptions.VisionSupport ? ModelType.Vlm : ModelType.Llm
             };
-
             await modelManager.LoadModelAsync(config);
             activeConfig = modelManager.GetActiveSettings();
         }
@@ -58,12 +54,12 @@ public class LlamaInferenceProtectionTests : IClassFixture<GatewayTestFixture>
 
         try
         {
-            // 2. Artificially saturate the session's KV-cache counter to 10 tokens below the absolute limit
             int contextLimit = activeConfig!.ContextSize;
             sessionManager.UpdatePastTokensCount(sessionId, contextLimit - 10);
 
-            // 3. Provide a prompt that will definitively exceed the remaining 10 tokens + required reserve
-            var deltaMessage = new ChatMessage("user", "This is a long test prompt that will definitively exceed the remaining context limit and trigger the Fail-Safe Guard.");
+            var deltaMessage = new ChatMessage(
+                "user",
+                "This is a long test prompt that will definitively exceed the remaining context limit and trigger the Fail-Safe Guard.");
 
             var enumerator = inferenceEngine.StreamDeltaGenerationAsync(sessionId, deltaMessage);
 
@@ -72,13 +68,11 @@ public class LlamaInferenceProtectionTests : IClassFixture<GatewayTestFixture>
                 await foreach (var _ in enumerator) { }
             };
 
-            // 4. Assert that the Fail-Safe Guard triggers a deterministic ContextOverflowException
-            await act.Should().ThrowAsync<ContextOverflowException>()
-                .Where(ex => ex.SessionId == sessionId);
+            var ex = await Assert.ThrowsAsync<ContextOverflowException>(act);
+            Assert.Equal(sessionId, ex.SessionId);
         }
         finally
         {
-            // Clean up session context gracefully
             await sessionManager.ReleaseSessionAsync(sessionId);
         }
     }

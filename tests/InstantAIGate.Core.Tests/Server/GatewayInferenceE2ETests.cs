@@ -1,6 +1,5 @@
 namespace InstantAIGate.Core.Tests.Server;
 
-using FluentAssertions;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Interfaces.Inference;
@@ -40,7 +39,6 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
     {
         var modelManager = _fixture.Services.GetRequiredService<IModelManager>();
         var activeConfig = modelManager.GetActiveSettings();
-
         if (activeConfig == null)
         {
             await using var adminConn = CreateGatewayConnection(_fixture.ServerOptions.AdminApiKey);
@@ -77,10 +75,10 @@ public class GatewayInferenceE2ETests : IClassFixture<GatewayTestFixture>
         await hubConnection.InvokeAsync("SendPromptDelta", sessionId, message);
 
         var result = await Task.WhenAny(tcs.Task, Task.Delay(30000));
-        result.Should().Be(tcs.Task, "The model must respond within timeout via GatewayHub");
+        Assert.Same(tcs.Task, result);
 
         var text = await tcs.Task;
-        text.Should().NotBeNullOrWhiteSpace();
+        Assert.False(string.IsNullOrWhiteSpace(text));
 
         await hubConnection.InvokeAsync("LeaveSession", sessionId);
         await hubConnection.StopAsync();

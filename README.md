@@ -1,11 +1,14 @@
 <p align="center">
-<img src="media/ig-logo.png" alt="InstantAIGate logo" height="180" />
+  <img src="media/ig-logo.png" alt="InstantAIGate logo" height="180" />
 </p>
+
 <p align="center">
- <a href="#-quick-start-60s"> <img src="https://img.shields.io/badge/GHCR-Available-blue?style=flat-square&logo=github" alt="GitHub Container Registry"> </a>
- <img src="https://img.shields.io/badge/Hardware-CPU%20%26%20GPU-flash?style=flat-square" alt="Hardware Support">
- <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-orange?style=flat-square" alt="OpenAI API">
- <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/.NET-10-512BD4?style=flat-square&logo=.net&logoColor=white" alt=".NET 10">
+  <img src="https://img.shields.io/badge/SignalR-Real--Time-blueviolet?style=flat-square&logo=.net&logoColor=white" alt="SignalR Real-Time">
+  <img src="https://img.shields.io/badge/Hardware-CPU%20%26%20GPU%20%26%20Vulkan-flash?style=flat-square" alt="Hardware Support">
+  <img src="https://img.shields.io/badge/Engine-llama.cpp-orange?style=flat-square" alt="llama.cpp">
+  <img src="https://img.shields.io/badge/Models-Qwen%20Optimized-0099FF?style=flat-square" alt="Qwen Optimized">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=flat-square" alt="License">
 </p>
 
 InstantAIGate is a high-throughput, deterministic AI inference gateway developed by Instancium, an independent R&D laboratory. Engineered as the laboratory's foundational platform for powering next-generation sovereign applications and intelligent systems, it delivers a compiled, cross-platform .NET 10 architecture with direct native memory bindings to inference engines, establishing Architectural Autonomy and Structural Resilience.
@@ -100,11 +103,20 @@ The low-level C++ boundary executing hardware-accelerated tensor operations:
 > * **Apple Silicon:** via cross-compilation and Metal-Vulkan translation layers where applicable
 > * **Cross-Environment:** Seamless execution on Windows, Linux, and edge devices within your private network perimeter.
 >
-### 📄 License & Trademark
+
+## 📄 License & Trademark
+
 Copyright (c) 2026 Instancium™ (https://instancium.com). All rights reserved.
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE.txt) file for details.
+### Source Code License
+This project's source code is licensed under the **Apache License 2.0**. See the [LICENSE](LICENSE.txt) file for the full license text and permissions.
 
-#### Branding & Logo Trademark
-The InstantAIGate name, logos, and all branding assets located in any `media` directories are not covered by the Apache 2.0 license.
-Instead, all branding materials and logos throughout the project are licensed under the [Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)](https://creativecommons.org/licenses/by-nc-nd/4.0/).
+### Third-Party Dependencies
+This project incorporates third-party software components, native runtimes, and model weights, each governed by its own respective license. For a comprehensive list of these dependencies, their licenses, and required acknowledgments, please refer to the [Third-Party Notices & Licenses](THIRD-PARTY-NOTICES.md) document.
+
+### Branding & Trademark
+The "InstantAIGate" name, logos, and all associated branding assets (including those located in the `media` directory) are the exclusive property of Instancium and are **not** covered by the Apache License 2.0.
+
+These branding materials are licensed under the [Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License (CC BY-NC-ND 4.0)](https://creativecommons.org/licenses/by-nc-nd/4.0/). 
+- **Permitted Use:** You may use the official logos and name solely to refer to and link to this original project.
+- **Restrictions:** You may not modify the branding assets, use them for commercial purposes, or use the name/logos in a way that implies official endorsement, sponsorship, or affiliation with Instancium without explicit prior written permission.

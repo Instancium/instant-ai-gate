@@ -1,6 +1,5 @@
 ﻿namespace InstantAIGate.Core.Tests.Inference;
 
-using FluentAssertions;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Interfaces.Inference;
@@ -49,6 +48,7 @@ public sealed class SessionInferenceMemoryManagementTests : IDisposable
     {
         const string sessionId = "rollback-session-ok";
         const string repoId = "test-repo";
+
         await _sessionManager.CreateSessionAsync(new SessionStartRequest(sessionId, repoId));
         await _sessionManager.GetOrCreateContextAsync(sessionId);
 
@@ -61,7 +61,7 @@ public sealed class SessionInferenceMemoryManagementTests : IDisposable
 
         await _sessionManager.RollbackToPositionAsync(sessionId, 30);
 
-        _sessionManager.GetPastTokensCount(sessionId).Should().Be(30);
+        Assert.Equal(30, _sessionManager.GetPastTokensCount(sessionId));
         _mockBackendFacade.Verify(
             b => b.RemoveContextMemoryRange(_mockContextHandle.Object, 0, 30, -1),
             Times.Once);
@@ -74,10 +74,9 @@ public sealed class SessionInferenceMemoryManagementTests : IDisposable
         await _sessionManager.CreateSessionAsync(new SessionStartRequest(sessionId, "test-repo"));
         _sessionManager.UpdatePastTokensCount(sessionId, 20);
 
-        var act = () => _sessionManager.RollbackToPositionAsync(sessionId, 25);
-
-        await act.Should().ThrowAsync<ArgumentOutOfRangeException>()
-            .WithParameterName("targetTokenPosition");
+        var ex = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => _sessionManager.RollbackToPositionAsync(sessionId, 25));
+        Assert.Equal("targetTokenPosition", ex.ParamName);
     }
 
     [Fact]
@@ -94,13 +93,11 @@ public sealed class SessionInferenceMemoryManagementTests : IDisposable
             .Setup(b => b.CanShiftContextMemory(_mockContextHandle.Object))
             .Returns(false);
 
-        var act = () => _sessionManager.ShiftMemoryRangeAsync(sessionId, startPos: 10, count: 20);
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(
+            () => _sessionManager.ShiftMemoryRangeAsync(sessionId, startPos: 10, count: 20));
+        Assert.Contains("FlashAttention or GPU offload", ex.Message);
 
-        await act.Should().ThrowAsync<NotSupportedException>()
-            .WithMessage("*FlashAttention or GPU offload*");
-
-        // Assert memory remained uncorrupted
-        _sessionManager.GetPastTokensCount(sessionId).Should().Be(100);
+        Assert.Equal(100, _sessionManager.GetPastTokensCount(sessionId));
         _mockBackendFacade.Verify(
             b => b.RemoveContextMemoryRange(It.IsAny<IContextHandle>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()),
             Times.Never);
@@ -122,24 +119,20 @@ public sealed class SessionInferenceMemoryManagementTests : IDisposable
         _mockBackendFacade
             .Setup(b => b.CanShiftContextMemory(_mockContextHandle.Object))
             .Returns(true);
-
         _mockBackendFacade
             .Setup(b => b.RemoveContextMemoryRange(_mockContextHandle.Object, 0, 2, 6))
             .Returns(true);
 
         await _sessionManager.ShiftMemoryRangeAsync(sessionId, startPos: 2, count: 4);
 
-        _sessionManager.GetPastTokensCount(sessionId).Should().Be(96);
-
+        Assert.Equal(96, _sessionManager.GetPastTokensCount(sessionId));
         _mockBackendFacade.Verify(
             b => b.RemoveContextMemoryRange(_mockContextHandle.Object, 0, 2, 6),
             Times.Once);
-
         _mockBackendFacade.Verify(
             b => b.ShiftContextMemoryRange(_mockContextHandle.Object, 0, 6, -1, -4),
             Times.Once);
-
-        _sessionManager.GetSessionPrefixTokens(sessionId).Should().Equal([1, 2, 7, 8, 9, 10]);
+        Assert.Equal(new[] { 1, 2, 7, 8, 9, 10 }, _sessionManager.GetSessionPrefixTokens(sessionId));
     }
 
     [Fact]
@@ -149,10 +142,9 @@ public sealed class SessionInferenceMemoryManagementTests : IDisposable
         await _sessionManager.CreateSessionAsync(new SessionStartRequest(sessionId, "test-repo"));
         _sessionManager.UpdatePastTokensCount(sessionId, 50);
 
-        var act = () => _sessionManager.ShiftMemoryRangeAsync(sessionId, startPos: 40, count: 15);
-
-        await act.Should().ThrowAsync<ArgumentOutOfRangeException>()
-            .WithParameterName("count");
+        var ex = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => _sessionManager.ShiftMemoryRangeAsync(sessionId, startPos: 40, count: 15));
+        Assert.Equal("count", ex.ParamName);
     }
 
     public void Dispose()
