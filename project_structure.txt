@@ -393,6 +393,7 @@
 +--- LICENSE.txt
 +--- project_structure.txt
 +--- README.md
++--- SECURITY.md
 +--- Show-Structure.ps1
 +--- THIRD-PARTY-NOTICES.md
 \--- TRADEMARK.md
