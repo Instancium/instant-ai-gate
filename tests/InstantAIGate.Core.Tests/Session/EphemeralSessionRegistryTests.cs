@@ -1,12 +1,11 @@
-﻿using FluentAssertions;
+﻿namespace InstantAIGate.Core.Tests.Session;
+
 using InstantAIGate.Core.Services.Session;
 using Microsoft.Extensions.Time.Testing;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
-
-namespace InstantAIGate.Core.Tests.Session;
 
 public sealed class EphemeralSessionRegistryTests
 {
@@ -27,7 +26,8 @@ public sealed class EphemeralSessionRegistryTests
         _registry.RegisterEphemeralSession(connectionId, "session-2");
 
         var sessions = _registry.NotifyConnectionDisconnected(connectionId);
-        sessions.Should().BeEquivalentTo("session-1", "session-2");
+
+        Assert.Equal(new[] { "session-1", "session-2" }, sessions.OrderBy(s => s).ToArray());
     }
 
     [Fact]
@@ -39,8 +39,8 @@ public sealed class EphemeralSessionRegistryTests
         var firstCall = _registry.NotifyConnectionDisconnected(connectionId);
         var secondCall = _registry.NotifyConnectionDisconnected(connectionId);
 
-        firstCall.Should().ContainSingle().Which.Should().Be("session-1");
-        secondCall.Should().BeEmpty();
+        Assert.Single(firstCall, "session-1");
+        Assert.Empty(secondCall);
     }
 
     [Fact]
@@ -52,8 +52,8 @@ public sealed class EphemeralSessionRegistryTests
 
         _registry.UnregisterSession(sessionId);
 
-        _registry.NotifyConnectionDisconnected("conn-1").Should().BeEmpty();
-        _registry.NotifyConnectionDisconnected("conn-2").Should().BeEmpty();
+        Assert.Empty(_registry.NotifyConnectionDisconnected("conn-1"));
+        Assert.Empty(_registry.NotifyConnectionDisconnected("conn-2"));
     }
 
     [Fact]
@@ -65,8 +65,8 @@ public sealed class EphemeralSessionRegistryTests
             _registry.UnregisterSession($"session-{i}");
         }));
 
-        var act = async () => await Task.WhenAll(tasks);
-        await act.Should().NotThrowAsync();
+        var exception = await Record.ExceptionAsync(() => Task.WhenAll(tasks));
+        Assert.Null(exception);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class EphemeralSessionRegistryTests
 
         var orphaned = _registry.DrainOrphanedSessions(TimeSpan.FromMinutes(2));
 
-        orphaned.Should().ContainSingle().Which.Should().Be("session-old");
-        _registry.NotifyConnectionDisconnected("conn-2").Should().ContainSingle().Which.Should().Be("session-new");
+        Assert.Single(orphaned, "session-old");
+        Assert.Single(_registry.NotifyConnectionDisconnected("conn-2"), "session-new");
     }
 }

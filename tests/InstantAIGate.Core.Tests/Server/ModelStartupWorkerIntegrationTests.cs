@@ -1,6 +1,5 @@
 namespace InstantAIGate.Core.Tests.Server;
 
-using FluentAssertions;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Tests.TestConfiguration;
@@ -41,7 +40,7 @@ public class ModelStartupWorkerIntegrationTests : IClassFixture<WebApplicationFa
     {
         var client = _factory.CreateClient();
         var response = await client.GetAsync("/health/live");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -52,9 +51,11 @@ public class ModelStartupWorkerIntegrationTests : IClassFixture<WebApplicationFa
         var modelManager = _factory.Services.GetRequiredService<IModelManager>();
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
         while (!cts.Token.IsCancellationRequested)
         {
             var snapshot = stateManager.GetSnapshot();
+
             if (snapshot.Status == GatewayOperationalStatus.Ready)
             {
                 break;

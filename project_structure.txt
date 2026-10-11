@@ -12,11 +12,17 @@
 |    |    +--- .env
 |    |    +--- docker-compose.yml
 |    |    \--- Dockerfile
+|    +--- nuget
+|    |    \--- create-core-nuget.ps1
 |    \--- windows-service
 |         +--- InstallService.ps1
 |         \--- UninstallService.ps1
++--- docs
+|    \--- client-integration-guide.md
 +--- media
+|    +--- architecture.svg
 |    +--- architecture-diagram.jpg
+|    +--- architecture-diagram-raw.png
 |    +--- dashboard.gif
 |    +--- ig-logo.png
 |    \--- status-ready.png
@@ -24,7 +30,6 @@
 |    +--- InstantAIGate.Cli
 |    |    +--- Commands
 |    |    |    +--- CommandDispatcher.cs
-|    |    |    +--- CommitCommand.cs
 |    |    |    +--- ConnectCommand.cs
 |    |    |    +--- ContextCommand.cs
 |    |    |    +--- DebugCommand.cs
@@ -51,7 +56,6 @@
 |    |    +--- Logging
 |    |    |    +--- DebugStateLogger.cs
 |    |    |    \--- DebugStateLoggerProvider.cs
-|    |    +--- models
 |    |    +--- Pipeline
 |    |    |    \--- Steps
 |    |    |         +--- BumpVersionStep.cs
@@ -126,6 +130,8 @@
 |    |    |    +--- ModelIntegrityException.cs
 |    |    |    \--- QueueFullException.cs
 |    |    +--- Interfaces
+|    |    |    +--- Hub
+|    |    |    |    \--- IGatewayHub.cs
 |    |    |    +--- Inference
 |    |    |    |    +--- IAssetManager.cs
 |    |    |    |    +--- IBackendFacade.cs
@@ -143,10 +149,16 @@
 |    |    |    |    \--- IVisionFacade.cs
 |    |    |    +--- Infrastructure
 |    |    |    |    \--- IMediaContext.cs
-|    |    |    \--- Native
-|    |    |         \--- IBackendHandle.cs
+|    |    |    +--- Native
+|    |    |    |    \--- IBackendHandle.cs
+|    |    |    \--- Session
+|    |    |         +--- IEphemeralSessionRegistry.cs
+|    |    |         \--- ISessionReaperService.cs
 |    |    +--- Services
 |    |    |    +--- Inference
+|    |    |    |    +--- Session
+|    |    |    |    |    +--- EphemeralSessionRegistry.cs
+|    |    |    |    |    \--- SessionReaperService.cs
 |    |    |    |    +--- DynamicRequestQueue.cs
 |    |    |    |    +--- GatewayStateManager.cs
 |    |    |    |    +--- MetricsEventSource.cs
@@ -158,7 +170,9 @@
 |    |    |    \--- Infrastructure
 |    |    |         +--- LocalTempMediaResolver.cs
 |    |    |         \--- MemoryAssetManager.cs
-|    |    \--- InstantAIGate.Core.csproj
+|    |    +--- InstantAIGate.Core.csproj
+|    |    +--- LICENSE
+|    |    \--- README.md
 |    +--- InstantAIGate.Native
 |    |    +--- Bindings
 |    |    |    +--- LlamaNative.cs
@@ -347,13 +361,18 @@
 |    |    |    \--- SessionInferenceMemoryManagementTests.cs
 |    |    +--- Infrastructure
 |    |    |    \--- SyntheticNetworkHandler.cs
+|    |    +--- Integration
+|    |    |    \--- EphemeralSessionReaperIntegrationTests.cs
 |    |    +--- Server
+|    |    |    +--- GatewayHubEphemeralSessionTests.cs
 |    |    |    +--- GatewayHubIntegrationTests.cs
 |    |    |    +--- GatewayInferenceE2ETests.cs
 |    |    |    +--- GatewaySecurityAndHealthTests.cs
 |    |    |    +--- GatewayTestFixture.cs
 |    |    |    +--- ModelReadyHealthCheckTests.cs
 |    |    |    \--- ModelStartupWorkerIntegrationTests.cs
+|    |    +--- Session
+|    |    |    \--- EphemeralSessionRegistryTests.cs
 |    |    +--- TestConfiguration
 |    |    |    +--- TestConfig.cs
 |    |    |    +--- TestModelOptions.cs

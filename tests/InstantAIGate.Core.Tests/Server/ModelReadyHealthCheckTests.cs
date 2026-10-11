@@ -1,6 +1,5 @@
 ﻿namespace InstantAIGate.Core.Tests.Server;
 
-using FluentAssertions;
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
@@ -34,8 +33,8 @@ public sealed class ModelReadyHealthCheckTests
         var context = new HealthCheckContext();
         var result = await _healthCheck.CheckHealthAsync(context);
 
-        result.Status.Should().Be(HealthStatus.Healthy);
-        result.Description.Should().Contain("active-model-8b");
+        Assert.Equal(HealthStatus.Healthy, result.Status);
+        Assert.Contains("active-model-8b", result.Description);
     }
 
     [Fact]
@@ -56,10 +55,10 @@ public sealed class ModelReadyHealthCheckTests
         var context = new HealthCheckContext();
         var result = await _healthCheck.CheckHealthAsync(context);
 
-        result.Status.Should().Be(HealthStatus.Degraded);
-        result.Description.Should().Contain("35.5%");
-        result.Data.Should().ContainKey("progressPercentage");
-        result.Data["progressPercentage"].Should().Be(35.5f);
+        Assert.Equal(HealthStatus.Degraded, result.Status);
+        Assert.Contains("35.5%", result.Description);
+        Assert.True(result.Data.ContainsKey("progressPercentage"));
+        Assert.Equal(35.5f, result.Data["progressPercentage"]);
     }
 
     [Fact]
@@ -77,8 +76,8 @@ public sealed class ModelReadyHealthCheckTests
         var context = new HealthCheckContext();
         var result = await _healthCheck.CheckHealthAsync(context);
 
-        result.Status.Should().Be(HealthStatus.Degraded);
-        result.Description.Should().Contain("Loading weights into VRAM");
+        Assert.Equal(HealthStatus.Degraded, result.Status);
+        Assert.Contains("Loading weights into VRAM", result.Description);
     }
 
     [Fact]
@@ -95,8 +94,8 @@ public sealed class ModelReadyHealthCheckTests
         var context = new HealthCheckContext();
         var result = await _healthCheck.CheckHealthAsync(context);
 
-        result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Description.Should().Contain("Disk out of space");
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        Assert.Contains("Disk out of space", result.Description);
     }
 
     [Fact]
@@ -111,7 +110,7 @@ public sealed class ModelReadyHealthCheckTests
         var context = new HealthCheckContext();
         var result = await _healthCheck.CheckHealthAsync(context);
 
-        result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Description.Should().Be("No active model is loaded in memory.");
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        Assert.Equal("No active model is loaded in memory.", result.Description);
     }
 }

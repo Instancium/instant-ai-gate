@@ -2,6 +2,8 @@
   <Folder Name="/root/">
     <File Path=".gitignore" />
     <File Path="README.md" />
+    <File Path="THIRD-PARTY-NOTICES.md" />
+    <File Path="TRADEMARK.md" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/InstantAIGate.Cli/InstantAIGate.Cli.csproj" />

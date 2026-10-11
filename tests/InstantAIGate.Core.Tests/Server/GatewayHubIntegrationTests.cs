@@ -1,6 +1,5 @@
 ﻿namespace InstantAIGate.Core.Tests.Server;
 
-using FluentAssertions;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Dtos.Status;
@@ -54,8 +53,8 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await using var userConnection = CreateGatewayConnection(_tenantToken);
         await userConnection.StartAsync();
 
-        var act = async () => await userConnection.InvokeAsync<IEnumerable<ModelRegistryStatus>>("GetModelsAsync");
-        await act.Should().ThrowAsync<HubException>();
+        await Assert.ThrowsAsync<HubException>(
+            () => userConnection.InvokeAsync<IEnumerable<ModelRegistryStatus>>("GetModelsAsync"));
     }
 
     [Fact]
@@ -65,11 +64,11 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await adminConnection.StartAsync();
 
         var models = await adminConnection.InvokeAsync<IEnumerable<ModelRegistryStatus>>("GetModelsAsync");
-        models.Should().NotBeNull();
+        Assert.NotNull(models);
 
         await adminConnection.InvokeAsync("SetQueueLimitAsync", 64);
         var queueMetrics = await adminConnection.InvokeAsync<InferenceMetrics>("GetQueueMetricsAsync");
-        queueMetrics.Should().NotBeNull();
+        Assert.NotNull(queueMetrics);
     }
 
     #endregion
@@ -101,7 +100,6 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         });
 
         await userConnection.StartAsync();
-
         string sessionId = $"gw-session-{Guid.NewGuid():N}";
         await userConnection.InvokeAsync("JoinSession", sessionId, _testRepoId);
 
@@ -109,9 +107,9 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await userConnection.InvokeAsync("SendPromptDelta", sessionId, prompt);
 
         var completed = await Task.WhenAny(completionSource.Task, Task.Delay(TimeSpan.FromSeconds(20))) == completionSource.Task;
-        completed.Should().BeTrue("Inference tokens must stream over GatewayHub within timeout");
-        tokensReceived.Should().NotBeEmpty();
-        tokensReceived.Should().Contain(t => t.IsDone && t.FinishReason == "stop");
+        Assert.True(completed, "Inference tokens must stream over GatewayHub within timeout");
+        Assert.NotEmpty(tokensReceived);
+        Assert.Contains(tokensReceived, t => t.IsDone && t.FinishReason == "stop");
 
         await userConnection.InvokeAsync("LeaveSession", sessionId);
     }
@@ -126,7 +124,6 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         {
             await using var userConnection = CreateGatewayConnection(_tenantToken);
             var errorTcs = new TaskCompletionSource<string>();
-
             userConnection.On<string>("ReceiveError", err =>
             {
                 errorTcs.TrySetResult(err);
@@ -136,11 +133,11 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
             await userConnection.InvokeAsync("JoinSession", "session-downloading-test", string.Empty);
 
             var received = await Task.WhenAny(errorTcs.Task, Task.Delay(TimeSpan.FromSeconds(3))) == errorTcs.Task;
-            received.Should().BeTrue("Hub must notify client of downloading status");
+            Assert.True(received, "Hub must notify client of downloading status");
 
             var error = await errorTcs.Task;
-            error.Should().Contain("downloading startup model 'download-target-model'");
-            error.Should().Contain("42.5%");
+            Assert.Contains("downloading startup model 'download-target-model'", error);
+            Assert.Contains("42.5%", error);
         }
         finally
         {
@@ -158,11 +155,13 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await using var userConnection = CreateGatewayConnection(_tenantToken);
         await userConnection.StartAsync();
 
-        var actSubscribe = async () => await userConnection.InvokeAsync("SubscribeToModelDownload", _testRepoId);
-        await actSubscribe.Should().NotThrowAsync();
+        var subscribeEx = await Record.ExceptionAsync(
+            () => userConnection.InvokeAsync("SubscribeToModelDownload", _testRepoId));
+        Assert.Null(subscribeEx);
 
-        var actUnsubscribe = async () => await userConnection.InvokeAsync("UnsubscribeFromModelDownload", _testRepoId);
-        await actUnsubscribe.Should().NotThrowAsync();
+        var unsubscribeEx = await Record.ExceptionAsync(
+            () => userConnection.InvokeAsync("UnsubscribeFromModelDownload", _testRepoId));
+        Assert.Null(unsubscribeEx);
     }
 
     [Fact]
@@ -179,10 +178,10 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await userConnection.StartAsync();
 
         var received = await Task.WhenAny(statusTcs.Task, Task.Delay(TimeSpan.FromSeconds(3))) == statusTcs.Task;
-        received.Should().BeTrue("Connected client must receive initial GatewayStatusDetails snapshot");
+        Assert.True(received, "Connected client must receive initial GatewayStatusDetails snapshot");
 
         var snapshot = await statusTcs.Task;
-        snapshot.Should().NotBeNull();
+        Assert.NotNull(snapshot);
     }
 
     [Fact]
@@ -192,8 +191,9 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await userConnection.StartAsync();
 
         var status = await userConnection.InvokeAsync<GatewayStatusDetails>("GetGatewayStatus");
-        status.Should().NotBeNull();
-        status.Status.Should().BeDefined();
+
+        Assert.NotNull(status);
+        Assert.True(Enum.IsDefined(status.Status));
     }
 
     [Fact]
@@ -219,8 +219,8 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await userConn.StartAsync();
 
         var adminReceived = await Task.WhenAny(adminMetricsTcs.Task, Task.Delay(TimeSpan.FromSeconds(3))) == adminMetricsTcs.Task;
-        adminReceived.Should().BeTrue("Admin must receive metrics broadcast in GatewayAdminGroup");
-        userMetricsReceived.Should().BeFalse("Standard user must not receive system metrics broadcast");
+        Assert.True(adminReceived, "Admin must receive metrics broadcast in GatewayAdminGroup");
+        Assert.False(userMetricsReceived, "Standard user must not receive system metrics broadcast");
     }
 
     [Fact]
@@ -237,13 +237,14 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await adminConn.StartAsync();
         await Task.Delay(2500);
 
-        receivedPacketsCount.Should().Be(1, "Event-driven broadcaster must not send redundant packets during idle state");
+        Assert.Equal(1, receivedPacketsCount);
     }
 
     [Fact]
     public async Task Observability_StateMutation_PushesMetricsImmediately()
     {
         await using var adminConn = CreateGatewayConnection(_adminToken);
+
         var initialReceivedTcs = new TaskCompletionSource<bool>();
         var mutationReceivedTcs = new TaskCompletionSource<InferenceMetrics>();
 
@@ -265,10 +266,10 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await adminConn.InvokeAsync("SetQueueLimitAsync", 42);
 
         var completed = await Task.WhenAny(mutationReceivedTcs.Task, Task.Delay(TimeSpan.FromSeconds(2))) == mutationReceivedTcs.Task;
-        completed.Should().BeTrue("Metrics must update immediately upon state mutation via event-driven signal");
+        Assert.True(completed, "Metrics must update immediately upon state mutation via event-driven signal");
 
         var updatedMetrics = await mutationReceivedTcs.Task;
-        updatedMetrics.Should().NotBeNull();
+        Assert.NotNull(updatedMetrics);
     }
 
     [Fact]
@@ -291,10 +292,10 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         await adminConn.InvokeAsync("DownloadModelAsync", _testRepoId);
 
         var received = await Task.WhenAny(userProgressTcs.Task, Task.Delay(TimeSpan.FromSeconds(5))) == userProgressTcs.Task;
-        received.Should().BeTrue("Subscribed user should receive download progress updates over GatewayHub");
+        Assert.True(received, "Subscribed user should receive download progress updates over GatewayHub");
 
         var progressData = await userProgressTcs.Task;
-        progressData.ModelId.Should().Be(_testRepoId);
+        Assert.Equal(_testRepoId, progressData.ModelId);
     }
 
     #endregion

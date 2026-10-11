@@ -1,6 +1,5 @@
 ﻿namespace InstantAIGate.Core.Tests.Inference;
 
-using FluentAssertions;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Services.Inference;
 using Microsoft.Extensions.Time.Testing;
@@ -26,10 +25,10 @@ public sealed class GatewayStateManagerTests
     {
         var snapshot = _stateManager.GetSnapshot();
 
-        snapshot.Status.Should().Be(GatewayOperationalStatus.Uninitialized);
-        snapshot.ActiveModelId.Should().BeNull();
-        snapshot.ProgressPercentage.Should().Be(0.0f);
-        snapshot.Timestamp.Should().Be(_timeProvider.GetUtcNow());
+        Assert.Equal(GatewayOperationalStatus.Uninitialized, snapshot.Status);
+        Assert.Null(snapshot.ActiveModelId);
+        Assert.Equal(0.0f, snapshot.ProgressPercentage);
+        Assert.Equal(_timeProvider.GetUtcNow(), snapshot.Timestamp);
     }
 
     [Fact]
@@ -49,17 +48,16 @@ public sealed class GatewayStateManagerTests
 
         var snapshot = _stateManager.GetSnapshot();
 
-        snapshot.Status.Should().Be(GatewayOperationalStatus.ModelDownloading);
-        snapshot.ActiveModelId.Should().Be("test-model-8b");
-        snapshot.ProgressPercentage.Should().Be(45.5f);
-        snapshot.DownloadedBytes.Should().Be(455_000_000);
-        snapshot.TotalBytes.Should().Be(1_000_000_000);
-        snapshot.BytesPerSecond.Should().Be(25_000_000);
-        snapshot.StageDescription.Should().Be("Downloading chunk 2/4");
-        snapshot.Timestamp.Should().Be(_timeProvider.GetUtcNow());
-
-        receivedEvent.Should().NotBeNull();
-        receivedEvent.Should().Be(snapshot);
+        Assert.Equal(GatewayOperationalStatus.ModelDownloading, snapshot.Status);
+        Assert.Equal("test-model-8b", snapshot.ActiveModelId);
+        Assert.Equal(45.5f, snapshot.ProgressPercentage);
+        Assert.Equal(455_000_000, snapshot.DownloadedBytes);
+        Assert.Equal(1_000_000_000, snapshot.TotalBytes);
+        Assert.Equal(25_000_000, snapshot.BytesPerSecond);
+        Assert.Equal("Downloading chunk 2/4", snapshot.StageDescription);
+        Assert.Equal(_timeProvider.GetUtcNow(), snapshot.Timestamp);
+        Assert.NotNull(receivedEvent);
+        Assert.Equal(snapshot, receivedEvent);
     }
 
     [Fact]
@@ -69,10 +67,10 @@ public sealed class GatewayStateManagerTests
 
         var snapshot = _stateManager.GetSnapshot();
 
-        snapshot.Status.Should().Be(GatewayOperationalStatus.ModelLoading);
-        snapshot.ActiveModelId.Should().Be("test-model-8b");
-        snapshot.ProgressPercentage.Should().Be(100.0f);
-        snapshot.StageDescription.Should().Be("Mapping GGUF tensors to VRAM");
+        Assert.Equal(GatewayOperationalStatus.ModelLoading, snapshot.Status);
+        Assert.Equal("test-model-8b", snapshot.ActiveModelId);
+        Assert.Equal(100.0f, snapshot.ProgressPercentage);
+        Assert.Equal("Mapping GGUF tensors to VRAM", snapshot.StageDescription);
     }
 
     [Fact]
@@ -82,10 +80,10 @@ public sealed class GatewayStateManagerTests
 
         var snapshot = _stateManager.GetSnapshot();
 
-        snapshot.Status.Should().Be(GatewayOperationalStatus.Ready);
-        snapshot.ActiveModelId.Should().Be("test-model-8b");
-        snapshot.ProgressPercentage.Should().Be(100.0f);
-        snapshot.ErrorMessage.Should().BeNull();
+        Assert.Equal(GatewayOperationalStatus.Ready, snapshot.Status);
+        Assert.Equal("test-model-8b", snapshot.ActiveModelId);
+        Assert.Equal(100.0f, snapshot.ProgressPercentage);
+        Assert.Null(snapshot.ErrorMessage);
     }
 
     [Fact]
@@ -96,9 +94,9 @@ public sealed class GatewayStateManagerTests
 
         var snapshot = _stateManager.GetSnapshot();
 
-        snapshot.Status.Should().Be(GatewayOperationalStatus.Faulted);
-        snapshot.ActiveModelId.Should().Be("test-model-8b");
-        snapshot.ErrorMessage.Should().Be("Failed to allocate KV cache: CUDA out of memory");
+        Assert.Equal(GatewayOperationalStatus.Faulted, snapshot.Status);
+        Assert.Equal("test-model-8b", snapshot.ActiveModelId);
+        Assert.Equal("Failed to allocate KV cache: CUDA out of memory", snapshot.ErrorMessage);
     }
 
     [Fact]
@@ -109,24 +107,23 @@ public sealed class GatewayStateManagerTests
 
         var snapshot = _stateManager.GetSnapshot();
 
-        snapshot.Status.Should().Be(GatewayOperationalStatus.Uninitialized);
-        snapshot.ActiveModelId.Should().BeNull();
-        snapshot.ProgressPercentage.Should().Be(0.0f);
+        Assert.Equal(GatewayOperationalStatus.Uninitialized, snapshot.Status);
+        Assert.Null(snapshot.ActiveModelId);
+        Assert.Equal(0.0f, snapshot.ProgressPercentage);
     }
 
     [Fact]
     public void EventObserverException_DoesNotCorruptStateOrBlockOtherSubscribers()
     {
         bool healthySubscriberCalled = false;
-
         _stateManager.StatusChanged += _ => throw new InvalidOperationException("Faulty observer");
         _stateManager.StatusChanged += _ => healthySubscriberCalled = true;
 
-        var act = () => _stateManager.SetReady("test-model-8b");
-        act.Should().NotThrow();
+        var exception = Record.Exception(() => _stateManager.SetReady("test-model-8b"));
 
-        healthySubscriberCalled.Should().BeTrue();
-        _stateManager.GetSnapshot().Status.Should().Be(GatewayOperationalStatus.Ready);
+        Assert.Null(exception);
+        Assert.True(healthySubscriberCalled);
+        Assert.Equal(GatewayOperationalStatus.Ready, _stateManager.GetSnapshot().Status);
     }
 
     [Fact]
@@ -162,7 +159,7 @@ public sealed class GatewayStateManagerTests
         await Task.WhenAll(tasks);
 
         var finalSnapshot = _stateManager.GetSnapshot();
-        finalSnapshot.Should().NotBeNull();
-        finalSnapshot.DownloadedBytes.Should().BeGreaterThan(0);
+        Assert.NotNull(finalSnapshot);
+        Assert.True(finalSnapshot.DownloadedBytes > 0);
     }
 }
