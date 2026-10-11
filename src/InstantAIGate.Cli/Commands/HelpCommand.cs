@@ -55,22 +55,6 @@ public class HelpCommand : IConsoleCommand
         AnsiConsole.Write(refTable);
         AnsiConsole.WriteLine();
 
-        var relTable = new Table()
-            .Title("[bold magenta]Release & Publishing Tools[/]")
-            .Border(TableBorder.Rounded)
-            .Expand();
-
-        relTable.AddColumn(new TableColumn("[yellow]Command[/]").Width(12));
-        relTable.AddColumn(new TableColumn("[white]Description[/]"));
-
-        foreach (var cmd in releaseCommands)
-        {
-            relTable.AddRow($"[yellow]{cmd.Name}[/]", Markup.Escape(cmd.Description));
-        }
-
-        AnsiConsole.Write(relTable);
-        AnsiConsole.WriteLine();
-
         return Task.CompletedTask;
     }
 }
