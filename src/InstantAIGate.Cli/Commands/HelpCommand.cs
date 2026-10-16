@@ -12,10 +12,6 @@ public class HelpCommand : IConsoleCommand
 {
     private readonly IServiceProvider _serviceProvider;
 
-    private static readonly HashSet<string> ReleaseCommands = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "/vc", "/release"
-    };
 
     public HelpCommand(IServiceProvider serviceProvider)
     {
@@ -30,12 +26,9 @@ public class HelpCommand : IConsoleCommand
         var allCommands = _serviceProvider.GetRequiredService<IEnumerable<IConsoleCommand>>().ToList();
 
         var gatewayCommands = allCommands
-            .Where(c => !ReleaseCommands.Contains(c.Name))
             .OrderBy(c => c.Name);
 
-        var releaseCommands = allCommands
-            .Where(c => ReleaseCommands.Contains(c.Name))
-            .OrderBy(c => c.Name);
+
 
         AnsiConsole.WriteLine();
 

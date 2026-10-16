@@ -2,9 +2,7 @@
 using InstantAIGate.Cli.Configuration;
 using InstantAIGate.Cli.Core;
 using InstantAIGate.Cli.Logging;
-using InstantAIGate.Cli.Pipeline.Steps;
 using InstantAIGate.Cli.Services;
-using InstantAIGate.Cli.Services.Analysis;
 using InstantAIGate.Cli.State;
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Native.DependencyInjection;
@@ -52,7 +50,6 @@ public static class Program
             .ConfigureServices((context, services) =>
             {
                 services.Configure<StorageSettings>(context.Configuration.GetSection("InstantAIGate:Storage"));
-                services.Configure<ReleasePipelineSettings>(context.Configuration.GetSection("ReleasePipeline"));
                 services.Configure<RemoteGatewaySettings>(context.Configuration.GetSection("RemoteGateway"));
 
                 services.AddSingleton<CliSession>();
@@ -122,27 +119,8 @@ public static class Program
 
                 services.AddSingleton<IGatewayClient>(sp => sp.GetRequiredService<GatewayClientProxy>());
                 services.AddHostedService<CliHostedService>();
-
-                services.AddSingleton<PipelineRunner>();
-                services.AddSingleton<IProcessRunner, ProcessRunner>();
-                services.AddSingleton<IGitService, GitService>();
                 services.AddSingleton<ClientSessionMemoryCoordinator>();
 
-                services.AddTransient<IDotnetService, DotnetService>();
-
-                services.AddTransient<GitAddAllStep>();
-                services.AddTransient<GenerateCommitMessageStep>();
-                services.AddTransient<GitCommitAndPushStep>();
-                services.AddTransient<BumpVersionStep>();
-                services.AddTransient<RunUnitTestsStep>();
-                services.AddTransient<MergeAndPublishStep>();
-
-                services.AddTransient<IDiffAnalyzer>(sp =>
-                {
-                    var gateway = sp.GetRequiredService<IGatewayClient>();
-                    var settings = sp.GetRequiredService<IOptions<ReleasePipelineSettings>>().Value;
-                    return new MapReduceDiffAnalyzer(gateway, settings.AiModelId);
-                });
             })
             .Build();
 
