@@ -39,53 +39,28 @@
 |    |    |    +--- ImageCommand.cs
 |    |    |    +--- LoadCommand.cs
 |    |    |    +--- ModelsCommand.cs
-|    |    |    +--- ReleaseCommand.cs
-|    |    |    +--- VersionControlCommand.cs
 |    |    |    \--- VramCommand.cs
 |    |    +--- Configuration
-|    |    |    +--- ReleasePipelineSettings.cs
 |    |    |    \--- RemoteGatewaySettings.cs
 |    |    +--- Core
 |    |    |    +--- CliMarkup.cs
 |    |    |    +--- ContextWindowMetrics.cs
 |    |    |    +--- GatewayClientProxy.cs
 |    |    |    +--- IGatewayClient.cs
-|    |    |    +--- IPipelineStep.cs
 |    |    |    +--- LocalGatewayClient.cs
 |    |    |    \--- RemoteGatewayClient.cs
 |    |    +--- Logging
 |    |    |    +--- DebugStateLogger.cs
 |    |    |    \--- DebugStateLoggerProvider.cs
-|    |    +--- Pipeline
-|    |    |    \--- Steps
-|    |    |         +--- BumpVersionStep.cs
-|    |    |         +--- GenerateCommitMessageStep.cs
-|    |    |         +--- GitAddAllStep.cs
-|    |    |         +--- GitCommitAndPushStep.cs
-|    |    |         +--- MergeAndPublishStep.cs
-|    |    |         \--- RunUnitTestsStep.cs
 |    |    +--- Properties
 |    |    |    \--- PublishProfiles
 |    |    |         +--- FolderProfile.pubxml
 |    |    |         \--- FolderProfile.pubxml.user
 |    |    +--- Services
-|    |    |    +--- Analysis
-|    |    |    |    +--- IDiffAnalyzer.cs
-|    |    |    |    \--- MapReduceDiffAnalyzer.cs
-|    |    |    +--- ClientSessionMemoryCoordinator.cs
-|    |    |    +--- DotnetService.cs
-|    |    |    +--- GitService.cs
-|    |    |    +--- IDotnetService.cs
-|    |    |    +--- IGitService.cs
-|    |    |    +--- IProcessRunner.cs
-|    |    |    +--- PipelineRunner.cs
-|    |    |    +--- ProcessRunner.cs
-|    |    |    \--- ReleasePipelineService.cs
+|    |    |    \--- ClientSessionMemoryCoordinator.cs
 |    |    +--- State
 |    |    |    +--- CliSession.cs
-|    |    |    +--- EngineLogFilter.cs
-|    |    |    +--- PipelineContext.cs
-|    |    |    \--- PipelineState.cs
+|    |    |    \--- EngineLogFilter.cs
 |    |    +--- CliHostedService.cs
 |    |    +--- cli-settings.json
 |    |    +--- InstantAIGate.Cli.csproj
