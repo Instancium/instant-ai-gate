@@ -387,6 +387,7 @@
 +--- .gitattributes
 +--- .gitignore
 +--- .gitkeep
++--- AI_FILE_GUIDE.md
 +--- InstantAIGate.sln
 +--- InstantAIGate.slnLaunch.user
 +--- InstantAIGate.slnx
