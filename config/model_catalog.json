@@ -15,6 +15,17 @@
     ]
   },
   {
+    "Id": "qwen3-4b-instruct-2507",
+    "Name": "Qwen3 4B Instruct 2507",
+    "Architecture": "qwen3",
+    "ParameterCount": 4000000000,
+    "Quantization": "Q8_0",
+    "TotalFileSizeBytes": 4800000000,
+    "DownloadUrls": [ "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q8_0.gguf" ],
+    "RequiresVisionProjector": false,
+    "VisionProjectorUrls": null
+  },
+  {
     "Id": "qwen3-vl-4b-instruct",
     "Name": "Qwen 3 VL 4B Instruct (Q4_K_M)",
     "Architecture": "qwen-vl",
