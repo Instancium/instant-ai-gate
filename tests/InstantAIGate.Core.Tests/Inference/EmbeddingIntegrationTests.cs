@@ -211,6 +211,7 @@ public class EmbeddingIntegrationTests : IAsyncLifetime
             BatchSize = ModelOptions.ModelLoad.BatchSize,
             Threads = ModelOptions.ModelLoad.Threads,
             Embeddings = true,
+            FlashAttention = true,
             Type = ModelType.Embedding,
             KvCacheQuantization = "Q8_0"
         };
