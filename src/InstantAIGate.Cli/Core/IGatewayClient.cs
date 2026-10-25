@@ -15,7 +15,7 @@ public interface IGatewayClient
     Task<int> GetSessionTokenCountAsync(string sessionId, CancellationToken ct = default);
     Task RollbackSessionAsync(string sessionId, int targetPosition, CancellationToken ct = default);
     Task ShiftSessionMemoryAsync(string sessionId, int startPos, int count, CancellationToken ct = default);
-    Task LoadModelAsync(string repoId, CancellationToken ct = default);
+    Task LoadModelAsync(string repoId, string? profile = null, CancellationToken ct = default);
     Task UnloadModelAsync(string repoId, CancellationToken ct = default);
     Task SwapModelAsync(string repoId, string? profile = null, CancellationToken ct = default);
     Task DownloadModelAsync(string repoId, CancellationToken ct = default);
@@ -24,12 +24,11 @@ public interface IGatewayClient
     Task ConnectTelemetryAsync(Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct);
     Task SubscribeToModelDownloadAsync(string repoId, CancellationToken ct = default);
     Task UnsubscribeFromModelDownloadAsync(string repoId, CancellationToken ct = default);
-
     event Action<int>? QueuePositionReceived;
     event Action<string, string, string>? LogReceived;
     event Action<DownloadProgress>? DownloadProgressReceived;
     event Action<GatewayStatusDetails>? GatewayStatusReceived;
     Task DestroySessionAsync(string sessionId, CancellationToken ct = default);
-
     Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default);
+    Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request, CancellationToken ct = default);
 }

@@ -31,6 +31,18 @@
         "FlashAttention": true,
         "KvCacheQuantization": "Q4_0"
       },
+      "Embedding": {
+        "GpuLayerCount": 99,
+        "MainGPU": 0,
+        "ContextSize": 8192,
+        "BatchSize": 512,
+        "Threads": 8,
+        "FlashAttention": true,
+        "Embeddings": true,
+        "KvCacheQuantization": "Q8_0",
+        "UseMemoryLock": false,
+        "MaxContexts": 4
+      },
       "CpuOnly": {
         "GpuLayerCount": 0,
         "ContextSize": 2048,

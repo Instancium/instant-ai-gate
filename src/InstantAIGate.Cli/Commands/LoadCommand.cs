@@ -26,36 +26,34 @@ public sealed class LoadCommand : IConsoleCommand
 
     public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(argument))
+        var parts = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
         {
-            AnsiConsole.MarkupLine("[red]Error: You must specify a model ID.[/]");
+            AnsiConsole.MarkupLine("[red]Usage: /load <modelId> [profileName][/], e.g. /load qwen3-embedding-0.6b Embedding");
             return;
         }
 
-        var parts = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var modelId = parts[0];
-
-        var targetModel = await _catalogService.FindModelByIdAsync(modelId, cancellationToken);
-        string displayName = targetModel != null ? targetModel.Name : modelId;
+        string repoId = parts[0];
+        string? profile = parts.Length > 1 ? parts[1] : null;
 
         try
         {
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
-                .SpinnerStyle(Style.Parse("yellow"))
-                .StartAsync($"Loading {displayName} into memory...", async ctx =>
-                {
-                    await _gatewayClient.LoadModelAsync(modelId, cancellationToken);
-                });
+                .SpinnerStyle(Style.Parse("cyan"))
+                .StartAsync($"Loading model '{Markup.Escape(repoId)}' with profile '{Markup.Escape(profile ?? "Default")}'...",
+                    async ctx =>
+                    {
+                        await _gatewayClient.LoadModelAsync(repoId, profile, cancellationToken);
+                        ctx.Status("[green]Model loaded successfully![/]");
+                    });
 
-            _session.ActiveModelId = modelId;
-            _session.ClearHistory();
-            CliMarkup.Line($"[green]Model {displayName} successfully loaded and ready for inference![/]");
+            _session.ActiveModelId = repoId;
+            AnsiConsole.MarkupLine($"[green]Model '{Markup.Escape(repoId)}' is ready for inference.[/]");
         }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"[red]Failed to load model:[/] {Markup.Escape(ex.Message)}");
-            _session.ActiveModelId = null;
         }
     }
 }

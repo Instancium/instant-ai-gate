@@ -144,9 +144,9 @@ public class LocalGatewayClient : IGatewayClient
         });
     }
 
-    public async Task LoadModelAsync(string repoId, CancellationToken ct = default)
+    public async Task LoadModelAsync(string repoId, string? profile = null, CancellationToken ct = default)
     {
-        var config = await BuildModelSettingsAsync(repoId, profile: null, ct);
+        var config = await BuildModelSettingsAsync(repoId, profile, ct);
         await _modelManager.LoadModelAsync(config, ct);
     }
 
@@ -231,5 +231,16 @@ public class LocalGatewayClient : IGatewayClient
             UseMemoryLock = hwProfile.UseMemoryLock,
             MaxContexts = hwProfile.MaxContexts
         };
+    }
+
+    public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request, CancellationToken ct = default)
+    {
+        var activeSettings = _modelManager.GetActiveSettings();
+        if (activeSettings == null || !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Model '{repoId}' is not active. Active model: {activeSettings?.RepoId ?? "none"}");
+        }
+
+        return await _inferenceEngine.GenerateEmbeddingsAsync(repoId, request, ct);
     }
 }

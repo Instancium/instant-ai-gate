@@ -65,7 +65,8 @@ public static class Program
                 services.AddTransient<IConsoleCommand, ConnectCommand>();
                 services.AddTransient<IConsoleCommand, ContextCommand>();
                 services.AddTransient<IConsoleCommand, VramCommand>();
-               
+                services.AddTransient<IConsoleCommand, EmbedCommand>();
+
 
                 services.AddHttpClient();
                 services.AddInstantAIGateInference();

@@ -78,8 +78,8 @@ public class GatewayClientProxy : IGatewayClient
     public Task ConnectTelemetryAsync(Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct) =>
         _activeClient.ConnectTelemetryAsync(onMetrics, onSsrProgress, ct);
 
-    public Task LoadModelAsync(string repoId, CancellationToken ct = default) =>
-        _activeClient.LoadModelAsync(repoId, ct);
+    public Task LoadModelAsync(string repoId, string? profile = null, CancellationToken ct = default) =>
+        _activeClient.LoadModelAsync(repoId, profile, ct);
 
     public Task UnloadModelAsync(string repoId, CancellationToken ct = default) =>
         _activeClient.UnloadModelAsync(repoId, ct);
@@ -110,4 +110,7 @@ public class GatewayClientProxy : IGatewayClient
 
     public Task ShiftSessionMemoryAsync(string sessionId, int startPos, int count, CancellationToken ct = default) =>
         _activeClient.ShiftSessionMemoryAsync(sessionId, startPos, count, ct);
+
+    public Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request, CancellationToken ct = default) =>
+    _activeClient.GenerateEmbeddingsAsync(repoId, request, ct);
 }
