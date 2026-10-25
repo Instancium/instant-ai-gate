@@ -34,6 +34,7 @@
 |    |    |    +--- ContextCommand.cs
 |    |    |    +--- DebugCommand.cs
 |    |    |    +--- DownloadCommand.cs
+|    |    |    +--- EmbedCommand.cs
 |    |    |    +--- HelpCommand.cs
 |    |    |    +--- IConsoleCommand.cs
 |    |    |    +--- ImageCommand.cs
@@ -80,6 +81,8 @@
 |    |    |    |    +--- Native
 |    |    |    |    |    \--- BackendEnums.cs
 |    |    |    |    +--- ChatMessage.cs
+|    |    |    |    +--- EmbeddingRequest.cs
+|    |    |    |    +--- EmbeddingResponse.cs
 |    |    |    |    +--- ImageBase64Content.cs
 |    |    |    |    +--- ImageFileContent.cs
 |    |    |    |    +--- ImageUrlContent.cs
@@ -328,6 +331,7 @@
 |    |    |    |    +--- StubModelLocator.cs
 |    |    |    |    \--- StubModelValidator.cs
 |    |    |    +--- DynamicRequestQueueTests.cs
+|    |    |    +--- EmbeddingIntegrationTests.cs
 |    |    |    +--- GatewayStateManagerTests.cs
 |    |    |    +--- LlamaInferenceProtectionTests.cs
 |    |    |    +--- LlamaVisionIntegrationTests.cs
