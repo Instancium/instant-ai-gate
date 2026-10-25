@@ -1,167 +1,526 @@
-InstantAIGate Client Integration Guide
-SignalR Hub Protocol & Session Memory Model Reference
-Contract Version: 1.1 | Server Target Platform: .NET 10 | Transport: SignalR (WebSockets / Server-Sent Events / Long Polling via negotiate)
+# InstantAIGate — Client Integration Guide
 
-1. Purpose and Scope of the Document
-This document describes the complete wire contract of the InstantAIGate gateway: authentication, hub methods (client → server), callbacks (server → client), DTO schemas, the session memory model (KV-cache, VRAM slots, ephemeral sessions), and canonical client patterns. A client application can be implemented exclusively based on this document. Method names, argument order, and DTO schemas constitute a stable contract: additions are allowed, but deletions and renames are breaking changes.
-Typed DTOs are available via the NuGet package `InstantAIGate.Core` (namespaces `InstantAIGate.Core.Dtos.*`). The client may choose not to reference the package and serialize DTOs independently according to the schemas in Section 6.
+**Version:** 1.3
+**Target Audience:** Backend/frontend developers integrating with InstantAIGate Gateway via SignalR.
 
-2. Architectural Model
-The server is a single ASP.NET Core process (Kestrel or Windows service `InstantAIGate.Server`) with a single SignalR endpoint: `/hub/gateway`.
-Inference is performed by the native `llama.cpp` engine; only one loaded model is active at a time (hot-swapping between models is supported).
-Memory: Model weights reside in VRAM (with GPU-offload) + mmap mirror; each session owns a KV-context (`llama_context`) of 256–512 MB VRAM depending on the context configuration. The number of concurrent sessions is limited by available VRAM, not by a license/counter.
-Context Pool: Released "warm" contexts are returned to the model pool and reused by new sessions with a completely cleared KV-cache. The pool saves allocations but does not preserve history continuity.
+---
 
-3. Transport, Authentication, Roles
-| Parameter | Value |
-| --- | --- |
-| Hub URL | `{baseUrl}/hub/gateway` |
-| Token | HTTP header `Authorization: Bearer <key>` OR raw header `Authorization: <key>` OR query parameter `access_token=<key>` (for WebSocket clients without headers) |
-| Admin Key | Value of the server setting `InstantAIGate:AdminApiKey`; grants roles `Admin` + `User`, `TenantId=admin` |
-| Any other key | Role `User`, `TenantId=<key>` |
-| Anonymous access | Only `/health/live`, `/health/ready` |
-| HTTP health endpoints | `/health/live` → 200 always; `/health/ready` → 200 (model ready) / 503 (downloading/loading/faulted/no model) |
+## Table of Contents
 
-Hub method authorization policies: `GatewayUser` (User + Admin roles) and `GatewayAdmin` (Admin only). Calling a method with the wrong policy results in a `HubException` on the client side.
+1. [Authentication](#authentication)
+2. [Connection Setup](#connection-setup)
+3. [Gateway Status Monitoring](#gateway-status-monitoring)
+4. [Session Lifecycle](#session-lifecycle)
+5. [Chat Streaming](#chat-streaming)
+6. [Context Management](#context-management)
+7. [Embeddings](#embeddings)
+8. [Model Management (Admin)](#model-management-admin)
+9. [Model Download](#model-download)
+10. [VRAM Management](#vram-management)
+11. [Health Checks](#health-checks)
+12. [Error Handling](#error-handling)
+13. [Ephemeral Sessions](#ephemeral-sessions)
 
-4. Hub Contract: Client → Server Methods
-Arguments are listed in wire order. Methods returning `Task` do not yield return values; business-level errors are transmitted via the `ReceiveError` callback, not via exceptions (exceptions are only thrown for policy violations and argument validation failures).
+---
 
-4.1 Data Plane (GatewayUser)
-| Method | Signature | Semantics and Errors |
-| --- | --- | --- |
-| JoinSession | `(string sessionId, string repoId)` | Creates a session and binds it to the connection. `repoId == ""` → use the active model; otherwise, `repoId` must match the active model. Obstacles (model downloading/loading/faulted/no active model/mismatch) → `ReceiveError` with the reason text, session is NOT created. Success is silent (no callback log). |
-| MarkSessionAsEphemeral | `(string sessionId)` | Declares the session as ephemeral: upon physical connection drop, the server guarantees destruction of its KV-slot (`destroySlot: true`) regardless of the client's state. Call immediately after a successful `JoinSession` for all pipeline sessions. |
-| LeaveSession | `(string sessionId)` | Graceful termination: session is deleted, KV-context returns to the pool (VRAM is NOT freed). Callback: `ReceiveSessionClosed`. |
-| DestroySession | `(string sessionId)` | Hard termination: KV-slot is freed from VRAM immediately. Callback: `ReceiveSessionClosed`. Mandatory for pipeline sessions. |
-| SendPromptDelta | `(string sessionId, ChatMessage deltaMessage)` | Starts inference; tokens arrive via `ReceiveTokenDelta` callback; completion is a delta with `IsDone=true`, `FinishReason="stop"`. Context overflow → `ReceiveContextOverflow`; failures → `ReceiveError`. Returning `Task` indicates the end of the stream. |
-| RollbackSession | `(string sessionId, int targetPosition)` | Truncates the KV-cache up to the token position (suffix is deleted). Errors → `ReceiveError`. |
-| ShiftSessionCache | `(string sessionId, int startPos, int count)` | Sliding window: deletes a KV range and shifts the tail. May be unavailable: `ReceiveError` with text containing `FlashAttention or GPU offload` → client must fall back to `RollbackSession`. |
-| GetSessionTokenCount | `(string sessionId) → int` | Current length of the session's KV-cache in tokens (baseline for checkpoints). |
+## Authentication
 
-4.2 Observability (GatewayUser)
-| Method | Signature | Semantics |
-| --- | --- | --- |
-| GetGatewayStatus | `() → GatewayStatusDetails` | Instant snapshot of the gateway state. |
-| SubscribeToModelDownload | `(string repoId)` | Subscribes to the `download_{repoId}` progress group. |
-| UnsubscribeFromModelDownload | `(string repoId)` | Unsubscribes. |
+All gateway requests require an API key passed as a Bearer token.
 
-4.3 Control Plane (GatewayAdmin)
-| Method | Signature | Semantics and Important Restrictions |
-| --- | --- | --- |
-| GetActiveModelDetailsAsync | `() → NativeModelDetails` | `GatewayUser` policy (available to all). Note: `GpuLayers` is an echo of the configuration, not measured placement. |
-| GetModelsAsync | `() → ModelRegistryStatus[]` | Registry of loaded models and idle contexts. |
-| LoadModelAsync | `(string repoId, string? profile)` | Loads a model. If a model with the same `repoId` is already active → no-op (early exit). This is not a reload. |
-| SwapModelAsync | `(string repoId, string? profile)` | Graceful hot-swap: drain active leases → unload → reload (including the same `repoId`). The only standard way to reallocate weights in currently free VRAM ("model reload"). |
-| UnloadModelAsync | `(string repoId)` | Unloads the model; all context pools are freed. |
-| PurgeIdleContextsAsync | `(string repoId)` | Frees only idle contexts in the pool. Does not touch live session contexts and does not reallocate weights. |
-| DownloadModelAsync | `(string repoId)` | Queues background download from the directory; progress via broadcast groups. |
-| GetQueueMetricsAsync | `() → InferenceMetrics` | Queue/lease metrics. |
-| SetQueueLimitAsync | `(int limit)` | `limit <= 0` → `HubException`. |
+| Role | Access | Token Source |
+|------|--------|--------------|
+| `GatewayUser` | Data plane (inference, sessions, status) | Any valid token |
+| `GatewayAdmin` | Control plane (model management, downloads, VRAM) | Matches `InstantAIGate:AdminApiKey` config |
 
-5. Hub Contract: Server → Client Callbacks
-| Callback | Payload | Purpose |
-| --- | --- | --- |
-| ReceiveTokenDelta | `SessionTokenDelta` | Token stream; final delta has `IsDone=true`. |
-| ReceiveError | `string` | Business errors for sessions and preprocessing. |
-| ReceiveContextOverflow | `ContextOverflowException` | Structured context overflow (see 7.4). |
-| ReceiveSessionClosed | `string sessionId` | Confirmation of Leave/Destroy. |
-| ReceiveDownloadProgress | `DownloadProgress` | Download progress (`download_*` groups and Admin). |
-| ReceiveQueuePosition | `int` | Position in the inference queue (`>0`). **Note:** Reserved contract. Not emitted by the server in the current build. |
-| ReceiveLog | `(string level, string category, string message)` | Server logs (Admin group only). |
-| ReceiveMetrics | `(InferenceMetrics, object nativeDetails)` | Reactive metrics (Admin group only). |
-| ReceiveGatewayStatus | `GatewayStatusDetails` | Status snapshot: upon connection (caller), upon state change (all). |
+**Token Delivery Methods:**
+1. HTTP Header: `Authorization: Bearer <token>`
+2. Query Parameter: `?access_token=<token>` (for SignalR WebSocket)
 
-Upon connection, the caller always receives `ReceiveGatewayStatus`; Admin connections additionally receive `ReceiveMetrics` and join the `GatewayAdminGroup`.
+```csharp
+// C# SignalR client example
+var connection = new HubConnectionBuilder()
+    .WithUrl("http://your-server:5000/hub/gateway", options =>
+    {
+        options.AccessTokenProvider = () => Task.FromResult("your-api-key")!;
+    })
+    .WithAutomaticReconnect()
+    .Build();
+```
 
-6. DTO Schemas (System.Text.Json, camelCase)
-`SessionTokenDelta { sessionId, content, isDone=false, finishReason=null }`
-`ChatMessage { role, parts[], content? }`; `parts` is a polymorphic array of `MessageContent` with a `"type"` discriminator: `text { text }`, `image_base64 { base64, mediaType }`, `image_url { url }`, `image_file { filePath }`. `image_file` accepts a path local to the SERVER; remote clients must use `image_url` or `image_base64`.
-`GatewayStatusDetails { status, activeModelId?, stageDescription?, progressPercentage, downloadedBytes, totalBytes, bytesPerSecond, errorMessage?, timestamp }`; `status`: `0 Uninitialized, 1 ModelDownloading, 2 ModelLoading, 3 Ready, 4 Faulted`.
-`NativeModelDetails { repoId, contextSize, gpuLayers, totalLayers, threads, flashAttention, idleContextsCount, backend }`
-`ModelRegistryStatus { repoId, isLoaded, idleContextsCount, maxContexts, gpuLayers, type }`
-`InferenceMetrics { activeLeases, pendingRequests }`
-`DownloadProgress { modelId, bytesDownloaded, totalBytes, speedBytesPerSecond, percentage }`
-`ContextOverflowException { sessionId, pastTokens, incomingTokens, reservedTokens, contextSize }`
+---
 
-7. Session Memory Model (Mandatory Understanding)
-7.1 KV-Slot Lifecycle
-| Event | Session Fate | KV-Context Fate (VRAM) |
-| --- | --- | --- |
-| LeaveSession | Deleted | To pool (warm, KV cleared) — VRAM occupied |
-| DestroySession | Deleted | Freed immediately |
-| Connection drop, regular session | Deleted (`destroySlot:false`) | To pool — VRAM occupied until purge/unload |
-| Connection drop, ephemeral session | Deleted (`destroySlot:true`) | Freed immediately (< 2s to DoD) |
-| Idle > 10 mins (server timer) | Deleted (`destroySlot:false`) | To pool — VRAM occupied |
-| PurgeIdleContextsAsync | Sessions unaffected | Idle pool contexts freed |
+## Connection Setup
 
-Takeaway for the client: The only ways to guarantee VRAM is returned to the machine are `DestroySession` or an ephemeral declaration + connection drop.
+**Hub URL:** `/hub/gateway`
 
-7.2 Ephemeral Sessions and Reaper
-`MarkSessionAsEphemeral` binds the `sessionId` to the `ConnectionId` in an orthogonal registry; the server's `OnDisconnectedAsync` destroys such sessions with `destroySlot:true`.
-The background `SessionReaperService` (30s interval) forcefully destroys ephemeral sessions registered before the orphaning threshold. In the current build, the threshold is hardcoded to 2 minutes and is not refreshed by activity (known limitation, see Section 10): an ephemeral session older than the threshold will be destroyed even if the connection is alive. Clients with long pipelines must handle the subsequent "session not active" error by re-joining (see 8).
+**Client Events to Subscribe:**
 
-7.3 History Continuity
-The KV-cache does not survive connection drops or Leave/Idle evacuations: the pool issues contexts with cleared KV. The source of truth for the dialogue is the client; the server's session state = KV + token counter, recoverable only by re-running the history.
+```csharp
+connection.On<SessionTokenDelta>("ReceiveTokenDelta", delta => { /* handle token */ });
+connection.On<string>("ReceiveError", error => { /* handle error */ });
+connection.On<ContextOverflowException>("ReceiveContextOverflow", ex => { /* handle overflow */ });
+connection.On<string>("ReceiveSessionClosed", sessionId => { /* session ended */ });
+connection.On<DownloadProgress>("ReceiveDownloadProgress", progress => { /* download update */ });
+connection.On<GatewayStatusDetails>("ReceiveGatewayStatus", status => { /* status change */ });
+connection.On<int>("ReceiveQueuePosition", pos => { /* queue position */ });
+```
 
-7.4 Context Overflow
-When `pastTokens + incoming + reserve > contextSize`, the stream is interrupted by `ReceiveContextOverflow`. Client mitigation menu: (1) `ShiftSessionCache` (sliding window; may be unavailable), (2) `RollbackSession` to a checkpoint, (3) `DestroySession` + recreate, (4) cancel request.
+**Admin-only Events:**
+```csharp
+connection.On<InferenceMetrics, object>("ReceiveMetrics", (metrics, details) => { /* metrics */ });
+connection.On<string, string, string>("ReceiveLog", (level, category, message) => { /* logs */ });
+```
 
-8. Canonical Client Patterns
-8.1 Interactive Chat
-`JoinSession` → (optional `MarkSessionAsEphemeral` not needed for short sessions) → loop `SendPromptDelta`/`ReceiveTokenDelta` → upon dialogue completion `DestroySession` (not `LeaveSession`, if the dialogue is not planned to be continued).
+---
 
-8.2 Pipeline Client (Map-Reduce, Checkpoints) — Reference for InstantPublisher
-1. `JoinSession(pipelineSessionId, repoId)`.
-2. `MarkSessionAsEphemeral(pipelineSessionId)` — immediately after Join.
-3. System prompt via `SendPromptDelta`; fix checkpoint: `sysCheckpoint = GetSessionTokenCount(...)`.
-4. For each chunk: `SendPromptDelta(chunk)` → collect stream → `RollbackSession(pipelineSessionId, sysCheckpoint)` (KV doesn't grow, system prefix is reused).
-5. Reduce phase is similar to chunks.
-6. In `finally`: best-effort `DestroySession(pipelineSessionId)` — attempt even in Reconnecting state, do not propagate errors (server ephemeral guarantee acts as insurance).
-Stream error handling: texts containing `not active` / `was not found` (including from the reaper, see 7.2) → single retry with re-`JoinSession` + `MarkSessionAsEphemeral` before emitting the first chunk token.
+## Gateway Status Monitoring
 
-8.3 Reconnect
-The server saves nothing for a reconnected connection: all sessions of the old `ConnectionId` are already released/destroyed in `OnDisconnectedAsync`. A client with `WithAutomaticReconnect()` must, upon `Reconnected`: clear the local registry of joined sessions, re-execute `JoinSession` + `MarkSessionAsEphemeral` for required sessions, and restore KV by running history or checkpoints. Streams interrupted by a drop are not resumed by the server.
+The gateway maintains an operational state machine. Query it via RPC or receive push updates.
 
-8.4 Admin Client: Model Management
-Loading: `LoadModelAsync`; reloading/reallocation: only `SwapModelAsync(repoId, null)` (Load with the same `repoId` is a no-op); unloading: `UnloadModelAsync`; emergency pool freeing: `PurgeIdleContextsAsync`. After operations, monitor `ReceiveGatewayStatus` until `Ready`.
+**RPC:**
+```csharp
+var status = await connection.InvokeAsync<GatewayStatusDetails>("GetGatewayStatus");
+```
 
-9. Streams and Timeouts Rules
-One `SendPromptDelta` per session at a time: the server serializes inference via the session's execution gate; parallel calls do not error out but queue up — the client should not rely on this as parallelism.
-Client timeout recommendations: chunk stream ≤ 60s per 1k generated tokens; `JoinSession` ≤ 10s; `Swap`/`Load` — no client timeout (long operations, monitor via status).
-Cancellation: the server stream honors the connection's CancellationToken; client cancellation = drop/SignalR token, after which the session stays alive (KV preserved) — explicitly Rollback/Destroy if necessary.
+**Push:** Server automatically sends `ReceiveGatewayStatus` on connection and on state change.
 
-10. Known Limitations of the Current Build (Errata)
-- The ephemeral session reaper uses the registration age (2 min threshold) without refreshing on activity: long ephemeral pipelines are subject to forced destruction; the client must have retry logic (8.2). Server follow-up: refresh the activity timestamp.
-- `ShiftSessionCache` is unavailable with GPU-offload/FlashAttention (NotSupportedException text) — plan the rollback path as the primary one.
-- `NativeModelDetails.GpuLayers` is a configuration echo; actual layer placement is visible only in native server logs.
-- `image_file` is a server-local path; forbidden for remote clients.
-- The context pool is not capped by the `MaxContexts` value (the field is informational); VRAM discipline is the client's responsibility (Destroy/ephemeral).
-- The `ReceiveQueuePosition` callback is declared in the client interface but is not emitted by the server in the current build.
+**Status Enum:**
+| Value | Meaning |
+|-------|---------|
+| `Uninitialized` | No model loaded |
+| `ModelDownloading` | Startup model downloading |
+| `ModelLoading` | Model loading into VRAM |
+| `Ready` | Model loaded, inference available |
+| `Faulted` | Error occurred during initialization |
 
-11. Client Readiness Checklist (Definition of Done)
-[ ] Token is passed via `access_token`/Authorization; 401 on negotiate is handled.
-[ ] All pipeline sessions: Join → MarkSessionAsEphemeral → Destroy in finally (best-effort).
-[ ] Retry on `not active`/`was not found` with re-Join before the first token.
-[ ] Reconnect-hook recreates sessions and ephemeral declarations.
-[ ] `ReceiveContextOverflow` (rollback path) and `ReceiveError` (logged, doesn't crash UI) are handled.
-[ ] Admin functions use Swap for reloading; Load is not used as reload.
-[ ] No session leaks: audit of active sessionIds upon client process termination is empty.
+**GatewayStatusDetails Fields:**
+```json
+{
+  "status": 3,
+  "activeModelId": "qwen3-vl-2b-instruct",
+  "stageDescription": "Model is ready for inference",
+  "progressPercentage": 100.0,
+  "downloadedBytes": 0,
+  "totalBytes": 0,
+  "bytesPerSecond": 0.0,
+  "errorMessage": null,
+  "timestamp": "2026-01-01T00:00:00Z"
+}
+```
 
-12. Glossary
-Core Entities
-- RepoId — unique identifier for a model (e.g., `qwen3-vl-8b-instruct`, `qwen3-32b`).
-- Session — a logical conversation context tied to a specific `RepoId` and `SessionId`. Maintains `PastTokens` counter and `TokenSequence` (the logical token history mirror).
-- KV-slot — an allocated `llama_context` bound to a session. Physically holds the KV-cache in VRAM.
-- Checkpoint — a token position up to which `RollbackSession` truncates the KV-cache to reuse the prefix.
-- Pool — a set of warm `llama_context` handles with cleared KV-cache, kept ready to accelerate new session creation.
+---
 
-Session Lifecycle
-- Ephemeral Session — a session explicitly marked by the client (`MarkSessionAsEphemeral`) with a server-side guarantee of `destroySlot: true` upon SignalR disconnection. VRAM is freed deterministically.
-- Context Shift (Sliding Window) — the operation of removing a range of tokens from the middle of the KV-cache (`llama_memory_seq_rm`) and shifting the remaining tokens (`llama_memory_seq_add`) to free up space without losing the system prompt. Requires `llama_memory_can_shift() == true` (disabled under FlashAttention or heavy GPU offload).
-- Prefix Tree Pool — a caching mechanism (`PrefixTreeContextPool`) that reuses partially computed KV-cache states based on matching token prefixes to accelerate Time-To-First-Token (TTFT). (Note: Currently reserved/unimplemented in the active runtime pool).
+## Session Lifecycle
 
-Infrastructure
-- SSR (in this context) — Server-Side Rendering of model downloads and catalog management (`InstantAIGate.SSR` project). NOT React/Blazor SSR.
-- GatewayHub — the central SignalR hub orchestrating the data plane (inference streaming) and control plane (model loading, queue management).
-- Hardware Profile — a named configuration bundle (`HardwareProfileSettings`) defining context size, KV quantization, GPU layers, and max concurrent contexts for a given model class.
+### Join Session
+
+```csharp
+await connection.InvokeAsync("JoinSession", sessionId, repoId);
+```
+
+- If `repoId` is empty, uses currently active model.
+- Throws error via `ReceiveError` if gateway is not `Ready`.
+- Throws error if requested model is not the active model.
+
+### Leave Session (Soft Release)
+
+```csharp
+await connection.InvokeAsync("LeaveSession", sessionId);
+```
+
+Releases session state but preserves VRAM context for potential reuse.
+
+### Destroy Session (Hard Release)
+
+```csharp
+await connection.InvokeAsync("DestroySession", sessionId);
+```
+
+Force-destroys the session slot and frees VRAM immediately. Use when session is permanently closed.
+
+---
+
+## Chat Streaming
+
+### Send Prompt
+
+```csharp
+var message = new ChatMessage("user", new List<MessageContent>
+{
+    new TextContent("Hello, how are you?")
+});
+
+await connection.InvokeAsync("SendPromptDelta", sessionId, message);
+```
+
+### Receive Tokens
+
+```csharp
+connection.On<SessionTokenDelta>("ReceiveTokenDelta", delta =>
+{
+    if (delta.SessionId == sessionId)
+    {
+        if (delta.IsDone)
+        {
+            // Stream complete. FinishReason: "stop"
+        }
+        else
+        {
+            Console.Write(delta.Content); // Append token
+        }
+    }
+});
+```
+
+### Multimodal (Vision) Request
+
+```csharp
+var message = new ChatMessage("user", new List<MessageContent>
+{
+    new ImageFileContent("/path/to/image.jpg"),
+    new TextContent("Describe this image")
+});
+
+await connection.InvokeAsync("SendPromptDelta", sessionId, message);
+```
+
+Supported content types:
+- `TextContent` — plain text
+- `ImageFileContent` — local file path (server-side)
+- `ImageBase64Content` — base64-encoded image
+- `ImageUrlContent` — HTTP URL to image
+
+---
+
+## Context Management
+
+### Get Token Count
+
+```csharp
+int tokenCount = await connection.InvokeAsync<int>("GetSessionTokenCount", sessionId);
+```
+
+### Rollback (Truncate KV-cache)
+
+```csharp
+await connection.InvokeAsync("RollbackSession", sessionId, targetPosition);
+```
+
+Removes all tokens after `targetPosition`. Use when user wants to "undo" last messages.
+
+### Shift (Sliding Window)
+
+```csharp
+await connection.InvokeAsync("ShiftSessionCache", sessionId, startPos, count);
+```
+
+Removes `count` tokens starting at `startPos` and shifts remaining tokens. Frees VRAM while preserving recent context.
+
+**Note:** Throws `NotSupportedException` if FlashAttention or GPU-offload is active (physical shift impossible). Fallback: use `RollbackSession` + re-decode.
+
+---
+
+## Embeddings
+
+### Generate Embeddings
+
+```csharp
+var request = new EmbeddingRequest("Text to embed", Normalize: true);
+var response = await connection.InvokeAsync<EmbeddingResponse>(
+    "GenerateEmbeddingsAsync", repoId, request);
+
+// response.Embedding — float[] vector
+// response.TokenCount — tokens consumed
+// response.EmbeddingDimension — vector size
+```
+
+**Prerequisites:**
+- Model must be loaded with `Embeddings: true` in hardware profile.
+- Model must be the active model.
+- Input text must fit within context window.
+
+**Error Cases:**
+- `HubException` if gateway not ready.
+- `HubException` if model not active.
+- `HubException` if text exceeds context size.
+
+---
+
+## Model Management (Admin)
+
+### Load Model
+
+```csharp
+await connection.InvokeAsync("LoadModelAsync", repoId, profileName);
+```
+
+Profiles are defined in `appsettings.json` under `InstantAIGate:HardwareProfiles:{profileName}`.
+
+### Swap Model (Hot-Swap)
+
+```csharp
+await connection.InvokeAsync("SwapModelAsync", repoId, profileName);
+```
+
+Gracefully drains active requests, unloads old model, loads new model. Queue is paused during swap.
+
+### Unload Model
+
+```csharp
+await connection.InvokeAsync("UnloadModelAsync", repoId);
+```
+
+### Get Active Model Details
+
+```csharp
+var details = await connection.InvokeAsync<NativeModelDetails>("GetActiveModelDetailsAsync");
+// details.RepoId, details.ContextSize, details.GpuLayers, details.Backend, etc.
+```
+
+### Get Queue Metrics
+
+```csharp
+var metrics = await connection.InvokeAsync<InferenceMetrics>("GetQueueMetricsAsync");
+// metrics.ActiveLeases, metrics.PendingRequests
+```
+
+### Set Queue Limit
+
+```csharp
+await connection.InvokeAsync("SetQueueLimitAsync", newLimit);
+```
+
+---
+
+## Model Download
+
+### Trigger Download
+
+```csharp
+await connection.InvokeAsync("SubscribeToModelDownload", repoId);
+await connection.InvokeAsync("DownloadModelAsync", repoId);
+```
+
+### Monitor Progress
+
+```csharp
+connection.On<DownloadProgress>("ReceiveDownloadProgress", progress =>
+{
+    Console.WriteLine($"{progress.ModelId}: {progress.Percentage:F1}% " +
+                      $"({progress.SpeedBytesPerSecond / 1048576:F2} MB/s)");
+});
+```
+
+### Unsubscribe
+
+```csharp
+await connection.InvokeAsync("UnsubscribeFromModelDownload", repoId);
+```
+
+---
+
+## VRAM Management
+
+### Purge Idle Contexts
+
+```csharp
+await connection.InvokeAsync("PurgeIdleContextsAsync", repoId);
+```
+
+Frees all pooled idle contexts for the specified model. Use when VRAM pressure is high and no active sessions need the cached contexts.
+
+---
+
+## Health Checks
+
+| Endpoint | Auth | Purpose |
+|----------|------|---------|
+| `/health/live` | None | Liveness probe (always 200) |
+| `/health/ready` | None | Readiness probe (200 when model loaded, 503 otherwise) |
+
+**Ready Response (200):**
+```json
+{ "status": "Healthy", "description": "Model 'qwen3-vl-2b-instruct' is loaded and ready." }
+```
+
+**Not Ready Response (503):**
+```json
+{
+  "status": "Degraded",
+  "description": "Downloading model 'qwen3-vl-2b-instruct' (45.5%)",
+  "data": {
+    "status": "ModelDownloading",
+    "progressPercentage": 45.5,
+    "bytesPerSecond": 25000000
+  }
+}
+```
+
+---
+
+## Error Handling
+
+### ReceiveError
+
+General errors (model not found, session not active, etc.):
+```csharp
+connection.On<string>("ReceiveError", error =>
+{
+    Console.WriteLine($"Gateway Error: {error}");
+});
+```
+
+### ReceiveContextOverflow
+
+Context window exceeded. Client should offer mitigation:
+```csharp
+connection.On<ContextOverflowException>("ReceiveContextOverflow", ex =>
+{
+    // ex.PastTokens, ex.IncomingTokens, ex.ReservedTokens, ex.ContextSize
+    // Options: ShiftSessionCache, RollbackSession, or clear session
+});
+```
+
+**Recommended Mitigation Flow:**
+1. Try `ShiftSessionCache` (sliding window).
+2. If `NotSupportedException` → `RollbackSession` to safe position.
+3. If user wants fresh start → `DestroySession` + new `JoinSession`.
+
+### HTTP Error Codes (Middleware)
+
+| Code | Exception | Meaning |
+|------|-----------|---------|
+| 429 | `QueueFullException` | Gateway at capacity |
+| 504 | `TimeoutException` | Queue wait timeout |
+| 503 | `InvalidOperationException` (draining) | Model swapping |
+| 500 | Other | Internal error |
+
+---
+
+## Ephemeral Sessions
+
+Ephemeral sessions are automatically destroyed when the client disconnects. Use for CLI/terminal sessions where no reconnect is expected.
+
+### Mark as Ephemeral
+
+```csharp
+await connection.InvokeAsync("JoinSession", sessionId, repoId);
+await connection.InvokeAsync("MarkSessionAsEphemeral", sessionId);
+```
+
+**Behavior on Disconnect:**
+- All ephemeral sessions for the disconnected connection are force-destroyed (`destroySlot: true`).
+- VRAM is immediately freed.
+- No manual cleanup needed.
+
+**Non-Ephemeral Sessions:**
+- Preserved on disconnect for potential reconnect.
+- Automatically cleaned up after idle timeout (10 minutes).
+- Orphaned sessions (no connection) are reaped after 2 minutes by `SessionReaperService`.
+
+---
+
+## Complete Integration Example
+
+```csharp
+using Microsoft.AspNetCore.SignalR.Client;
+
+var connection = new HubConnectionBuilder()
+    .WithUrl("http://localhost:5000/hub/gateway", options =>
+    {
+        options.AccessTokenProvider = () => Task.FromResult("your-api-key")!;
+    })
+    .WithAutomaticReconnect()
+    .Build();
+
+// Subscribe to events
+connection.On<SessionTokenDelta>("ReceiveTokenDelta", delta =>
+{
+    if (!delta.IsDone) Console.Write(delta.Content);
+});
+connection.On<string>("ReceiveError", err => Console.WriteLine($"ERROR: {err}"));
+connection.On<GatewayStatusDetails>("ReceiveGatewayStatus", s =>
+{
+    Console.WriteLine($"Gateway: {s.Status} | Model: {s.ActiveModelId}");
+});
+
+await connection.StartAsync();
+
+// Check gateway readiness
+var status = await connection.InvokeAsync<GatewayStatusDetails>("GetGatewayStatus");
+if (status.Status != GatewayOperationalStatus.Ready)
+{
+    Console.WriteLine("Waiting for model...");
+    // Wait for ReceiveGatewayStatus with Ready
+}
+
+// Create session
+string sessionId = Guid.NewGuid().ToString("N");
+await connection.InvokeAsync("JoinSession", sessionId, "");
+await connection.InvokeAsync("MarkSessionAsEphemeral", sessionId);
+
+// Send prompt
+var message = new ChatMessage("user", "Hello!");
+await connection.InvokeAsync("SendPromptDelta", sessionId, message);
+
+// Wait for completion (use TaskCompletionSource in production)
+await Task.Delay(10000);
+
+// Cleanup
+await connection.InvokeAsync("LeaveSession", sessionId);
+await connection.StopAsync();
+```
+
+---
+
+## Configuration Reference
+
+### Hardware Profiles (appsettings.json)
+
+```json
+{
+  "InstantAIGate": {
+    "HardwareProfiles": {
+      "Default": {
+        "GpuLayerCount": 99,
+        "MainGPU": 0,
+        "ContextSize": 4096,
+        "BatchSize": 512,
+        "Threads": 8,
+        "FlashAttention": true,
+        "Embeddings": false,
+        "KvCacheQuantization": "F16",
+        "UseMemoryLock": false,
+        "MaxContexts": 4
+      },
+      "Embedding": {
+        "GpuLayerCount": 99,
+        "ContextSize": 2048,
+        "BatchSize": 512,
+        "Threads": 4,
+        "FlashAttention": true,
+        "Embeddings": true,
+        "KvCacheQuantization": "Q8_0",
+        "MaxContexts": 2
+      }
+    },
+    "StartupModel": {
+      "Enabled": true,
+      "RepoId": "qwen3-vl-2b-instruct",
+      "Profile": "Default"
+    },
+    "AdminApiKey": "your-secret-admin-key"
+  }
+}
+```
+
+### VRAM Budgeting Guidelines
+
+| Model Size | KvCacheQuantization | MaxContexts | FlashAttention |
+|------------|---------------------|-------------|----------------|
+| ≤ 8B | F16 | 4 | true |
+| 8B–14B | Q8_0 | 3 | true |
+| 14B–32B | Q8_0 | 2 | true |
+| > 32B | Q4_K | 1 | false |
+
+**Critical:** `FlashAttention: true` disables `ShiftSessionCache`. Use `RollbackSession` as fallback.
