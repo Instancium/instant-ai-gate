@@ -22,6 +22,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 [Authorize]
 public class GatewayHub : Hub<IGatewayHubClient>
@@ -367,26 +368,28 @@ public class GatewayHub : Hub<IGatewayHubClient>
     }
 
     [Authorize(Policy = "GatewayAdmin")]
-    public async Task LoadModelAsync(string repoId, string? profile)
+    public async Task LoadModelAsync(string repoId, string? profileName = null)
     {
-        var targetModel = await _catalogService.FindModelByIdAsync(repoId, Context.ConnectionAborted);
-        if (targetModel == null)
-        {
-            throw new HubException($"Model '{repoId}' not found in catalog.");
-        }
+        var profile = profileName ?? "Default";
+        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profile}").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
 
-        var config = BuildModelSettings(targetModel, profile);
-        _stateManager.SetLoading(repoId, $"Loading model '{repoId}' into memory");
-        try
+        var settings = new ModelSettings
         {
-            await _modelManager.LoadModelAsync(config, Context.ConnectionAborted);
-            _stateManager.SetReady(repoId);
-        }
-        catch (Exception ex)
-        {
-            _stateManager.SetFaulted(repoId, $"Failed to load model '{repoId}'", ex);
-            throw;
-        }
+            RepoId = repoId,
+            GpuLayerCount = hwProfile.GpuLayerCount,
+            MainGPU = hwProfile.MainGPU,
+            ContextSize = hwProfile.ContextSize,
+            BatchSize = hwProfile.BatchSize,
+            Threads = hwProfile.Threads,
+            FlashAttention = hwProfile.FlashAttention,
+            Embeddings = hwProfile.Embeddings,
+            KvCacheQuantization = hwProfile.KvCacheQuantization,
+            UseMemoryLock = hwProfile.UseMemoryLock
+        };
+
+        await _modelManager.LoadModelAsync(settings, Context.ConnectionAborted);
+        _logger.LogInformation("Model {RepoId} loaded with profile {Profile} (Embeddings={Embeddings})",
+            repoId, profile, settings.Embeddings);
     }
 
     [Authorize(Policy = "GatewayAdmin")]
@@ -459,6 +462,42 @@ public class GatewayHub : Hub<IGatewayHubClient>
     #endregion
 
     #region Helpers
+
+    [Authorize(Policy = "GatewayUser")]
+    public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request)
+    {
+        try
+        {
+            var snapshot = _stateManager.GetSnapshot();
+            if (snapshot.Status != GatewayOperationalStatus.Ready)
+            {
+                throw new HubException($"Gateway is not ready. Current status: {snapshot.Status}");
+            }
+
+            var activeSettings = _modelManager.GetActiveSettings();
+            if (activeSettings == null || !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new HubException($"Requested model '{repoId}' is not active. Active model: {activeSettings?.RepoId ?? "none"}");
+            }
+
+            var response = await _inferenceEngine.GenerateEmbeddingsAsync(repoId, request, Context.ConnectionAborted);
+            _logger.LogInformation("Generated embeddings for model {ModelId}: {TokenCount} tokens, {Dim}D vector",
+                repoId, response.TokenCount, response.EmbeddingDimension);
+
+            return response;
+        }
+        catch (ContextOverflowException ex)
+        {
+            _logger.LogWarning(ex, "Context overflow during embedding generation for model {ModelId}", repoId);
+            throw new HubException($"Input text exceeds model context size: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate embeddings for model {ModelId}", repoId);
+            throw new HubException($"Embedding generation failed: {ex.Message}");
+        }
+    }
+
 
     private ModelSettings BuildModelSettings(CatalogModelEntry targetModel, string? profile)
     {

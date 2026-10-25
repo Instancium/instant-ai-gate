@@ -1,5 +1,4 @@
-﻿// File: src/InstantAIGate.Native/Inference/BackendFacade.cs
-namespace InstantAIGate.Native.Inference;
+﻿namespace InstantAIGate.Native.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Interfaces.Inference;
@@ -17,34 +16,27 @@ public class BackendFacade : IBackendFacade
     public bool SupportsGpuOffload() => LlamaNative.llama_supports_gpu_offload();
     private static GgmlLogCallback? _nativeLogCallback;
 
-
     public IModelHandle LoadModel(ModelSettings settings, string modelPath)
     {
         var modelParams = LlamaNative.llama_model_default_params();
         modelParams.NGpuLayers = settings.GpuLayerCount;
         modelParams.MainGpu = settings.MainGPU;
-
-        // Fix: Use MLock / MMapMLock when UseMemoryLock is requested
         modelParams.LoadMode = settings.UseMemoryLock
             ? LlamaLoadMode.MMapMLock
             : LlamaLoadMode.MMap;
-
         modelParams.SplitMode = settings.GpuLayerCount > 0
             ? LlamaSplitMode.Layer
             : LlamaSplitMode.None;
-
         IntPtr ptr = LlamaNative.llama_model_load_from_file(modelPath, in modelParams, (nuint)modelPath.Length);
         return ptr != IntPtr.Zero
             ? new LlamaModelHandle(ptr)
             : throw new InvalidOperationException("Failed to load model natively.");
     }
 
-
     public bool CanShiftContextMemory(IContextHandle contextHandle)
     {
         if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
             return false;
-
         IntPtr mem = LlamaNative.llama_get_memory(nativeHandle.Pointer);
         return mem != IntPtr.Zero && LlamaNative.llama_memory_can_shift(mem);
     }
@@ -53,7 +45,6 @@ public class BackendFacade : IBackendFacade
     {
         if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
             return false;
-
         IntPtr mem = LlamaNative.llama_get_memory(nativeHandle.Pointer);
         return mem != IntPtr.Zero && LlamaNative.llama_memory_seq_rm(mem, seqId, p0, p1);
     }
@@ -62,7 +53,6 @@ public class BackendFacade : IBackendFacade
     {
         if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
             return;
-
         IntPtr mem = LlamaNative.llama_get_memory(nativeHandle.Pointer);
         if (mem != IntPtr.Zero)
         {
@@ -93,7 +83,6 @@ public class BackendFacade : IBackendFacade
             "Q4_0" => GgmlType.Q4_0,
             _ => GgmlType.F16
         };
-
         ctxParams.TypeK = ggmlType;
         ctxParams.TypeV = ggmlType;
 
@@ -134,12 +123,32 @@ public class BackendFacade : IBackendFacade
         return 0;
     }
 
+    public float[]? GetEmbeddings(IContextHandle contextHandle, int seqId)
+    {
+        if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+            return null;
+
+        IntPtr embeddingsPtr = LlamaNative.llama_get_embeddings_seq(nativeHandle.Pointer, seqId);
+        if (embeddingsPtr == IntPtr.Zero)
+            return null;
+
+        IntPtr modelPtr = LlamaNative.llama_get_model(nativeHandle.Pointer);
+        int embeddingDim = LlamaNative.llama_model_n_embd(modelPtr);
+
+        if (embeddingDim <= 0)
+            return null;
+
+        float[] embeddings = new float[embeddingDim];
+        Marshal.Copy(embeddingsPtr, embeddings, 0, embeddingDim);
+
+        return embeddings;
+    }
+
     public void SetLogCallback(BackendLogCallback callback)
     {
         _nativeLogCallback = (level, text, _) =>
         {
             if (text == IntPtr.Zero) return;
-
             try
             {
                 int coreLevel = level switch
@@ -154,10 +163,8 @@ public class BackendFacade : IBackendFacade
             }
             catch
             {
-
             }
         };
-
         LlamaNative.llama_log_set(_nativeLogCallback, IntPtr.Zero);
     }
 }

@@ -15,8 +15,8 @@
     ]
   },
   {
-    "Id": "qwen3-4b-instruct-2507",
-    "Name": "Qwen3 4B Instruct 2507",
+    "Id": "qwen3-4b-instruct",
+    "Name": "Qwen3 4B Instruct",
     "Architecture": "qwen3",
     "ParameterCount": 4000000000,
     "Quantization": "Q8_0",
@@ -69,5 +69,18 @@
     "VisionProjectorUrls": [
       "https://modelscope.ai/models/Qwen/Qwen3-VL-32B-Instruct-GGUF/resolve/master/mmproj-Qwen3VL-32B-Instruct-Q8_0.gguf"
     ]
+  },
+  {
+    "Id": "qwen3-embedding-0.6b",
+    "Name": "Qwen3 Embedding 0.6B (Q8_0)",
+    "Architecture": "qwen3",
+    "ParameterCount": 600000000,
+    "Quantization": "Q8_0",
+    "TotalFileSizeBytes": 640000000,
+    "DownloadUrls": [
+      "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf"
+    ],
+    "RequiresVisionProjector": false,
+    "VisionProjectorUrls": null
   }
 ]

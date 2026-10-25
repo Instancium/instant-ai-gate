@@ -380,10 +380,10 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         return await _hubConnection!.InvokeAsync<NativeModelDetails>("GetActiveModelDetailsAsync", ct);
     }
 
-    public async Task LoadModelAsync(string repoId, CancellationToken ct = default)
+    public async Task LoadModelAsync(string repoId, string? profile = null, CancellationToken ct = default)
     {
         await EnsureConnectedAsync(ct);
-        await _hubConnection!.InvokeAsync("LoadModelAsync", repoId, (string?)null, ct);
+        await _hubConnection!.InvokeAsync("LoadModelAsync", repoId, profile, ct);
     }
 
     public async Task UnloadModelAsync(string repoId, CancellationToken ct = default)
@@ -429,6 +429,12 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
     }
 
     #endregion
+
+    public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request, CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        return await _hubConnection!.InvokeAsync<EmbeddingResponse>("GenerateEmbeddingsAsync", repoId, request, ct);
+    }
 
     public async ValueTask DisposeAsync()
     {
