@@ -56,4 +56,7 @@ public interface IModelProvider : IDisposable
     IEnumerable<NativeModelDetails> GetNativeDetails();
 
     void PurgeIdleContexts(string repoId);
+
+
+    int GetEmbeddingDimension(string repoId);
 }

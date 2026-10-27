@@ -66,6 +66,7 @@ public static class Program
                 services.AddTransient<IConsoleCommand, ContextCommand>();
                 services.AddTransient<IConsoleCommand, VramCommand>();
                 services.AddTransient<IConsoleCommand, EmbedCommand>();
+                services.AddTransient<IConsoleCommand, EmbedDimCommand>();
 
 
                 services.AddHttpClient();

@@ -41,4 +41,6 @@ public record NativeModelDetails
     /// Backend type identifier.
     /// </summary>
     public string Backend { get; init; } = string.Empty;
+
+    public int EmbeddingDimension { get; init; } = 1024;
 }

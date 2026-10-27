@@ -40,6 +40,19 @@ public sealed class ModelManager : IDisposable, IModelManager
     }
 
 
+    public Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default)
+    {
+        if (_activeConfig == null)
+            throw new InvalidOperationException("No model is currently active.");
+
+        if (!string.Equals(_activeConfig.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"Model '{repoId}' is not active. Active model: '{_activeConfig.RepoId}'.");
+
+        int dimension = _modelProvider.GetEmbeddingDimension(repoId);
+        return Task.FromResult(dimension);
+    }
+
     public Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default)
     {
         _modelProvider.PurgeIdleContexts(repoId);

@@ -33,6 +33,18 @@ public class BackendFacade : IBackendFacade
             : throw new InvalidOperationException("Failed to load model natively.");
     }
 
+    public int GetEmbeddingDimension(IModelHandle modelHandle)
+    {
+        if (modelHandle is not LlamaModelHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+            throw new ArgumentException("Invalid model handle type.", nameof(modelHandle));
+
+        int dimension = LlamaNative.llama_model_n_embd(nativeHandle.Pointer);
+        if (dimension <= 0)
+            throw new InvalidOperationException("Native engine returned non-positive embedding dimension.");
+
+        return dimension;
+    }
+
     public bool CanShiftContextMemory(IContextHandle contextHandle)
     {
         if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)

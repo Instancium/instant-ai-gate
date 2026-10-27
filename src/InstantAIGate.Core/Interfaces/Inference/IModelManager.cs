@@ -22,4 +22,8 @@ public interface IModelManager : IDisposable
     IEnumerable<string> GetActiveModels();
     IEnumerable<NativeModelDetails> GetNativeDetails();
     Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default);
+
+    Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default);
+
+
 }

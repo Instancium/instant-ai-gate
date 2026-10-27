@@ -233,6 +233,11 @@ public class LocalGatewayClient : IGatewayClient
         };
     }
 
+    public Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default)
+    {
+        return _modelManager.GetEmbeddingDimensionAsync(repoId, ct);
+    }
+
     public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request, CancellationToken ct = default)
     {
         var activeSettings = _modelManager.GetActiveSettings();

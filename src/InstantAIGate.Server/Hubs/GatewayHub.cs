@@ -499,6 +499,30 @@ public class GatewayHub : Hub<IGatewayHubClient>
     }
 
 
+    [Authorize(Policy = "GatewayUser")]
+    public async Task<int> GetEmbeddingDimensionAsync(string repoId)
+    {
+        var snapshot = _stateManager.GetSnapshot();
+        if (snapshot.Status != GatewayOperationalStatus.Ready)
+            throw new HubException($"Gateway is not ready. Current status: {snapshot.Status}");
+
+        var activeSettings = _modelManager.GetActiveSettings();
+        if (activeSettings == null || !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
+            throw new HubException($"Model '{repoId}' is not active. Active model: {activeSettings?.RepoId ?? "none"}");
+
+        try
+        {
+            int dimension = await _inferenceEngine.GetEmbeddingDimensionAsync(repoId, Context.ConnectionAborted);
+            _logger.LogInformation("Embedding dimension for model {ModelId}: {Dimension}", repoId, dimension);
+            return dimension;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get embedding dimension for model {ModelId}", repoId);
+            throw new HubException($"Failed to retrieve embedding dimension: {ex.Message}");
+        }
+    }
+
     private ModelSettings BuildModelSettings(CatalogModelEntry targetModel, string? profile)
     {
         var profileName = profile ?? "Default";
