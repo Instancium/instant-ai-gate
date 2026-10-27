@@ -331,9 +331,8 @@ public class ModelProvider : IModelProvider, IDisposable
         _configCache.TryGetValue(r, out var c);
         _pools.TryGetValue(r, out var p);
         _modelCache.TryGetValue(r, out var modelHandle);
-
         int totalLayers = modelHandle != null ? _backendFacade.GetModelLayerCount(modelHandle) : 0;
-
+        int embeddingDim = modelHandle != null ? _backendFacade.GetEmbeddingDimension(modelHandle) : 0;
         return new NativeModelDetails
         {
             RepoId = r,
@@ -343,9 +342,25 @@ public class ModelProvider : IModelProvider, IDisposable
             Threads = c?.Threads ?? 4,
             FlashAttention = c?.FlashAttention ?? false,
             IdleContextsCount = p?.Count ?? 0,
-            Backend = modelHandle?.BackendType ?? "llama.cpp"
+            Backend = modelHandle?.BackendType ?? "llama.cpp",
+            EmbeddingDimension = embeddingDim
         };
     });
+
+
+    public int GetEmbeddingDimension(string repoId)
+    {
+        if (string.IsNullOrWhiteSpace(repoId))
+            throw new ArgumentException("RepoId required.", nameof(repoId));
+
+        if (!_modelCache.TryGetValue(repoId, out var modelHandle))
+            throw new InvalidOperationException($"Model '{repoId}' is not loaded into memory.");
+
+        return _backendFacade.GetEmbeddingDimension(modelHandle);
+    }
+
+
+
 
     public void Dispose()
     {

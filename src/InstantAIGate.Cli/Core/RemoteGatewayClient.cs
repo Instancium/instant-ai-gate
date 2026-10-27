@@ -436,6 +436,13 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         return await _hubConnection!.InvokeAsync<EmbeddingResponse>("GenerateEmbeddingsAsync", repoId, request, ct);
     }
 
+
+    public async Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        return await _hubConnection!.InvokeAsync<int>("GetEmbeddingDimensionAsync", repoId, ct);
+    }
+
     public async ValueTask DisposeAsync()
     {
         _connectionLock.Dispose();

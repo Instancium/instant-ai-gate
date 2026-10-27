@@ -40,6 +40,12 @@ public class LlamaInference : IInferenceEngine, IDisposable
         _backendFacade = backendFacade;
     }
 
+    public async Task<int> GetEmbeddingDimensionAsync(string modelId, CancellationToken ct = default)
+    {
+        using var model = await _modelManager.AcquireModelAsync(modelId, ct);
+        return _backendFacade.GetEmbeddingDimension(model.Handle);
+    }
+
     private static IntPtr UnwrapModel(ModelWeights weights) =>
         weights.Handle is LlamaModelHandle mh ? mh.Pointer : throw new InvalidCastException("Invalid model handle.");
     private static IntPtr UnwrapContext(ModelContext ctx) =>

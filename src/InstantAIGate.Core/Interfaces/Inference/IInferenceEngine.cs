@@ -28,4 +28,7 @@ public interface IInferenceEngine
         string modelId,
         EmbeddingRequest request,
         CancellationToken ct = default);
+
+    Task<int> GetEmbeddingDimensionAsync(string modelId, CancellationToken ct = default);
+
 }

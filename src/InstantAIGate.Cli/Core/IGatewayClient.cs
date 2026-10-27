@@ -31,4 +31,7 @@ public interface IGatewayClient
     Task DestroySessionAsync(string sessionId, CancellationToken ct = default);
     Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default);
     Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request, CancellationToken ct = default);
+
+    Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default);
+
 }

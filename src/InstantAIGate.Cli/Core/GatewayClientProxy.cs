@@ -113,4 +113,7 @@ public class GatewayClientProxy : IGatewayClient
 
     public Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request, CancellationToken ct = default) =>
     _activeClient.GenerateEmbeddingsAsync(repoId, request, ct);
+
+    public Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default) =>
+    _activeClient.GetEmbeddingDimensionAsync(repoId, ct);
 }

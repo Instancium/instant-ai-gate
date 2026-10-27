@@ -31,5 +31,7 @@
         /// <param name="seqId">Sequence identifier, typically 0 for single-sequence embedding requests.</param>
         /// <returns>A managed float array containing the embedding, or null when unavailable.</returns>
         float[]? GetEmbeddings(IContextHandle contextHandle, int seqId);
+
+        int GetEmbeddingDimension(IModelHandle modelHandle);
     }
 }
