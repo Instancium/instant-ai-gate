@@ -17,7 +17,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
-using Xunit.Abstractions;
 
 public class LlamaVisionIntegrationTests : IAsyncLifetime
 {
@@ -38,7 +37,7 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         _output = output;
     }
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         bool isNativeLoaded = NativeLibraryLoader.Load();
         Assert.True(isNativeLoaded, "Failed to load llama/mtmd native libraries.");
@@ -64,14 +63,14 @@ public class LlamaVisionIntegrationTests : IAsyncLifetime
         // 2. MUST INITIALIZE FROM DI CONTAINER:
         _sessionManager = _serviceProvider.GetRequiredService<ISessionInferenceManager>();
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _serviceProvider?.Dispose();
         NativeLibraryLoader.Unload();
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]
