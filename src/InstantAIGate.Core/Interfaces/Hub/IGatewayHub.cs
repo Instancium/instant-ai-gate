@@ -1,4 +1,8 @@
-﻿using System.Threading.Tasks;
+﻿using InstantAIGate.Core.Dtos.Inference;
+using InstantAIGate.Core.Dtos.Session;
+using InstantAIGate.Core.Dtos.Status;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace InstantAIGate.Core.Interfaces.Hub;
 
@@ -7,11 +11,12 @@ namespace InstantAIGate.Core.Interfaces.Hub;
 /// </summary>
 public interface IGatewayHub
 {
-    /// <summary>
-    /// Marks the specified session as ephemeral, binding its lifecycle to the current physical connection.
-    /// If the connection drops, the server guarantees deterministic VRAM slot destruction for this session.
-    /// </summary>
-    /// <param name="sessionId">The session identifier to mark as ephemeral.</param>
-    /// <returns>A task representing the asynchronous registration operation.</returns>
-    Task MarkSessionAsEphemeral(string sessionId);
+    Task JoinSession(string sessionId, string repoId);
+    Task LeaveSession(string sessionId);
+    Task DestroySession(string sessionId);
+    Task SendPromptDelta(string sessionId, ChatMessage deltaMessage);
+    Task RollbackSession(string sessionId, int targetPosition);
+    Task ShiftSessionCache(string sessionId, int startPos, int count);
+    Task<int> GetSessionTokenCount(string sessionId);
+    Task<GatewayStatusDetails> GetGatewayStatus();
 }

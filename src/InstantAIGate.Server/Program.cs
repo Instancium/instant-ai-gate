@@ -1,8 +1,6 @@
 namespace InstantAIGate.Server;
 
 using InstantAIGate.Core.Dtos.Config;
-using InstantAIGate.Core.Interfaces.Session;
-using InstantAIGate.Core.Services.Session;
 using InstantAIGate.Native.DependencyInjection;
 using InstantAIGate.Server.Configuration;
 using InstantAIGate.Server.Diagnostics;
@@ -29,6 +27,8 @@ public class Program
 
         builder.Services.Configure<StorageSettings>(
             builder.Configuration.GetSection("InstantAIGate:Storage"));
+        builder.Services.Configure<SessionSettings>(
+            builder.Configuration.GetSection(SessionSettings.SectionName));
 
         builder.Services.AddAuthorization(options =>
         {
@@ -42,10 +42,6 @@ public class Program
         builder.Services.AddInstantAIGateInference();
         builder.Services.AddInstantAIGateSSR();
         builder.Services.AddSignalR();
-
-        builder.Services.AddSingleton<IEphemeralSessionRegistry, EphemeralSessionRegistry>();
-        builder.Services.AddSingleton<ISessionReaperService, SessionReaperService>();
-        builder.Services.AddHostedService(sp => sp.GetRequiredService<ISessionReaperService>());
 
         var signalRLoggerProvider = new SignalRLoggerProvider();
         builder.Services.AddSingleton<ILoggerProvider>(signalRLoggerProvider);

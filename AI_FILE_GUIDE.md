@@ -11,8 +11,7 @@ Key Dependencies:
 `InstantAIGate.SSR.DependencyInjection.ServiceCollectionExtensions` — registers model downloader and catalog.
 `InstantAIGate.Server.Hubs.GatewayHub` — central SignalR hub.
 `InstantAIGate.Server.Services.Workers.*` — background tasks (`ModelStartupWorker`, `ModelDownloadWorker`, `MetricsBroadcasterWorker`).
-`InstantAIGate.Core.Interfaces.Session.IEphemeralSessionRegistry` — ephemeral session tracking.
-`InstantAIGate.Core.Interfaces.Session.ISessionReaperService` — orphaned session cleanup.
+`InstantAIGate.Core.Dtos.Config.SessionSettings` — session grace period and idle timeout options.
 Invariants:
 Health check `/health/live` returns 200 without authorization (for orchestrators).
 Health check `/health/ready` returns 503 until model is loaded and status is `Ready`.
@@ -28,27 +27,25 @@ Central SignalR Hub
 File:`src/InstantAIGate.Server/Hubs/GatewayHub.cs`
 Role: Single entry point for data plane (inference) and control plane (model management). Handles authorization, queues, sessions, and token streaming.
 Key Dependencies:
-`ISessionInferenceManager` — session state and KV-cache management.
+`ISessionInferenceManager` — session state, KV-cache, disconnect grace period, and idle eviction.
 `IInferenceEngine` — token generation delegation.
 `IModelManager` — model loading/unloading/purging.
 `IQueueManager` — concurrency control.
-`IEphemeralSessionRegistry` — session registration with auto-deletion on disconnect.
 `IGatewayStateManager` — gateway operational status tracking.
 `ChannelWriter<DownloadJob>` — background download queue.
 Invariants:
 All public methods require `[Authorize]`.
 Data plane methods (`SendPromptDelta`, `JoinSession`, `GetSessionTokenCount`, `GetGatewayStatus`, `GetEmbeddingDimensionAsync`) require `GatewayUser` role.
 Control plane methods (`LoadModelAsync`, `SwapModelAsync`, `UnloadModelAsync`, `DownloadModelAsync`, `PurgeIdleContextsAsync`, `SetQueueLimitAsync`) require `GatewayAdmin` role.
-On disconnect, all registered sessions are released; ephemeral sessions are deleted with `destroySlot: true`.
+On disconnect, a configurable Grace Period (default 30s) is armed; reconnecting within this window preserves the KV-cache without full prompt re-decoding.
 `JoinSession` rejects requests if gateway is in `ModelDownloading`, `ModelLoading`, or `Faulted` state.
 `GetEmbeddingDimensionAsync` throws `HubException` if gateway is not `Ready` or the requested repoId is not the active model.
 Hub Methods (Data Plane — GatewayUser): 
 | Method | Description |
 |--------|-------------|
-|  `JoinSession(sessionId, repoId)`  | Creates session, binds to connection |
+|  `JoinSession(sessionId, repoId)`  | Creates or resumes session, binds to connection |
 |  `LeaveSession(sessionId)`  | Releases session, notifies client |
 |  `DestroySession(sessionId)`  | Force-destroys session slot |
-|  `MarkSessionAsEphemeral(sessionId)`  | Registers session for auto-cleanup |
 |  `SendPromptDelta(sessionId, deltaMessage)`  | Streams inference tokens |
 |  `RollbackSession(sessionId, targetPosition)`  | Truncates KV-cache |
 |  `ShiftSessionCache(sessionId, startPos, count)`  | Sliding window eviction |
@@ -125,22 +122,30 @@ CLI command `/ctx rollback <pos>`.
 CLI command `/ctx shift <start> <count>`.
 Handling `ContextOverflowException` in `LlamaInference`.
 
-Ephemeral Session Registry & Reaper
-File:`src/InstantAIGate.Core/Services/Inference/Session/EphemeralSessionRegistry.cs`File:`src/InstantAIGate.Core/Services/Inference/Session/SessionReaperService.cs`
-Role: Tracks sessions marked as ephemeral and associates them with `ConnectionId`. On disconnect, returns session list for forced deletion. The reaper periodically drains orphaned sessions.
+## Session Lifecycle & Grace Period Architecture
+
+File: `src/InstantAIGate.Core/Services/Inference/SessionInferenceManager.cs`
+
+Role: Single source of truth for session lifecycle, connection binding, KV-cache continuity, disconnect Grace Period, and idle timeout evictions.
+
 Key Concepts:
-`_connectionToSessions` — mapping ConnectionId → HashSet<SessionId>.
-`_sessionRegistrationTime` — registration timestamp for orphan detection.
-`DrainOrphanedSessions` — finds sessions older than threshold (2 minutes) without active connection.
-`SessionReaperService` runs every 30 seconds, calls `DrainOrphanedSessions`, force-releases orphans with `destroySlot: true`.
+- `BoundConnectionId` — tracks the currently active SignalR connection.
+- `DisconnectGraceCts` — token source controlling the delayed release timer upon network drop.
+- `NotifyConnectionDisconnected` — arms a Grace Period (default 30s) when the connection drops.
+- `CreateSessionAsync(request, connectionId)` — idempotent: resumes existing sessions, cancels pending grace eviction, and preserves KV-cache.
+- `ExecutionGate` — ensures native `llama_decode` passes complete safely before releasing or disposing contexts.
+
 Invariants:
-`NotifyConnectionDisconnected` deletes all connection sessions and returns their list.
-`UnregisterSession` removes session from all connections.
-Orphan threshold is 2 minutes.
+- A brief network blink (< 30s) does NOT destroy the session or clear the KV-cache.
+- Reconnecting within the grace period seamlessly resumes the session.
+- If the grace period expires without reconnection, the session is evicted safely.
+- Explicit `LeaveSession` or `DestroySession` immediately releases/destroys the session without grace delay.
+- Inactive sessions (connected but quiet) are evicted after `IdleTimeout` (default 3 minutes).
+
 Scenarios:
-CLI sessions are ephemeral by default (auto-cleanup on terminal close).
-Hard disconnect detection via `IConnectionLifetimeFeature.Abort()`.
-VRAM leak prevention.
+- Interactive chat sessions surviving Wi-Fi / cellular glitches.
+- CLI and web clients reconnecting seamlessly without redownloading or recomputing prefixes.
+- Deterministic VRAM recovery when client processes crash or disappear.
 
 Model Lifecycle Manager
 File:`src/InstantAIGate.Core/Services/Inference/ModelManager.cs`

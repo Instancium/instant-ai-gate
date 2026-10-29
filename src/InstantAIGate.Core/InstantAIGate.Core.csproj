@@ -25,4 +25,8 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
 		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.13" />
 	</ItemGroup>
+	<ItemGroup>
+	  <Folder Include="Interfaces\Session\" />
+	  <Folder Include="Services\Inference\Session\" />
+	</ItemGroup>
 </Project>

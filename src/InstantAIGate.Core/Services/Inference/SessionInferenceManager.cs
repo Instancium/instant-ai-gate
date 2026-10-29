@@ -1,10 +1,12 @@
 ﻿namespace InstantAIGate.Core.Services.Inference;
 
+using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Interfaces.Native;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -24,17 +26,38 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
         public readonly object LockObj = new();
         public InferenceContext? ActiveContext { get; set; }
         public DateTimeOffset LastAccessed { get; private set; }
+        public string? BoundConnectionId { get; set; }
+        public CancellationTokenSource? DisconnectGraceCts { get; set; }
 
-        public StatefulSessionEntry(SessionStartRequest request, DateTimeOffset createdAt)
+        public StatefulSessionEntry(SessionStartRequest request, DateTimeOffset createdAt, string? connectionId = null)
         {
             Request = request;
             LastAccessed = createdAt;
+            BoundConnectionId = connectionId;
         }
 
         public void Touch(DateTimeOffset now) => LastAccessed = now;
 
+        public void CancelDisconnectGrace()
+        {
+            if (DisconnectGraceCts != null)
+            {
+                try
+                {
+                    DisconnectGraceCts.Cancel();
+                    DisconnectGraceCts.Dispose();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Safe to ignore if already disposed.
+                }
+                DisconnectGraceCts = null;
+            }
+        }
+
         public void Dispose()
         {
+            CancelDisconnectGrace();
             ActiveContext?.Dispose();
             ExecutionGate.Dispose();
             ContextInitGate.Dispose();
@@ -46,6 +69,7 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
     private readonly ILogger<SessionInferenceManager> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _idleTimeout;
+    private readonly TimeSpan _disconnectGracePeriod;
     private readonly ConcurrentDictionary<string, StatefulSessionEntry> _sessions = new();
     private readonly ITimer _cleanupTimer;
     private bool _disposed;
@@ -55,13 +79,18 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
         IBackendFacade backendFacade,
         ILogger<SessionInferenceManager> logger,
         TimeProvider? timeProvider = null,
-        TimeSpan? idleTimeout = null)
+        TimeSpan? idleTimeout = null,
+        IOptions<SessionSettings>? sessionOptions = null,
+        TimeSpan? disconnectGracePeriod = null)
     {
         _modelManager = modelManager ?? throw new ArgumentNullException(nameof(modelManager));
         _backendFacade = backendFacade ?? throw new ArgumentNullException(nameof(backendFacade));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _idleTimeout = idleTimeout ?? TimeSpan.FromMinutes(10);
+
+        var options = sessionOptions?.Value ?? new SessionSettings();
+        _idleTimeout = idleTimeout ?? options.IdleTimeout;
+        _disconnectGracePeriod = disconnectGracePeriod ?? options.DisconnectGracePeriod;
 
         _cleanupTimer = _timeProvider.CreateTimer(
             _ => _ = CleanupIdleSessionsAsync(),
@@ -72,30 +101,208 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
 
     public Task CreateSessionAsync(SessionStartRequest request, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        var entry = new StatefulSessionEntry(request, _timeProvider.GetUtcNow());
+        return CreateSessionAsync(request, connectionId: null, ct);
+    }
 
-        if (!_sessions.TryAdd(request.SessionId, entry))
+    /// <summary>
+    /// Creates or resumes a session with optional connection binding. Idempotent:
+    /// if the session already exists (e.g. client reconnected after a network blink),
+    /// it cancels any pending disconnect grace timer, rebinds the connectionId,
+    /// touches the entry, and preserves the KV-cache.
+    /// </summary>
+    public Task CreateSessionAsync(SessionStartRequest request, string? connectionId, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_sessions.TryGetValue(request.SessionId, out var existingSession))
         {
-            throw new InvalidOperationException($"Session '{request.SessionId}' is already registered.");
+            lock (existingSession.LockObj)
+            {
+                existingSession.CancelDisconnectGrace();
+                existingSession.BoundConnectionId = connectionId;
+                existingSession.Touch(_timeProvider.GetUtcNow());
+            }
+
+            _logger.LogInformation(
+                "Resumed existing session {SessionId} after reconnect (BoundConnectionId: {ConnectionId}). KV-cache preserved.",
+                request.SessionId, connectionId ?? "none");
+            return Task.CompletedTask;
         }
 
+        var entry = new StatefulSessionEntry(request, _timeProvider.GetUtcNow(), connectionId);
+        if (!_sessions.TryAdd(request.SessionId, entry))
+        {
+            if (_sessions.TryGetValue(request.SessionId, out var racedSession))
+            {
+                lock (racedSession.LockObj)
+                {
+                    racedSession.CancelDisconnectGrace();
+                    racedSession.BoundConnectionId = connectionId;
+                    racedSession.Touch(_timeProvider.GetUtcNow());
+                }
+
+                _logger.LogInformation(
+                    "Resumed existing session {SessionId} after reconnect (race resolved, BoundConnectionId: {ConnectionId}). KV-cache preserved.",
+                    request.SessionId, connectionId ?? "none");
+            }
+            return Task.CompletedTask;
+        }
+
+        _logger.LogInformation(
+            "Created new session {SessionId} for model {RepoId} (BoundConnectionId: {ConnectionId})",
+            request.SessionId, request.RepoId, connectionId ?? "none");
         return Task.CompletedTask;
     }
 
-    public Task ReleaseSessionAsync(string sessionId, bool destroySlot = false, CancellationToken ct = default)
+    public void BindConnection(string sessionId, string connectionId)
     {
-        if (_sessions.TryRemove(sessionId, out var session))
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
+
+        if (_sessions.TryGetValue(sessionId, out var session))
         {
+            lock (session.LockObj)
+            {
+                session.CancelDisconnectGrace();
+                session.BoundConnectionId = connectionId;
+                session.Touch(_timeProvider.GetUtcNow());
+            }
+        }
+    }
+
+    public void UnbindConnection(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            lock (session.LockObj)
+            {
+                session.BoundConnectionId = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Called when a transport connection drops. Identifies all sessions bound
+    /// to this connectionId and arms a Grace Period timer. If the client does not
+    /// reconnect within the grace period, the session slot is automatically evicted.
+    /// </summary>
+    public void NotifyConnectionDisconnected(string connectionId)
+    {
+        if (string.IsNullOrWhiteSpace(connectionId)) return;
+
+        foreach (var kvp in _sessions)
+        {
+            var session = kvp.Value;
+            var sessionId = kvp.Key;
+
+            bool isBound;
+            lock (session.LockObj)
+            {
+                isBound = string.Equals(session.BoundConnectionId, connectionId, StringComparison.OrdinalIgnoreCase);
+                if (isBound)
+                {
+                    session.CancelDisconnectGrace();
+                    var cts = new CancellationTokenSource();
+                    session.DisconnectGraceCts = cts;
+                    session.BoundConnectionId = null;
+
+                    _logger.LogInformation(
+                        "Connection {ConnectionId} dropped for session {SessionId}. Grace period of {GracePeriod}s started.",
+                        connectionId, sessionId, _disconnectGracePeriod.TotalSeconds);
+
+                    _ = ScheduleGracePeriodEvictionAsync(sessionId, cts);
+                }
+            }
+        }
+    }
+
+    private async Task ScheduleGracePeriodEvictionAsync(string sessionId, CancellationTokenSource cts)
+    {
+        try
+        {
+            await Task.Delay(_disconnectGracePeriod, _timeProvider, cts.Token);
+
+            _logger.LogInformation(
+                "Grace period expired for disconnected session {SessionId}. Evicting context from VRAM.",
+                sessionId);
+
+            await ReleaseSessionAsync(sessionId, destroySlot: false, CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug(
+                "Grace period cancelled for session {SessionId}. Client reconnected successfully.",
+                sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error during grace period eviction for session {SessionId}",
+                sessionId);
+        }
+        finally
+        {
+            cts.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Releases a session. Waits for the ExecutionGate to ensure no llama_decode
+    /// is in progress before disposing the native context. This prevents 0xc0000005 crashes.
+    /// </summary>
+    public async Task ReleaseSessionAsync(string sessionId, bool destroySlot = false, CancellationToken ct = default)
+    {
+        if (!_sessions.TryRemove(sessionId, out var session))
+        {
+            return;
+        }
+
+        try
+        {
+            // CRITICAL: Wait for any in-flight llama_decode to finish before
+            // disposing the context. This prevents access-violation crashes.
+            await session.ExecutionGate.WaitAsync(CancellationToken.None);
+
             if (destroySlot && session.ActiveContext != null)
             {
                 session.ActiveContext.SuppressPool = true;
+                _logger.LogInformation(
+                    "Force-destroying session {SessionId} with VRAM slot release",
+                    sessionId);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Releasing session {SessionId}, returning context to pool",
+                    sessionId);
             }
 
             session.Dispose();
-            _logger.LogInformation("Released session state for {SessionId} (DestroySlot: {DestroySlot})", sessionId, destroySlot);
         }
-        return Task.CompletedTask;
+        catch (ObjectDisposedException)
+        {
+            // Gate was already disposed (edge case during shutdown). Safe to ignore.
+            _logger.LogDebug(
+                "ExecutionGate already disposed during release of session {SessionId}",
+                sessionId);
+        }
+        finally
+        {
+            try
+            {
+                session.ExecutionGate.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Expected if Dispose already ran.
+            }
+            catch (SemaphoreFullException)
+            {
+                // Gate was never acquired. Safe to ignore.
+            }
+        }
     }
 
     public bool TryGetSessionRepoId(string sessionId, out string? repoId)
