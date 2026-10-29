@@ -76,10 +76,11 @@ Event-driven observability streamed through the same `/hub/gateway` hub, segment
 - **Auto-Load:** Once present, the model is loaded into VRAM and the gateway transitions to `Ready` state without manual intervention.
 - **Health Probes:** `/health/live` (liveness, always 200) and `/health/ready` (readiness, reflects model load state) for orchestrator integration.
 
-### 6. VRAM Leak Protection
+### 6. VRAM Leak Protection & Resilient Lifecycle
 
-- **Ephemeral Sessions:** Short-lived sessions (e.g., CI pipelines, one-shot queries) are marked via `MarkSessionAsEphemeral` and force-destroyed (`destroySlot: true`) on disconnect, immediately freeing VRAM.
-- **Session Reaper:** A background `SessionReaperService` periodically drains orphaned ephemeral sessions that survived transport-level disconnects, guaranteeing zero VRAM leaks.
+- **Disconnect Grace Period:** Transport interruptions (network blinks, Wi-Fi handoffs) preserve session context and KV-cache in VRAM for a configurable window (default: 30s), enabling clients to reconnect seamlessly without re-decoding prompts.
+- **Connection-Bound Eviction:** Sessions not resumed within the Grace Period, or abandoned idle sessions exceeding the configured idle timeout (default: 3m), are automatically evicted and returned to the VRAM context pool safely.
+- **Native Memory Safety:** All context release operations synchronize with internal `ExecutionGate` semaphores to ensure active native token decoding loops complete cleanly before context disposal.
 
 
 ## Architecture
@@ -125,7 +126,7 @@ The complete wire contract of the InstantAIGate gateway is formally documented i
 
 - Authentication mechanisms and role-based access control (RBAC).
 - Complete SignalR Hub method signatures (Client → Server) and callbacks (Server → Client).
-- Strict DTO schemas and the session memory model (KV-cache lifecycle, VRAM slots, ephemeral sessions).
+- Strict DTO schemas and the session memory model (KV-cache lifecycle, VRAM slots, disconnect Grace Period, and idle timeouts).
 - Canonical client patterns for interactive chat, Map-Reduce pipelines, and reconnection logic.
 
 ### Typed Contracts for .NET

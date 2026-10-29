@@ -1,5 +1,5 @@
 InstantAIGate — Client Integration Guide
-Version: 1.4
+Version: 1.5
 Target Audience: Backend/frontend developers integrating with InstantAIGate Gateway via SignalR.
 
 Table of Contents
@@ -15,7 +15,9 @@ Table of Contents
 [VRAM Management](#vram-management)
 [Health Checks](#health-checks)
 [Error Handling](#error-handling)
-[Ephemeral Sessions](#ephemeral-sessions)
+[Session Lifecycle & Network Resilience](#session-lifecycle--network-resilience)
+[Complete Integration Example](#complete-integration-example)
+[Configuration Reference](#configuration-reference)
 
 Authentication
 All gateway requests require an API key passed as a Bearer token.
@@ -81,12 +83,16 @@ await connection.InvokeAsync("JoinSession", sessionId, repoId);
 If `repoId` is empty, uses currently active model.
 Throws error via `ReceiveError` if gateway is not `Ready`.
 Throws error if requested model is not the active model.
+Calling `JoinSession` with an existing `sessionId` is idempotent: it rebinds the session to the current connection, cancels any pending disconnect grace eviction, and preserves existing KV-cache state.
+
 Leave Session (Soft Release)
 await connection.InvokeAsync("LeaveSession", sessionId);
-Releases session state but preserves VRAM context for potential reuse.
+Unbinds the session, clears session state, and returns the context to the VRAM context pool for reuse. Sends `ReceiveSessionClosed` to the client.
+
 Destroy Session (Hard Release)
 await connection.InvokeAsync("DestroySession", sessionId);
-Force-destroys the session slot and frees VRAM immediately. Use when session is permanently closed.
+Unbinds the session, suppresses VRAM pooling (`SuppressPool = true`), and forcibly destroys the context slot. Sends `ReceiveSessionClosed` to the client.
+Note: Both `LeaveSession` and `DestroySession` await `ExecutionGate` with `CancellationToken.None` on the server before freeing native memory, guaranteeing that any in-flight native generation completes cleanly. Client callers should ensure timeouts accommodate active token generation.
 
 Chat Streaming
 Send Prompt
@@ -288,19 +294,29 @@ HTTP Error Codes (Middleware)
 | 503|InvalidOperationException  (draining)|Model swapping|
 | 500|Other|Internal error|
 
-Ephemeral Sessions
-Ephemeral sessions are automatically destroyed when the client disconnects. Use for CLI/terminal sessions where no reconnect is expected.
-Mark as Ephemeral
-await connection.InvokeAsync("JoinSession", sessionId, repoId);
-await connection.InvokeAsync("MarkSessionAsEphemeral", sessionId);
-Behavior on Disconnect:
-All ephemeral sessions for the disconnected connection are force-destroyed (`destroySlot: true`).
-VRAM is immediately freed.
-No manual cleanup needed.
-Non-Ephemeral Sessions:
-Preserved on disconnect for potential reconnect.
-Automatically cleaned up after idle timeout (10 minutes).
-Orphaned sessions (no connection) are reaped after 2 minutes by `SessionReaperService`.
+Session Lifecycle & Network Resilience
+InstantAIGate uses a connection-bound session architecture with a configurable disconnect Grace Period and idle timeout.
+
+Key Principles:
+1. Connection Binding: When a client calls `JoinSession(sessionId, repoId)`, the session is bound to the current SignalR `ConnectionId`.
+2. Disconnect Grace Period: When a client connection drops (e.g., Wi-Fi hiccup, network reconnect), the server unbinds the connection and arms a delayed eviction timer (default: 30 seconds). The session and its KV-cache stay intact in VRAM.
+3. Reconnection & KV-Cache Preservation: When the client reconnects, its `HubConnection` receives a new `ConnectionId`. The client must invoke `JoinSession(sessionId, repoId)` with the original `sessionId`. This cancels the eviction timer, rebinds the session to the new connection, and preserves all previously decoded tokens (`PastTokens`).
+4. Grace Expiration: If the client does not reconnect within the Grace Period, the session is evicted safely, and its context is returned to the pool.
+5. Idle Timeout: Connected sessions with no activity for longer than the idle timeout (default: 3 minutes) are automatically evicted.
+6. ExecutionGate Safety: Native context disposal always waits for active generation (`llama_decode`) to complete, avoiding native crashes.
+7. Event Visibility: Automatic grace and idle evictions are silent because the client transport is disconnected or inactive. The `ReceiveSessionClosed` event is emitted specifically on explicit `LeaveSession` or `DestroySession` invocations.
+
+Client Reconnection Handling Pattern:
+```csharp
+hubConnection.Reconnected += async connectionId =>
+{
+    // Re-join active sessions to rebind connection and cancel grace eviction
+    foreach (var sessionId in activeSessions)
+    {
+        await hubConnection.InvokeAsync("JoinSession", sessionId, activeRepoId);
+    }
+};
+```
 
 Complete Integration Example
 using Microsoft.AspNetCore.SignalR.Client;
@@ -311,6 +327,19 @@ var connection = new HubConnectionBuilder()
     })
     .WithAutomaticReconnect()
     .Build();
+
+var activeSessions = new HashSet<string>();
+string currentRepoId = "qwen3-vl-2b-instruct";
+
+// Reconnection hook: rebind sessions during grace period to keep KV-cache hot
+connection.Reconnected += async newConnectionId =>
+{
+    foreach (var id in activeSessions)
+    {
+        await connection.InvokeAsync("JoinSession", id, currentRepoId);
+    }
+};
+
 // Subscribe to events
 connection.On<SessionTokenDelta>("ReceiveTokenDelta", delta =>
 {
@@ -321,7 +350,13 @@ connection.On<GatewayStatusDetails>("ReceiveGatewayStatus", s =>
 {
     Console.WriteLine($"Gateway: {s.Status} | Model: {s.ActiveModelId}");
 });
+connection.On<string>("ReceiveSessionClosed", closedSessionId =>
+{
+    activeSessions.Remove(closedSessionId);
+});
+
 await connection.StartAsync();
+
 // Check gateway readiness
 var status = await connection.InvokeAsync<GatewayStatusDetails>("GetGatewayStatus");
 if (status.Status != GatewayOperationalStatus.Ready)
@@ -329,17 +364,22 @@ if (status.Status != GatewayOperationalStatus.Ready)
     Console.WriteLine("Waiting for model...");
     // Wait for ReceiveGatewayStatus with Ready
 }
+
 // Create session
 string sessionId = Guid.NewGuid().ToString("N");
-await connection.InvokeAsync("JoinSession", sessionId, "");
-await connection.InvokeAsync("MarkSessionAsEphemeral", sessionId);
+await connection.InvokeAsync("JoinSession", sessionId, currentRepoId);
+activeSessions.Add(sessionId);
+
 // Send prompt
 var message = new ChatMessage("user", "Hello!");
 await connection.InvokeAsync("SendPromptDelta", sessionId, message);
-// Wait for completion (use TaskCompletionSource in production)
-await Task.Delay(10000);
+
+// Wait for completion (use TaskCompletionSource or Channels in production)
+await Task.Delay(5000);
+
 // Cleanup
 await connection.InvokeAsync("LeaveSession", sessionId);
+activeSessions.Remove(sessionId);
 await connection.StopAsync();
 
 Configuration Reference
@@ -370,14 +410,18 @@ Hardware Profiles (appsettings.json)
          "MaxContexts": 2
        }
      },
-     "StartupModel": {
-       "Enabled": true,
-       "RepoId": "qwen3-vl-2b-instruct",
-       "Profile": "Default"
-     },
-     "AdminApiKey": "your-secret-admin-key"
-   }
- }
+         "StartupModel": {
+           "Enabled": true,
+           "RepoId": "qwen3-vl-2b-instruct",
+           "Profile": "Default"
+         },
+         "Sessions": {
+           "DisconnectGracePeriodSeconds": 30,
+           "IdleTimeoutMinutes": 3
+         },
+         "AdminApiKey": "your-secret-admin-key"
+       }
+     }
 VRAM Budgeting Guidelines
 | Model Size|KvCacheQuantization|MaxContexts|FlashAttention|
 | ---|---|---|---|

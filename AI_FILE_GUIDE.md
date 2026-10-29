@@ -1,6 +1,6 @@
 AI File Guide — InstantAIGate Architecture Map
-Document Version: 1.4
-Last Updated: Reflects codebase state with embedding support, embedding dimension introspection, ephemeral session management, gateway state machine, and VRAM purging.
+Document Version: 1.5
+Last Updated: Reflects codebase state with embedding support, embedding dimension introspection, connection-bound session lifecycle with disconnect Grace Period and idle eviction, gateway state machine, and VRAM purging.
 This file describes the key modules of the repository. Use it as a navigation map when analyzing or generating code.
 
 Server Entry Point
@@ -105,47 +105,31 @@ Health check `/health/ready` reads snapshot to determine degraded/unhealthy.
 
 Session State Manager
 File:`src/InstantAIGate.Core/Services/Inference/SessionInferenceManager.cs`
-Role: Stores state of all active sessions: token counter, token sequence, reference to `InferenceContext` (KV-cache). Ensures thread-safe access via `SemaphoreSlim` gates.
+Role: Single source of truth for all session lifecycle management: token counters, prefix token sequence, native `InferenceContext` (KV-cache), transport connection binding, disconnect Grace Period, and idle timeout evictions. Ensures thread-safe synchronization via `SemaphoreSlim` gates.
 Key Concepts:
-`StatefulSessionEntry` — internal session record with `PastTokens`, `TokenSequence`, `ExecutionGate`, `ContextInitGate`.
-`AcquireSessionExecutionGateAsync` — blocks concurrent generation in the same session.
+`StatefulSessionEntry` — internal session record with `PastTokens`, `TokenSequence`, `ExecutionGate`, `ContextInitGate`, `BoundConnectionId`, and `DisconnectGraceCts`.
+`AcquireSessionExecutionGateAsync` — locks concurrent generation passes in the same session.
+`ExecutionGate` await in `ReleaseSessionAsync` — guarantees any in-flight native `llama_decode` loop finishes completely before context disposal, preventing Access Violation (`0xc0000005`) crashes.
+`BoundConnectionId` — tracks current owning physical SignalR connection for transport lifecycle synchronization.
+`DisconnectGraceCts` — cancellation token source for the delayed eviction timer armed on connection disconnect.
 `RollbackToPositionAsync` — truncates KV-cache to specified position via `IBackendFacade.RemoveContextMemoryRange`.
 `ShiftMemoryRangeAsync` — shifts KV-cache (sliding window) if `CanShiftContextMemory == true`.
 `UpdatePastTokensCount` / `AppendSessionTokens` / `GetSessionPrefixTokens` — token tracking.
 Invariants:
+A brief network blink (< 30s by default) does NOT destroy the session or clear the KV-cache.
+Reconnecting within the grace period seamlessly resumes the session via idempotent `CreateSessionAsync(request, connectionId)` which rebinds the connection and cancels eviction.
+If the grace period expires without reconnection, the session is evicted safely and its context returned to the pool.
+Explicit `LeaveSession` (pool return) or `DestroySession` (slot destruction) releases the session immediately without grace delay.
+Connected but quiet sessions are evicted after `IdleTimeout` (default 3 minutes).
 `RollbackToPositionAsync` throws `ArgumentOutOfRangeException` if `targetPosition > PastTokens`.
 `ShiftMemoryRangeAsync` throws `NotSupportedException` if FlashAttention or GPU-offload prohibits shifting.
-Idle sessions are automatically released by timer (default 10 minutes).
 `ReleaseSessionAsync(destroySlot: true)` sets `SuppressPool = true` on context to prevent VRAM pooling.
 Scenarios:
-CLI command `/ctx rollback <pos>`.
-CLI command `/ctx shift <start> <count>`.
+Interactive chat sessions surviving Wi-Fi / cellular glitches with full KV-cache reuse.
+CLI and web clients reconnecting seamlessly without recomputing system prompt prefixes.
+Deterministic VRAM recovery when client processes crash or disappear.
+CLI command `/ctx rollback <pos>` and `/ctx shift <start> <count>`.
 Handling `ContextOverflowException` in `LlamaInference`.
-
-## Session Lifecycle & Grace Period Architecture
-
-File: `src/InstantAIGate.Core/Services/Inference/SessionInferenceManager.cs`
-
-Role: Single source of truth for session lifecycle, connection binding, KV-cache continuity, disconnect Grace Period, and idle timeout evictions.
-
-Key Concepts:
-- `BoundConnectionId` — tracks the currently active SignalR connection.
-- `DisconnectGraceCts` — token source controlling the delayed release timer upon network drop.
-- `NotifyConnectionDisconnected` — arms a Grace Period (default 30s) when the connection drops.
-- `CreateSessionAsync(request, connectionId)` — idempotent: resumes existing sessions, cancels pending grace eviction, and preserves KV-cache.
-- `ExecutionGate` — ensures native `llama_decode` passes complete safely before releasing or disposing contexts.
-
-Invariants:
-- A brief network blink (< 30s) does NOT destroy the session or clear the KV-cache.
-- Reconnecting within the grace period seamlessly resumes the session.
-- If the grace period expires without reconnection, the session is evicted safely.
-- Explicit `LeaveSession` or `DestroySession` immediately releases/destroys the session without grace delay.
-- Inactive sessions (connected but quiet) are evicted after `IdleTimeout` (default 3 minutes).
-
-Scenarios:
-- Interactive chat sessions surviving Wi-Fi / cellular glitches.
-- CLI and web clients reconnecting seamlessly without redownloading or recomputing prefixes.
-- Deterministic VRAM recovery when client processes crash or disappear.
 
 Model Lifecycle Manager
 File:`src/InstantAIGate.Core/Services/Inference/ModelManager.cs`
@@ -377,9 +361,9 @@ Vision support requires projector file (mmproj/clip).
 
 Usage Notes for AI Agents
 When generating inference code — start with `LlamaInference.cs`, then check `BackendFacade.cs` for native calls.
-When working with sessions — key file is `SessionInferenceManager.cs`. All KV-cache operations go through it.
+When working with sessions — key file is `SessionInferenceManager.cs`. All KV-cache operations go through it. Sessions are connection-bound with a disconnect Grace Period (default 30s) and idle timeout (default 3m).
 When adding new CLI commands — create class in `src/InstantAIGate.Cli/Commands/`, implement `IConsoleCommand`, register in `Program.cs`.
-When modifying SignalR contract — update `IGatewayHubClient.cs` and corresponding handlers in `RemoteGatewayClient.cs` (CLI) and web client.
+When modifying SignalR contract — update `IGatewayHub.cs`, `IGatewayHubClient.cs`, `GatewayHub.cs`, and corresponding handlers in `RemoteGatewayClient.cs` (CLI), client integration guide `docs/client-integration-guide.md`, and web client.
 When working with VRAM budgeting — check `BackendFacade.CreateContext` (parameter `KvCacheQuantization`) and `HardwareProfileSettings`.
 32B models require `KvCacheQuantization: "Q8_0"` and `MaxContexts: 2` in profile.
 Native libraries are in `runtimes/` directory — do not modify binaries, only update via official llama.cpp releases.
