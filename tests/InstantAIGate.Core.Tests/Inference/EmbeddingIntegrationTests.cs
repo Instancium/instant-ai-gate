@@ -1,6 +1,6 @@
 ﻿// Native llama.cpp state (loaded DLL, ggml backend registry, CUDA handles) is
 // process-wide: a concurrent test class disposing it corrupts inference here.
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
+[assembly: CollectionBehavior(CollectionBehavior.CollectionPerAssembly)]
 
 namespace InstantAIGate.Core.Tests.Inference;
 
@@ -20,7 +20,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
-using Xunit.Abstractions;
 
 public class EmbeddingIntegrationTests : IAsyncLifetime
 {
@@ -36,7 +35,7 @@ public class EmbeddingIntegrationTests : IAsyncLifetime
         _output = output;
     }
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         bool isNativeLoaded = NativeLibraryLoader.Load();
         Assert.True(isNativeLoaded, "Failed to load llama/mtmd native libraries.");
@@ -56,13 +55,13 @@ public class EmbeddingIntegrationTests : IAsyncLifetime
         _modelManager = _serviceProvider.GetRequiredService<IModelManager>();
         _inferenceEngine = _serviceProvider.GetRequiredService<IInferenceEngine>();
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _serviceProvider?.Dispose();
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

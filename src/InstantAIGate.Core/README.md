@@ -8,8 +8,9 @@ This package is designed to be shared across various components of the InstantAI
 
 ### Key Features
 * **Inference Contracts:** Standardized `ChatMessage`, `MessageContent`, and streaming deltas (`SessionTokenDelta`).
+* **Session Lifecycle & Options:** Strongly typed `SessionSettings` (Grace Period and Idle Timeout configuration) and `ISessionInferenceManager` abstractions.
 * **Gateway Status:** Observability models (`GatewayOperationalStatus`, `GatewayStatusDetails`, `InferenceMetrics`).
-* **Configuration:** Core configuration models (`StorageSettings`, `ModelSettings`).
+* **Configuration:** Core configuration models (`StorageSettings`, `ModelSettings`, `SessionSettings`).
 * **Hardware Abstractions:** High-level abstractions for AI model execution (`IInferenceEngine`, `IModelProvider`).
 
 ## Usage

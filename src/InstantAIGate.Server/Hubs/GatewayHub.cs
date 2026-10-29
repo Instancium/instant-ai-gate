@@ -6,7 +6,6 @@ using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Exceptions;
 using InstantAIGate.Core.Interfaces.Inference;
-using InstantAIGate.Core.Interfaces.Session;
 using InstantAIGate.Server.Services.Workers;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
@@ -22,7 +21,6 @@ using System.IO;
 using System.Linq;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 [Authorize]
 public class GatewayHub : Hub<IGatewayHubClient>
@@ -38,7 +36,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
     private readonly ChannelWriter<DownloadJob> _downloadChannelWriter;
     private readonly IGatewayStateManager _stateManager;
     private readonly ILogger<GatewayHub> _logger;
-    private readonly IEphemeralSessionRegistry _ephemeralRegistry;
 
     public GatewayHub(
         ISessionInferenceManager sessionManager,
@@ -50,8 +47,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         IOptions<StorageSettings> storageSettings,
         ChannelWriter<DownloadJob> downloadChannelWriter,
         IGatewayStateManager stateManager,
-        ILogger<GatewayHub> logger,
-        IEphemeralSessionRegistry ephemeralRegistry)
+        ILogger<GatewayHub> logger)
     {
         _sessionManager = sessionManager;
         _inferenceEngine = inferenceEngine;
@@ -63,7 +59,6 @@ public class GatewayHub : Hub<IGatewayHubClient>
         _downloadChannelWriter = downloadChannelWriter;
         _stateManager = stateManager;
         _logger = logger;
-        _ephemeralRegistry = ephemeralRegistry;
     }
 
     #region Connection Lifecycle
@@ -101,56 +96,17 @@ public class GatewayHub : Hub<IGatewayHubClient>
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        if (Context.Items.TryGetValue("SessionIds", out var sessionsObj) && sessionsObj is HashSet<string> sessions)
-        {
-            string[] sessionsToRelease;
-            lock (sessions)
-            {
-                sessionsToRelease = sessions.ToArray();
-            }
+        // ARM GRACE PERIOD: When a connection drops, inform SessionInferenceManager.
+        // It starts a configurable grace period timer (default 30s) for all sessions bound to this connection.
+        // If client reconnects within grace period, KV-cache is preserved seamlessly.
+        // If client does not reconnect, the session is safely evicted.
+        _sessionManager.NotifyConnectionDisconnected(Context.ConnectionId);
 
-            foreach (var sessionId in sessionsToRelease)
-            {
-                try
-                {
-                    await _sessionManager.ReleaseSessionAsync(sessionId, false, Context.ConnectionAborted);
-                    _logger.LogInformation("Cleaned up orphaned session {SessionId} on disconnect for connection {ConnectionId}", sessionId, Context.ConnectionId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to gracefully release session {SessionId} during disconnection", sessionId);
-                }
-            }
-        }
-
-        var ephemeralSessionsToDestroy = _ephemeralRegistry.NotifyConnectionDisconnected(Context.ConnectionId);
-        foreach (var sessionId in ephemeralSessionsToDestroy)
-        {
-            try
-            {
-                await _sessionManager.ReleaseSessionAsync(sessionId, true, CancellationToken.None);
-                _logger.LogInformation("Destroyed ephemeral session {SessionId} on disconnect for connection {ConnectionId}", sessionId, Context.ConnectionId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to destroy ephemeral session {SessionId} during disconnection", sessionId);
-            }
-        }
+        _logger.LogInformation(
+            "Client {ConnectionId} disconnected. Grace period started for its bound sessions.",
+            Context.ConnectionId);
 
         await base.OnDisconnectedAsync(exception);
-    }
-
-    #endregion
-
-    #region Ephemeral Session Management
-
-    [Authorize(Policy = "GatewayUser")]
-    public Task MarkSessionAsEphemeral(string sessionId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-        _ephemeralRegistry.RegisterEphemeralSession(Context.ConnectionId, sessionId);
-        _logger.LogInformation("Session {SessionId} marked as ephemeral for connection {ConnectionId}", sessionId, Context.ConnectionId);
-        return Task.CompletedTask;
     }
 
     #endregion
@@ -163,16 +119,19 @@ public class GatewayHub : Hub<IGatewayHubClient>
         try
         {
             var snapshot = _stateManager.GetSnapshot();
+
             if (snapshot.Status == GatewayOperationalStatus.ModelDownloading)
             {
                 string progressStr = snapshot.ProgressPercentage.ToString("F1", CultureInfo.InvariantCulture);
-                await Clients.Caller.ReceiveError($"Server is downloading startup model '{snapshot.ActiveModelId}' ({progressStr}%). Please wait.");
+                await Clients.Caller.ReceiveError(
+                    $"Server is downloading startup model '{snapshot.ActiveModelId}' ({progressStr}%). Please wait.");
                 return;
             }
 
             if (snapshot.Status == GatewayOperationalStatus.ModelLoading)
             {
-                await Clients.Caller.ReceiveError($"Server is loading startup model '{snapshot.ActiveModelId}' into memory. Please wait.");
+                await Clients.Caller.ReceiveError(
+                    $"Server is loading startup model '{snapshot.ActiveModelId}' into memory. Please wait.");
                 return;
             }
 
@@ -187,7 +146,8 @@ public class GatewayHub : Hub<IGatewayHubClient>
                 var activeSettings = _modelManager.GetActiveSettings();
                 if (activeSettings == null || string.IsNullOrWhiteSpace(activeSettings.RepoId))
                 {
-                    await Clients.Caller.ReceiveError("No active model is loaded on Remote Gateway. Server has no model in memory.");
+                    await Clients.Caller.ReceiveError(
+                        "No active model is loaded on Remote Gateway. Server has no model in memory.");
                     return;
                 }
                 repoId = activeSettings.RepoId;
@@ -195,31 +155,26 @@ public class GatewayHub : Hub<IGatewayHubClient>
             else
             {
                 var activeSettings = _modelManager.GetActiveSettings();
-                if (activeSettings == null || !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
+                if (activeSettings == null ||
+                    !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
                 {
-                    await Clients.Caller.ReceiveError($"Requested model '{repoId}' is not active on Remote Gateway.");
+                    await Clients.Caller.ReceiveError(
+                        $"Requested model '{repoId}' is not active on Remote Gateway.");
                     return;
                 }
             }
 
             var request = new SessionStartRequest(sessionId, repoId);
-            await _sessionManager.CreateSessionAsync(request, Context.ConnectionAborted);
 
-            lock (Context.Items)
-            {
-                if (!Context.Items.TryGetValue("SessionIds", out var obj) || obj is not HashSet<string> sessionIds)
-                {
-                    sessionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    Context.Items["SessionIds"] = sessionIds;
-                }
+            // CreateSessionAsync is idempotent: if the session already exists
+            // (client reconnected after a network blink or within grace period),
+            // it cancels any disconnect grace eviction, rebinds connectionId,
+            // and preserves the KV-cache.
+            await _sessionManager.CreateSessionAsync(request, Context.ConnectionId, Context.ConnectionAborted);
 
-                lock (sessionIds)
-                {
-                    sessionIds.Add(sessionId);
-                }
-            }
-
-            _logger.LogInformation("Client {ConnectionId} joined session {SessionId} for repo {RepoId}", Context.ConnectionId, sessionId, repoId);
+            _logger.LogInformation(
+                "Client {ConnectionId} joined session {SessionId} for repo {RepoId}",
+                Context.ConnectionId, sessionId, repoId);
         }
         catch (Exception ex)
         {
@@ -232,8 +187,9 @@ public class GatewayHub : Hub<IGatewayHubClient>
     public async Task LeaveSession(string sessionId)
     {
         _logger.LogInformation("Client explicitly requested release of session {SessionId}", sessionId);
-        await _sessionManager.ReleaseSessionAsync(sessionId, false, Context.ConnectionAborted);
-        RemoveSessionFromConnection(sessionId);
+
+        _sessionManager.UnbindConnection(sessionId);
+        await _sessionManager.ReleaseSessionAsync(sessionId, destroySlot: false, Context.ConnectionAborted);
         await Clients.Caller.ReceiveSessionClosed(sessionId);
     }
 
@@ -241,20 +197,10 @@ public class GatewayHub : Hub<IGatewayHubClient>
     public async Task DestroySession(string sessionId)
     {
         _logger.LogInformation("Client explicitly requested DESTRUCTION of session slot {SessionId}", sessionId);
-        await _sessionManager.ReleaseSessionAsync(sessionId, true, Context.ConnectionAborted);
-        RemoveSessionFromConnection(sessionId);
-        await Clients.Caller.ReceiveSessionClosed(sessionId);
-    }
 
-    private void RemoveSessionFromConnection(string sessionId)
-    {
-        if (Context.Items.TryGetValue("SessionIds", out var obj) && obj is HashSet<string> sessions)
-        {
-            lock (sessions)
-            {
-                sessions.Remove(sessionId);
-            }
-        }
+        _sessionManager.UnbindConnection(sessionId);
+        await _sessionManager.ReleaseSessionAsync(sessionId, destroySlot: true, Context.ConnectionAborted);
+        await Clients.Caller.ReceiveSessionClosed(sessionId);
     }
 
     [Authorize(Policy = "GatewayUser")]

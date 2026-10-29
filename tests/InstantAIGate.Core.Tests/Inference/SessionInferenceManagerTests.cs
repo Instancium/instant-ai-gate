@@ -44,14 +44,14 @@ public class SessionInferenceManagerTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateSession_DuplicateSessionId_ThrowsInvalidOperationException()
+    public async Task CreateSession_DuplicateSessionId_ResumesWithoutException()
     {
         var request = new SessionStartRequest("session-1", "test-repo");
 
         await _sessionManager.CreateSessionAsync(request);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _sessionManager.CreateSessionAsync(request));
+        var exception = await Record.ExceptionAsync(() => _sessionManager.CreateSessionAsync(request));
+        Assert.Null(exception);
     }
 
     [Fact]

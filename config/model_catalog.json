@@ -82,5 +82,18 @@
     ],
     "RequiresVisionProjector": false,
     "VisionProjectorUrls": null
+  },
+  {
+    "Id": "qwen3-embedding-4b",
+    "Name": "Qwen3 Embedding 4B (Q8_0)",
+    "Architecture": "qwen3",
+    "ParameterCount": 4000000000,
+    "Quantization": "Q8_0",
+    "TotalFileSizeBytes": 4800000000,
+    "DownloadUrls": [
+      "https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF/resolve/main/Qwen3-Embedding-4B-Q8_0.gguf"
+    ],
+    "RequiresVisionProjector": false,
+    "VisionProjectorUrls": null
   }
 ]

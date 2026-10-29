@@ -9,7 +9,11 @@ using System.Threading.Tasks;
 public interface ISessionInferenceManager
 {
     Task CreateSessionAsync(SessionStartRequest request, CancellationToken ct = default);
+    Task CreateSessionAsync(SessionStartRequest request, string? connectionId, CancellationToken ct = default);
     Task ReleaseSessionAsync(string sessionId, bool destroySlot = false, CancellationToken ct = default);
+    void BindConnection(string sessionId, string connectionId);
+    void UnbindConnection(string sessionId);
+    void NotifyConnectionDisconnected(string connectionId);
     bool TryGetSessionRepoId(string sessionId, out string? repoId);
     Task<IDisposable> AcquireSessionExecutionGateAsync(string sessionId, CancellationToken ct = default);
     Task<InferenceContext> GetOrCreateContextAsync(string sessionId, CancellationToken ct = default);
