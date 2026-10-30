@@ -28,6 +28,7 @@ public sealed class ModelStartupWorker : BackgroundService
     private readonly IConfiguration _configuration;
     private readonly IHubContext<GatewayHub, IGatewayHubClient> _hubContext;
     private readonly IGatewayStateManager _stateManager;
+    private readonly HardwareProfilePolicy _profilePolicy;
     private readonly ILogger<ModelStartupWorker> _logger;
 
     public ModelStartupWorker(
@@ -37,6 +38,7 @@ public sealed class ModelStartupWorker : BackgroundService
         IConfiguration configuration,
         IHubContext<GatewayHub, IGatewayHubClient> hubContext,
         IGatewayStateManager stateManager,
+        HardwareProfilePolicy profilePolicy,
         ILogger<ModelStartupWorker> logger)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
@@ -45,6 +47,7 @@ public sealed class ModelStartupWorker : BackgroundService
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
         _stateManager = stateManager ?? throw new ArgumentNullException(nameof(stateManager));
+        _profilePolicy = profilePolicy ?? throw new ArgumentNullException(nameof(profilePolicy));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -182,7 +185,6 @@ public sealed class ModelStartupWorker : BackgroundService
                 await modelManager.LoadModelAsync(modelSettings, stoppingToken);
 
                 loadedCount++;
-                _stateManager.SetReady(targetModel.Id, $"Startup model '{targetModel.Id}' is loaded and ready for inference");
                 _logger.LogInformation("Startup model '{RepoId}' successfully loaded and ready for inference.", targetModel.Id);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -197,6 +199,20 @@ public sealed class ModelStartupWorker : BackgroundService
                 {
                     _stateManager.SetFaulted(entry.RepoId, "Fatal error during startup model initialization", ex);
                 }
+            }
+        }
+
+        if (loadedCount > 0)
+        {
+            var primarySettings = modelManager.GetActiveSettings();
+            if (primarySettings != null && !string.IsNullOrWhiteSpace(primarySettings.RepoId))
+            {
+                _stateManager.SetReady(
+                    primarySettings.RepoId,
+                    $"Gateway ready. Primary chat model: '{primarySettings.RepoId}' ({loadedCount} model(s) loaded).");
+                _logger.LogInformation(
+                    "Startup sequence completed. Primary chat model: '{RepoId}'. Total loaded: {Count}.",
+                    primarySettings.RepoId, loadedCount);
             }
         }
     }
@@ -234,22 +250,9 @@ public sealed class ModelStartupWorker : BackgroundService
 
     private ModelSettings BuildStartupModelSettings(CatalogModelEntry targetModel, string? requestedProfile)
     {
-        bool isEmbeddingModel = targetModel.Id.Contains("embed", StringComparison.OrdinalIgnoreCase)
-                             || targetModel.Architecture.Contains("embed", StringComparison.OrdinalIgnoreCase);
-
-        string profileName = !string.IsNullOrWhiteSpace(requestedProfile)
-            ? requestedProfile
-            : (isEmbeddingModel ? "Embedding" : "Default");
-
-        if (isEmbeddingModel &&
-            string.Equals(profileName, "Default", StringComparison.OrdinalIgnoreCase) &&
-            _configuration.GetSection("InstantAIGate:HardwareProfiles:Embedding").Exists())
-        {
-            profileName = "Embedding";
-        }
-
-        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>()
-            ?? new HardwareProfileSettings();
+        bool isEmbeddingModel = HardwareProfilePolicy.IsEmbeddingModel(targetModel.Id, targetModel.Architecture);
+        string profileName = _profilePolicy.ResolveProfileName(requestedProfile, isEmbeddingModel);
+        var hwProfile = _profilePolicy.ResolveProfile(profileName);
 
         ModelType modelType = targetModel.RequiresVisionProjector
             ? ModelType.Vlm

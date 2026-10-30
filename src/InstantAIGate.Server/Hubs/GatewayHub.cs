@@ -6,6 +6,7 @@ using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Exceptions;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Server.Configuration;
 using InstantAIGate.Server.Services.Workers;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
@@ -35,6 +36,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
     private readonly StorageSettings _storageSettings;
     private readonly ChannelWriter<DownloadJob> _downloadChannelWriter;
     private readonly IGatewayStateManager _stateManager;
+    private readonly HardwareProfilePolicy _profilePolicy;
     private readonly ILogger<GatewayHub> _logger;
 
     public GatewayHub(
@@ -47,6 +49,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         IOptions<StorageSettings> storageSettings,
         ChannelWriter<DownloadJob> downloadChannelWriter,
         IGatewayStateManager stateManager,
+        HardwareProfilePolicy profilePolicy,
         ILogger<GatewayHub> logger)
     {
         _sessionManager = sessionManager;
@@ -58,6 +61,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         _storageSettings = storageSettings.Value;
         _downloadChannelWriter = downloadChannelWriter;
         _stateManager = stateManager;
+        _profilePolicy = profilePolicy ?? throw new ArgumentNullException(nameof(profilePolicy));
         _logger = logger;
     }
 
@@ -318,11 +322,9 @@ public class GatewayHub : Hub<IGatewayHubClient>
     public async Task LoadModelAsync(string repoId, string? profileName = null)
     {
         var targetModel = await _catalogService.FindModelByIdAsync(repoId, Context.ConnectionAborted);
-        bool isEmbedding = repoId.Contains("embed", StringComparison.OrdinalIgnoreCase);
-        var profile = profileName ?? (isEmbedding ? "Embedding" : "Default");
-        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profile}").Get<HardwareProfileSettings>()
-            ?? new HardwareProfileSettings();
-
+        bool isEmbedding = HardwareProfilePolicy.IsEmbeddingModel(repoId, targetModel?.Architecture);
+        string profile = _profilePolicy.ResolveProfileName(profileName, isEmbedding);
+        HardwareProfileSettings hwProfile = _profilePolicy.ResolveProfile(profile);
         bool visionSupport = targetModel?.RequiresVisionProjector ?? false;
         bool embeddingsEnabled = hwProfile.Embeddings || isEmbedding;
 
@@ -347,9 +349,10 @@ public class GatewayHub : Hub<IGatewayHubClient>
         try
         {
             await _modelManager.LoadModelAsync(settings, Context.ConnectionAborted);
-            _stateManager.SetReady(repoId);
-            _logger.LogInformation("Model {RepoId} loaded with profile {Profile} (Embeddings={Embeddings})",
-                repoId, profile, settings.Embeddings);
+            string primaryRepoId = _modelManager.GetActiveSettings()?.RepoId ?? repoId;
+            _stateManager.SetReady(primaryRepoId);
+            _logger.LogInformation("Model {RepoId} loaded with profile {Profile} (Embeddings={Embeddings}). Primary: {Primary}",
+                repoId, profile, settings.Embeddings, primaryRepoId);
         }
         catch (Exception ex)
         {
@@ -372,7 +375,8 @@ public class GatewayHub : Hub<IGatewayHubClient>
         try
         {
             await _modelManager.SwapModelAsync(config, Context.ConnectionAborted);
-            _stateManager.SetReady(repoId);
+            string primaryRepoId = _modelManager.GetActiveSettings()?.RepoId ?? repoId;
+            _stateManager.SetReady(primaryRepoId);
         }
         catch (Exception ex)
         {
@@ -392,7 +396,8 @@ public class GatewayHub : Hub<IGatewayHubClient>
         }
         else
         {
-            _stateManager.SetReady(remaining[0]);
+            string primaryRepoId = _modelManager.GetActiveSettings()?.RepoId ?? remaining[0];
+            _stateManager.SetReady(primaryRepoId);
         }
     }
 
@@ -519,20 +524,22 @@ public class GatewayHub : Hub<IGatewayHubClient>
 
     private ModelSettings BuildModelSettings(CatalogModelEntry targetModel, string? profile)
     {
-        var profileName = profile ?? "Default";
-        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
+        bool isEmbedding = HardwareProfilePolicy.IsEmbeddingModel(targetModel.Id, targetModel.Architecture);
+        string profileName = _profilePolicy.ResolveProfileName(profile, isEmbedding);
+        HardwareProfileSettings hwProfile = _profilePolicy.ResolveProfile(profileName);
+
         return new ModelSettings
         {
             RepoId = targetModel.Id,
             VisionSupport = targetModel.RequiresVisionProjector,
-            Type = targetModel.RequiresVisionProjector ? ModelType.Vlm : (hwProfile.Embeddings ? ModelType.Embedding : ModelType.Llm),
+            Type = targetModel.RequiresVisionProjector ? ModelType.Vlm : (hwProfile.Embeddings || isEmbedding ? ModelType.Embedding : ModelType.Llm),
             GpuLayerCount = hwProfile.GpuLayerCount,
             MainGPU = hwProfile.MainGPU,
             ContextSize = hwProfile.ContextSize,
             BatchSize = hwProfile.BatchSize,
             Threads = hwProfile.Threads,
             FlashAttention = hwProfile.FlashAttention,
-            Embeddings = hwProfile.Embeddings,
+            Embeddings = hwProfile.Embeddings || isEmbedding,
             KvCacheQuantization = hwProfile.KvCacheQuantization,
             UseMemoryLock = hwProfile.UseMemoryLock,
             MaxContexts = hwProfile.MaxContexts
