@@ -119,29 +119,29 @@ public class GatewayHub : Hub<IGatewayHubClient>
         try
         {
             var snapshot = _stateManager.GetSnapshot();
-            var activeModels = _modelManager.GetActiveModels().ToList();
 
-            if (activeModels.Count == 0)
+            if (snapshot.Status == GatewayOperationalStatus.ModelDownloading)
             {
-                if (snapshot.Status == GatewayOperationalStatus.ModelDownloading)
-                {
-                    string progressStr = snapshot.ProgressPercentage.ToString("F1", CultureInfo.InvariantCulture);
-                    await Clients.Caller.ReceiveError(
-                        $"Server is downloading startup model '{snapshot.ActiveModelId}' ({progressStr}%). Please wait.");
-                    return;
-                }
-                if (snapshot.Status == GatewayOperationalStatus.ModelLoading)
-                {
-                    await Clients.Caller.ReceiveError(
-                        $"Server is loading startup model '{snapshot.ActiveModelId}' into memory. Please wait.");
-                    return;
-                }
-                if (snapshot.Status == GatewayOperationalStatus.Faulted)
-                {
-                    await Clients.Caller.ReceiveError($"Server startup failed: {snapshot.ErrorMessage}");
-                    return;
-                }
+                string progressStr = snapshot.ProgressPercentage.ToString("F1", CultureInfo.InvariantCulture);
+                await Clients.Caller.ReceiveError(
+                    $"Server is downloading startup model '{snapshot.ActiveModelId}' ({progressStr}%). Please wait.");
+                return;
             }
+
+            if (snapshot.Status == GatewayOperationalStatus.ModelLoading)
+            {
+                await Clients.Caller.ReceiveError(
+                    $"Server is loading startup model '{snapshot.ActiveModelId}' into memory. Please wait.");
+                return;
+            }
+
+            if (snapshot.Status == GatewayOperationalStatus.Faulted)
+            {
+                await Clients.Caller.ReceiveError($"Server startup failed: {snapshot.ErrorMessage}");
+                return;
+            }
+
+            var activeModels = _modelManager.GetActiveModels().ToList();
 
             if (string.IsNullOrWhiteSpace(repoId))
             {
