@@ -5,7 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>1.5.0</Version>
+    <Version>1.5.1</Version>
+    <InternalsVisibleTo>InstantAIGate.Core.Tests</InternalsVisibleTo>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
@@ -30,6 +31,11 @@
     <None Include="runtimes\setup-symlinks.sh">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>InstantAIGate.Core.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
   <Target Name="CreateLinuxSymlinks" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'linux-x64'">
     <!-- Execute directly in PublishDir since the files are now flattened to the root -->

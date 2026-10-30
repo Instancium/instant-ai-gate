@@ -9,6 +9,7 @@ using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.Handles;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -256,20 +257,26 @@ public class LlamaInference : IInferenceEngine, IDisposable
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (!_sessionManager.TryGetSessionRepoId(sessionId, out var repoId) || string.IsNullOrEmpty(repoId))
         {
             throw new InvalidOperationException($"Active session '{sessionId}' was not found.");
         }
+
         using var sessionGate = await _sessionManager.AcquireSessionExecutionGateAsync(sessionId, ct);
         var inferenceCtx = await _sessionManager.GetOrCreateContextAsync(sessionId, ct);
         using var model = await _modelManager.AcquireModelAsync(repoId, ct);
+
         IntPtr ctxHandle = UnwrapContext(inferenceCtx.TextContext);
         IntPtr modelHandle = UnwrapModel(model);
         IntPtr vocab = LlamaNative.llama_model_get_vocab(modelHandle);
         IntPtr mtmdCtxHandle = inferenceCtx.VisionContext?.Handle is MtmdVisionHandle vh ? vh.Pointer : IntPtr.Zero;
+
         var pastTokens = _sessionManager.GetPastTokensCount(sessionId);
+
         string formattedDelta = await ApplyChatTemplateAsync(repoId, new[] { deltaMessage }, ct);
         int[] deltaTokens = await TokenizeDataAsync(repoId, formattedDelta, ct);
+
         if (pastTokens > 0 && deltaTokens.Length > 0)
         {
             int bosTokenId = LlamaNative.llama_vocab_bos(vocab);
@@ -280,14 +287,22 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 deltaTokens = slicedTokens;
             }
         }
+
         var activeConfig = _modelManager.GetModelSettings(repoId) ?? _modelManager.GetActiveSettings(repoId);
         uint maxContextLimit = activeConfig != null ? (uint)activeConfig.ContextSize : LlamaNative.llama_n_ctx(ctxHandle);
         int maxBatchSize = activeConfig?.BatchSize > 0 ? activeConfig.BatchSize : 512;
-        int requiredReserve = overrideSettings?.MaxTokens > 0 ? Math.Min(overrideSettings.MaxTokens, (int)(maxContextLimit * 0.5)) : 256;
+
         var mediaParts = deltaMessage.Parts?.Where(p => p is not TextContent).ToList() ?? new List<MessageContent>();
-        using var mediaContext = mediaParts.Count > 0 ? await _mediaResolver.ResolveMediaAsync(mediaParts, ct) : null;
+        using var mediaContext = mediaParts.Count > 0
+            ? await _mediaResolver.ResolveMediaAsync(mediaParts, ct)
+            : null;
         var localImagePaths = mediaContext?.LocalFilePaths;
+
         int estimatedTokens = deltaTokens.Length + ((localImagePaths?.Count ?? 0) * 1024);
+        int requiredReserve = overrideSettings?.MaxTokens > 0
+            ? Math.Min(overrideSettings.MaxTokens, (int)(maxContextLimit * 0.5))
+            : 256;
+
         if (pastTokens + estimatedTokens + requiredReserve > maxContextLimit)
         {
             throw new ContextOverflowException(
@@ -297,8 +312,11 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 requiredReserve,
                 (int)maxContextLimit);
         }
+
         _sessionManager.AppendSessionTokens(sessionId, deltaTokens);
+
         int currentPos = pastTokens;
+
         if (mtmdCtxHandle != IntPtr.Zero && localImagePaths != null && localImagePaths.Count > 0)
         {
             var bitmapHandles = new List<MtmdNative.MtmdBitmapHandle>();
@@ -308,12 +326,15 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 var opt = MtmdNative.mtmd_helper_init_opt_default();
                 for (int i = 0; i < localImagePaths.Count; i++)
                 {
-                    var bmpWrapper = MtmdNative.mtmd_helper_bitmap_init_from_file(mtmdCtxHandle, localImagePaths[i], false, opt);
-                    if (bmpWrapper.Bitmap == IntPtr.Zero) throw new InvalidOperationException("Failed to load image.");
+                    var bmpWrapper = MtmdNative.mtmd_helper_bitmap_init_from_file(
+                        mtmdCtxHandle, localImagePaths[i], false, opt);
+                    if (bmpWrapper.Bitmap == IntPtr.Zero)
+                        throw new InvalidOperationException("Failed to load image.");
                     var handle = new MtmdNative.MtmdBitmapHandle(bmpWrapper.Bitmap);
                     bitmapHandles.Add(handle);
                     bitmapPtrs[i] = handle.DangerousGetHandle();
                 }
+
                 IntPtr rawHandle = MtmdNative.mtmd_input_chunks_init();
                 using var chunksHandle = new MtmdNative.MtmdInputChunksHandle(rawHandle);
                 IntPtr textPtr = Marshal.StringToCoTaskMemUTF8(formattedDelta);
@@ -326,17 +347,15 @@ public class LlamaInference : IInferenceEngine, IDisposable
                         AddSpecial = true,
                         ParseSpecial = true
                     };
-                    int tokResult = MtmdNative.mtmd_tokenize(mtmdCtxHandle, chunksHandle, ref inputText, bitmapPtrs, (UIntPtr)bitmapPtrs.Length);
+                    int tokResult = MtmdNative.mtmd_tokenize(
+                        mtmdCtxHandle, chunksHandle, ref inputText, bitmapPtrs, (UIntPtr)bitmapPtrs.Length);
                     if (tokResult != 0)
-                    {
                         throw new InvalidOperationException($"mtmd_tokenize failed with code: {tokResult}");
-                    }
+
                     int evalResult = MtmdNative.mtmd_helper_eval_chunks(
                         mtmdCtxHandle, ctxHandle, chunksHandle, pastTokens, 0, maxBatchSize, true, out currentPos);
                     if (evalResult != 0)
-                    {
                         throw new InvalidOperationException($"mtmd_helper_eval_chunks failed: {evalResult}");
-                    }
                 }
                 finally
                 {
@@ -360,6 +379,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
                     int* nSeqIdPtr = (int*)batch.NSeqId;
                     int** seqIdPtr = (int**)batch.SeqId;
                     byte* logitsPtr = (byte*)batch.Logits;
+
                     for (int i = 0; i < deltaTokens.Length; i += maxBatchSize)
                     {
                         ct.ThrowIfCancellationRequested();
@@ -375,9 +395,8 @@ public class LlamaInference : IInferenceEngine, IDisposable
                         batch.NTokens = evalBatchSize;
                         int decodeRes = LlamaNative.llama_decode(ctxHandle, batch);
                         if (decodeRes != 0)
-                        {
-                            throw new InvalidOperationException($"llama_decode failed on prompt ingestion with code: {decodeRes}");
-                        }
+                            throw new InvalidOperationException(
+                                $"llama_decode failed on prompt ingestion with code: {decodeRes}");
                     }
                     currentPos = pastTokens + deltaTokens.Length;
                 }
@@ -387,46 +406,83 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 }
             }
         }
+
         _sessionManager.UpdatePastTokensCount(sessionId, currentPos);
+
         var samplerParams = LlamaNative.llama_sampler_chain_default_params();
         IntPtr samplerChain = LlamaNative.llama_sampler_chain_init(samplerParams);
         try
         {
-            LlamaNative.llama_sampler_chain_add(samplerChain, LlamaNative.llama_sampler_init_temp(overrideSettings?.Temperature ?? 0.7f));
-            LlamaNative.llama_sampler_chain_add(samplerChain, LlamaNative.llama_sampler_init_top_p(overrideSettings?.TopP ?? 0.9f, 1));
-            LlamaNative.llama_sampler_chain_add(samplerChain, LlamaNative.llama_sampler_init_dist(overrideSettings?.Seed ?? (uint)Random.Shared.Next()));
-            int maxTokensToGenerate = overrideSettings?.MaxTokens ?? requiredReserve;
+            LlamaNative.llama_sampler_chain_add(
+                samplerChain,
+                LlamaNative.llama_sampler_init_temp(overrideSettings?.Temperature ?? 0.7f));
+            LlamaNative.llama_sampler_chain_add(
+                samplerChain,
+                LlamaNative.llama_sampler_init_top_p(overrideSettings?.TopP ?? 0.9f, 1));
+            LlamaNative.llama_sampler_chain_add(
+                samplerChain,
+                LlamaNative.llama_sampler_init_dist(
+                    overrideSettings?.Seed ?? (uint)Random.Shared.Next()));
+
+            // ═══════════════════════════════════════════════════════════════════
+            // Dynamic headroom calculation for long-form generation.
+            // Instead of hardcoded 256/1024, use physical free space in context.
+            // ═══════════════════════════════════════════════════════════════════
+            int headroom = (int)maxContextLimit - currentPos;
+            if (headroom <= 0)
+            {
+                throw new ContextOverflowException(sessionId, currentPos, 0, 1, (int)maxContextLimit);
+            }
+
+            int maxTokensToGenerate = overrideSettings?.MaxTokens is > 0
+                ? (int)Math.Min(overrideSettings.MaxTokens, headroom)
+                : headroom;
+
             int generatedCount = 0;
             var generatedTokens = new List<int>();
-            var utf8Decoder = Encoding.UTF8.GetDecoder();
-            char[] charBuffer = new char[64];
+
+            var utf8Decoder = new BpeStreamDecoder();
             byte[] tokenPieceBuffer = new byte[64];
+            var pendingChunks = new Queue<string>();
+
             var singleTokenBatch = LlamaNative.llama_batch_init(1, 0, 1);
             try
             {
                 while (generatedCount < maxTokensToGenerate)
                 {
                     ct.ThrowIfCancellationRequested();
+
                     int newTokenId = LlamaNative.llama_sampler_sample(samplerChain, ctxHandle, -1);
                     LlamaNative.llama_sampler_accept(samplerChain, newTokenId);
-                    if (LlamaNative.llama_vocab_is_eog(vocab, newTokenId)) break;
+
+                    if (LlamaNative.llama_vocab_is_eog(vocab, newTokenId))
+                        break;
+
                     generatedTokens.Add(newTokenId);
                     generatedCount++;
-                    int nPieces = LlamaNative.llama_token_to_piece(vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length, 0, true);
+
+                    int nPieces = LlamaNative.llama_token_to_piece(
+                        vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length,
+                        lstrip: 0, special: false);
                     if (nPieces < 0)
                     {
                         tokenPieceBuffer = new byte[-nPieces];
-                        nPieces = LlamaNative.llama_token_to_piece(vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length, 0, true);
+                        nPieces = LlamaNative.llama_token_to_piece(
+                            vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length,
+                            lstrip: 0, special: false);
+                        if (nPieces < 0)
+                            continue;
                     }
-                    if (charBuffer.Length < nPieces)
+                    if (nPieces == 0)
+                        continue;
+
+                    utf8Decoder.Feed(tokenPieceBuffer, nPieces, chunk => pendingChunks.Enqueue(chunk));
+
+                    while (pendingChunks.TryDequeue(out var readyChunk))
                     {
-                        charBuffer = new char[nPieces];
+                        yield return readyChunk;
                     }
-                    int charsDecoded = utf8Decoder.GetChars(tokenPieceBuffer, 0, nPieces, charBuffer, 0, flush: false);
-                    if (charsDecoded > 0)
-                    {
-                        yield return new string(charBuffer, 0, charsDecoded);
-                    }
+
                     unsafe
                     {
                         ((int*)singleTokenBatch.Token)[0] = newTokenId;
@@ -435,11 +491,10 @@ public class LlamaInference : IInferenceEngine, IDisposable
                         ((int**)singleTokenBatch.SeqId)[0][0] = 0;
                         ((byte*)singleTokenBatch.Logits)[0] = 1;
                         singleTokenBatch.NTokens = 1;
+
                         int decodeRes = LlamaNative.llama_decode(ctxHandle, singleTokenBatch);
                         if (decodeRes != 0)
-                        {
                             throw new InvalidOperationException($"llama_decode failed: {decodeRes}");
-                        }
                     }
                 }
             }
@@ -447,11 +502,27 @@ public class LlamaInference : IInferenceEngine, IDisposable
             {
                 LlamaNative.llama_batch_free(singleTokenBatch);
             }
-            int finalChars = utf8Decoder.GetChars(Array.Empty<byte>(), 0, 0, charBuffer, 0, flush: true);
-            if (finalChars > 0)
+
+            utf8Decoder.Flush(chunk => pendingChunks.Enqueue(chunk));
+            while (pendingChunks.TryDequeue(out var finalChunk))
             {
-                yield return new string(charBuffer, 0, finalChars);
+                yield return finalChunk;
             }
+
+            if (utf8Decoder.PendingByteCount > 0)
+            {
+                _logger.LogWarning(
+                    "Stream ended with {Count} undecoded UTF-8 byte(s) in session '{SessionId}'.",
+                    utf8Decoder.PendingByteCount, sessionId);
+            }
+
+            if (generatedCount >= maxTokensToGenerate && maxTokensToGenerate < headroom)
+            {
+                _logger.LogInformation(
+                    "Generation for session '{SessionId}' hit MaxTokens={Limit} (finish_reason=length).",
+                    sessionId, maxTokensToGenerate);
+            }
+
             _sessionManager.UpdatePastTokensCount(sessionId, currentPos);
             if (generatedTokens.Count > 0)
             {
