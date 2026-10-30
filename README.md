@@ -37,51 +37,71 @@ Cloud APIs often rely on opaque server-side mitigations—hidden sliding windows
 
 ## Key Features
 
-### 1. Direct KV-Cache Control & Manipulation
+### 1. Multi-Model VRAM Pool & Concurrent Orchestration
+
+Host multiple specialized models simultaneously in GPU VRAM without cross-model contention:
+
+- **Concurrent Multi-Model Residency:** Keep generative chat/vision models (`LLM` / `VLM`) and dedicated `Embedding` models loaded side-by-side in memory (`ActiveModels`).
+- **Isolated Per-Model Context Pools:** Each loaded model maintains its own independent context pool (`MaxContexts`), concurrency semaphore, and active lease counter. High-frequency embedding workloads never starve or block stateful chat sessions.
+- **Type-Scoped Hot-Swap (`SwapModelAsync`):** Gracefully drains and replaces only models of the matching `ModelType` while leaving other active models (such as dedicated embedding models) uninterrupted in VRAM.
+- **Targeted VRAM Purging (`PurgeIdleContextsAsync`):** Reclaim pooled idle contexts per individual model or across the entire VRAM pool on demand without unloading model weights.
+
+### 2. Native Embeddings & Zero-Config Auto-Routing
+
+First-class support for RAG pipelines and semantic search alongside stateful chat:
+
+- **High-Throughput Vector Generation (`GenerateEmbeddingsAsync`):** Stateless batch token decoding with optional $L_2$ unit-vector normalization.
+- **Dimension Introspection (`GetEmbeddingDimensionAsync`):** Query native model vector width (`n_embd`) directly from loaded model handles to provision vector store indices before ingestion without allocating an inference context.
+- **Intelligent Auto-Routing (`EmbeddingModelResolver` & `HardwareProfilePolicy`):** Clients can invoke embedding RPCs without tracking specific embedding model IDs—requests with an empty `repoId` or a chat model ID are automatically routed to the loaded dedicated embedding model, and embedding models are automatically bound to the `Embedding` hardware profile on load.
+
+### 3. Direct KV-Cache Control & Manipulation
 
 Gain deterministic programmatic control over the physical KV cache allocated in GPU VRAM:
 
 - **Prefix Checkpointing (`RollbackSession`):** Instant rollback to fixed token boundaries without re-evaluating preceding prefixes. Backed by `llama_memory_seq_rm`.
 - **Selective Sequence Shifting (`ShiftSessionCache`):** Sliding window operations in native memory. Excise intermediate turns while preserving system prompts and visual projection tokens. Backed by `llama_memory_seq_add`.
-- **Prefix Tree Context Pooling:** Maximize throughput by reusing shared token prefixes across concurrent sessions via `PrefixTreeContextPool`.
+- **Per-Model Context Pooling:** Maximize throughput by recycling pre-allocated native `llama_context` slots across sessions via `ModelProvider` pools.
 
-### 2. Zero-Mutation Policy & Fail-Safe Guard
+### 4. Zero-Mutation Policy & Fail-Safe Guard
 
 Strict memory management ensures reliability:
 
 - The gateway **never** silently truncates or summarizes session context.
 - **Fail-Safe Guard:** Validates token capacity *before* native decoding routines are called. If capacity is exceeded, it halts execution and throws a `ContextOverflowException`, preventing memory corruption and engine crashes.
 
-### 3. Native State Protocol (SignalR)
+### 5. Native State Protocol (SignalR)
 
 High-performance, full-duplex transport over a single unified hub endpoint (`/hub/gateway`):
 
+- **Per-Session Model Binding:** Each session (`JoinSession`) binds to a specific loaded `repoId` in the VRAM pool (or defaults to the primary generative model), allowing a single client connection to multiplex concurrent sessions across different models.
 - **Incremental Delta Transmission:** Clients transmit only the latest prompt delta (`SendPromptDelta`), minimizing payload size.
 - **Session Persistence:** Context handles remain leased in VRAM across turns for minimal Time-To-First-Token (TTFT). Managed by `SessionInferenceManager` with idle timeout eviction.
 - **Single-Pass Media Tokenization:** Image embeddings are computed once via `mtmd` and pinned in the KV cache, enabling multi-turn conversations without repeated binary transfers.
-- **Role-Based Access Control:** Data plane operations require `GatewayUser` policy; control plane operations (model load/swap/unload, queue management) require `GatewayAdmin` policy. Enforced via API Key authentication middleware.
+- **Role-Based Access Control:** Data plane operations (chat, embeddings, loaded model inspection) require `GatewayUser` policy; control plane operations (model load/swap/unload, queue management, VRAM purge) require `GatewayAdmin` policy. Enforced via API Key authentication middleware.
 
-### 4. Real-Time Observability & Telemetry
+### 6. Real-Time Observability & Telemetry
 
 Event-driven observability streamed through the same `/hub/gateway` hub, segmented by SignalR groups:
 
-- **Admin Telemetry (`GatewayAdminGroup`):** VRAM context leases, request queue backpressure (`InferenceMetrics`), native model details, and server-side logs. Broadcast is triggered reactively via `MetricsEventSource` channel on every state mutation—no polling, no fixed intervals.
+- **Admin Telemetry (`GatewayAdminGroup`):** VRAM context leases, request queue backpressure (`InferenceMetrics`), per-model native details (`NativeModelDetails`), and server-side logs. Broadcast is triggered reactively via `MetricsEventSource` channel on every state mutation—no polling, no fixed intervals.
 - **Download Progress:** Live server-side download progress (`ReceiveDownloadProgress`) streamed to subscribed clients via per-model SignalR groups.
-- **Gateway Status:** Operational state machine (`Uninitialized → ModelDownloading → ModelLoading → Ready / Faulted`) broadcast to all connected clients on every transition.
+- **Gateway Status:** Operational state machine (`Uninitialized → ModelDownloading → ModelLoading → Ready / Faulted`) broadcast to all connected clients on every transition, exposing both the primary `ActiveModelId` and all ready `ActiveModelIds`.
 - **Native Log Interception:** C++ `stderr` from `llama.cpp` / `mtmd` is captured via `NativeStreamRedirector` and piped to admin clients through `SignalRLoggerProvider`.
 
-### 5. Autonomous Startup Pipeline
+### 7. Autonomous Multi-Model Startup Pipeline
 
-- **Auto-Download:** If the configured startup model is absent on disk, `ModelStartupWorker` automatically downloads it with resumable, parallel chunked transfer before loading.
-- **Auto-Load:** Once present, the model is loaded into VRAM and the gateway transitions to `Ready` state without manual intervention.
-- **Health Probes:** `/health/live` (liveness, always 200) and `/health/ready` (readiness, reflects model load state) for orchestrator integration.
+- **Multi-Model Boot Provisioning:** Configure a single model or an array of startup models with distinct hardware profiles (e.g., `Default` for VLM/LLM and `Embedding` for vector models) under `InstantAIGate:StartupModel`.
+- **Auto-Download & Integrity Validation:** If any configured startup model is absent on disk, `ModelStartupWorker` automatically downloads it with resumable, parallel chunked transfer and validates GGUF headers natively before loading.
+- **Auto-Load:** Models are sequentially initialized into the VRAM pool and the gateway transitions to `Ready` state without manual intervention.
+- **Health Probes:** `/health/live` (liveness, always `200 OK`) and `/health/ready` (readiness, reflects loaded model pool state and active download progress) for orchestrator integration.
 
-### 6. VRAM Leak Protection & Resilient Lifecycle
+### 8. VRAM Leak Protection & Resilient Lifecycle
 
 - **Disconnect Grace Period:** Transport interruptions (network blinks, Wi-Fi handoffs) preserve session context and KV-cache in VRAM for a configurable window (default: 30s), enabling clients to reconnect seamlessly without re-decoding prompts.
 - **Connection-Bound Eviction:** Sessions not resumed within the Grace Period, or abandoned idle sessions exceeding the configured idle timeout (default: 3m), are automatically evicted and returned to the VRAM context pool safely.
 - **Native Memory Safety:** All context release operations synchronize with internal `ExecutionGate` semaphores to ensure active native token decoding loops complete cleanly before context disposal.
 
+---
 
 ## Architecture
 
@@ -98,24 +118,25 @@ InstantAIGate is designed around a decoupled, stateful architecture that isolate
 The inference gateway exposes a full-duplex, event-driven API. Any environment capable of establishing a WebSocket / SignalR connection can natively integrate with InstantAIGate:
 
 - **Language Agnostic:** Seamless integration via official SignalR client libraries for JavaScript / TypeScript (browsers, Node.js, Electron), Python, Go, Rust, and .NET / C#.
-- **InstantAIGate.Cli (Reference Implementation):** An included open-source reference client demonstrating how consumers can implement token budgeting, checkpointed ingestion (`RollbackSessionAsync`), sliding-window memory management (`ShiftSessionMemoryAsync`), and interactive streaming.
+- **InstantAIGate.Cli (Reference Implementation):** An included open-source reference client demonstrating multi-model management (`/load`, `/use`, `/unload`, `/vram`), embedding generation (`/embed`, `/embed-dim`), token budgeting, checkpointed ingestion (`RollbackSessionAsync`), sliding-window memory management (`ShiftSessionMemoryAsync`), and interactive multimodal streaming.
 
 #### B. Gateway Core: `InstantAIGate.Server` (`GatewayHub`)
 
-The actual inference gateway runtime. It manages high-concurrency client sessions and coordinates stateful interactions without mutating context:
+The actual inference gateway runtime. It manages high-concurrency client sessions and coordinates stateful and stateless interactions without mutating context:
 
+- **Multi-Model Registry & Routing:** `ModelManager` and `EmbeddingModelResolver` coordinate concurrent models in VRAM, per-session model binding, and automatic embedding request routing.
 - **Stateful Connection Lifecycle:** Maps transient client connection IDs and persistent `SessionId` tokens directly to leased native memory handles (`InferenceContext`).
 - **Zero-Mutation Delta Ingestion:** Ingests only conversational deltas while maintaining strict prompt integrity.
 - **KV-Cache Manipulation Interface:** Directly executes prefix rollback and sequence shift primitives on the host.
 - **Fail-Safe Guard:** Intercepts out-of-budget contexts before dispatch to native routines, protecting hardware from crashes.
-- **Operational State Machine:** `GatewayStateManager` provides a thread-safe, observable state machine for the gateway lifecycle.
+- **Operational State Machine:** `GatewayStateManager` provides a thread-safe, observable state machine for the gateway lifecycle and loaded model pool.
 
 #### C. Native Engine Boundary
 
 The low-level C++ boundary executing hardware-accelerated tensor operations:
 
 - **Dynamic Backpressure Queue:** `DynamicRequestQueue` prioritizes and throttles requests across active sessions to prevent VRAM saturation. Supports runtime capacity adjustment and pause/resume.
-- **Prefix Tree Context Pool:** Reuses shared prefix token graphs and model weights across multi-tenant inference sessions.
+- **Per-Model Native Context Pools:** `ModelProvider` manages isolated native `IModelHandle`, `IVisionHandle`, and pooled `IContextHandle` instances per loaded repository.
 - **Native Memory Operations:** Interacts directly with compiled `llama.cpp` / `mtmd` runtimes via P/Invoke bindings (`LlamaNative`, `MtmdNative`) for direct hardware offload without runtime virtualization overhead.
 
 ---
@@ -124,10 +145,12 @@ The low-level C++ boundary executing hardware-accelerated tensor operations:
 
 The complete wire contract of the InstantAIGate gateway is formally documented in the [Client Integration Guide](docs/client-integration-guide.md). This document serves as the single source of truth for external developers and covers:
 
+- Multi-model client architecture, model pool discovery (`GetLoadedModelsDetailsAsync`), and per-session model routing.
 - Authentication mechanisms and role-based access control (RBAC).
 - Complete SignalR Hub method signatures (Client → Server) and callbacks (Server → Client).
+- Stateless embedding generation, dimension introspection, and zero-config auto-routing for RAG pipelines.
 - Strict DTO schemas and the session memory model (KV-cache lifecycle, VRAM slots, disconnect Grace Period, and idle timeouts).
-- Canonical client patterns for interactive chat, Map-Reduce pipelines, and reconnection logic.
+- Canonical client patterns for interactive chat, multimodal vision requests, and network reconnection logic.
 
 ### Typed Contracts for .NET
 
@@ -137,7 +160,7 @@ For C# / .NET developers, we provide the [InstantAIGate.Core](https://www.nuget.
 >
 > ### Hardware Acceleration & Cross-Platform Execution
 >
-> Powered by `llama.cpp` with native Vulkan backend integration, InstantAIGate breaks free from vendor lock-in. It delivers hardware-accelerated LLM/VLM inference across a vast spectrum of consumer and enterprise GPUs without requiring heavy proprietary stacks like CUDA:
+> Powered by `llama.cpp` with native Vulkan backend integration, InstantAIGate breaks free from vendor lock-in. It delivers hardware-accelerated LLM/VLM and Embedding inference across a vast spectrum of consumer and enterprise GPUs without requiring heavy proprietary stacks like CUDA:
 >
 > - **NVIDIA GPUs:** GeForce, Quadro, Tesla (via Vulkan ICD)
 > - **AMD Radeon GPUs:** RX series, Vega, RDNA architectures

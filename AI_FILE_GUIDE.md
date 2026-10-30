@@ -1,373 +1,257 @@
-AI File Guide — InstantAIGate Architecture Map
-Document Version: 1.5
-Last Updated: Reflects codebase state with embedding support, embedding dimension introspection, connection-bound session lifecycle with disconnect Grace Period and idle eviction, gateway state machine, and VRAM purging.
+# AI File Guide — InstantAIGate Architecture Map
+
+**Document Version:** 1.5 (Multi-Model Runtime)  
+**Last Updated:** Reflects codebase state (`v1.5.0-rc.2`) with concurrent multi-model VRAM pool management, automatic embedding model routing (`EmbeddingModelResolver`), hardware profile policy (`HardwareProfilePolicy`), multi-model startup loading, connection-bound session lifecycle with disconnect Grace Period and idle eviction, gateway state machine, and VRAM purging.
+
 This file describes the key modules of the repository. Use it as a navigation map when analyzing or generating code.
 
-Server Entry Point
-File:`src/InstantAIGate.Server/Program.cs`
-Role: ASP.NET Core application entry point. Registers DI container, middleware, SignalR hubs, hosted services, and health checks.
-Key Dependencies:
-`InstantAIGate.Native.DependencyInjection.ServiceCollectionExtensions` — registers native stack (`BackendFacade`, `LlamaInference`, `ModelManager`).
-`InstantAIGate.SSR.DependencyInjection.ServiceCollectionExtensions` — registers model downloader and catalog.
-`InstantAIGate.Server.Hubs.GatewayHub` — central SignalR hub.
-`InstantAIGate.Server.Services.Workers.*` — background tasks (`ModelStartupWorker`, `ModelDownloadWorker`, `MetricsBroadcasterWorker`).
-`InstantAIGate.Core.Dtos.Config.SessionSettings` — session grace period and idle timeout options.
-Invariants:
-Health check `/health/live` returns 200 without authorization (for orchestrators).
-Health check `/health/ready` returns 503 until model is loaded and status is `Ready`.
-SignalR hub is mapped to `/hub/gateway`.
-`ApiKeyAuthMiddleware` authenticates all non-health requests.
-`GatewayExceptionMiddleware` catches `QueueFullException`, `TimeoutException`, and general exceptions.
-Scenarios:
-Running server as Windows service (`UseWindowsService`).
-Intercepting native llama.cpp logs via `NativeStreamRedirector`.
-Broadcasting gateway status changes to SignalR clients.
+---
 
-Central SignalR Hub
-File:`src/InstantAIGate.Server/Hubs/GatewayHub.cs`
-Role: Single entry point for data plane (inference) and control plane (model management). Handles authorization, queues, sessions, and token streaming.
-Key Dependencies:
-`ISessionInferenceManager` — session state, KV-cache, disconnect grace period, and idle eviction.
-`IInferenceEngine` — token generation delegation.
-`IModelManager` — model loading/unloading/purging.
-`IQueueManager` — concurrency control.
-`IGatewayStateManager` — gateway operational status tracking.
-`ChannelWriter<DownloadJob>` — background download queue.
-Invariants:
-All public methods require `[Authorize]`.
-Data plane methods (`SendPromptDelta`, `JoinSession`, `GetSessionTokenCount`, `GetGatewayStatus`, `GetEmbeddingDimensionAsync`) require `GatewayUser` role.
-Control plane methods (`LoadModelAsync`, `SwapModelAsync`, `UnloadModelAsync`, `DownloadModelAsync`, `PurgeIdleContextsAsync`, `SetQueueLimitAsync`) require `GatewayAdmin` role.
-On disconnect, a configurable Grace Period (default 30s) is armed; reconnecting within this window preserves the KV-cache without full prompt re-decoding.
-`JoinSession` rejects requests if gateway is in `ModelDownloading`, `ModelLoading`, or `Faulted` state.
-`GetEmbeddingDimensionAsync` throws `HubException` if gateway is not `Ready` or the requested repoId is not the active model.
-Hub Methods (Data Plane — GatewayUser): 
+## Server Entry Point
+**File:** `src/InstantAIGate.Server/Program.cs`  
+**Role:** ASP.NET Core application entry point. Registers the DI container, middleware, SignalR hubs, hosted services, and health checks.
+
+**Key Dependencies:**
+* `InstantAIGate.Native.DependencyInjection.ServiceCollectionExtensions` — registers the native inference stack (`BackendFacade`, `LlamaInference`, `ModelProvider`, `ModelManager`, `EmbeddingModelResolver`, `SessionInferenceManager`).
+* `InstantAIGate.SSR.DependencyInjection.ServiceCollectionExtensions` — registers the model downloader and catalog service.
+* `InstantAIGate.Server.Configuration.HardwareProfilePolicy` — resolves hardware profiles and auto-routes embedding models to the `Embedding` profile.
+* `InstantAIGate.Server.Configuration.StartupModelSettings` — configures single or multi-model autoload on boot.
+* `InstantAIGate.Server.Hubs.GatewayHub` — central SignalR hub.
+* `InstantAIGate.Server.Services.Workers.*` — background tasks (`ModelStartupWorker`, `ModelDownloadWorker`, `MetricsBroadcasterWorker`).
+* `InstantAIGate.Core.Dtos.Config.SessionSettings` — session disconnect grace period and idle timeout options.
+
+**Invariants:**
+* Health check `/health/live` returns `200 OK` without authorization (for orchestrators).
+* Health check `/health/ready` returns `503 Service Unavailable` until at least one model is loaded and status is `Ready`, exposing both `activeModelId` and `activeModels` in payload data.
+* SignalR hub is mapped to `/hub/gateway`.
+* `ApiKeyAuthMiddleware` authenticates all non-health requests.
+* `GatewayExceptionMiddleware` catches `QueueFullException` (`429`), `TimeoutException` (`504`), model draining/inactive `InvalidOperationException` (`503`), and unhandled exceptions (`500`).
+
+---
+
+## Central SignalR Hub
+**File:** `src/InstantAIGate.Server/Hubs/GatewayHub.cs`  
+**Role:** Single entry point for the data plane (stateful chat inference, stateless embeddings, model discovery) and control plane (multi-model lifecycle management, downloads, queue limits).
+
+**Key Dependencies:**
+* `ISessionInferenceManager` — session state, KV-cache, disconnect grace period, and idle eviction.
+* `IInferenceEngine` — token streaming and embedding vector generation.
+* `IModelManager` — multi-model VRAM pool loading, type-scoped swapping, targeted unloading, and idle context purging.
+* `IEmbeddingModelResolver` — automatic resolution of embedding-capable models in the active VRAM pool.
+* `HardwareProfilePolicy` — automatic hardware profile selection (`Default` vs. `Embedding`).
+* `IQueueManager` — concurrency control.
+* `IGatewayStateManager` — gateway operational status tracking.
+* `ChannelWriter<DownloadJob>` — background download queue.
+
+**Invariants:**
+* All public methods require `[Authorize]`.
+* Data plane methods (`JoinSession`, `LeaveSession`, `DestroySession`, `SendPromptDelta`, `RollbackSession`, `ShiftSessionCache`, `GetSessionTokenCount`, `GetGatewayStatus`, `GetActiveModelDetailsAsync`, `GetLoadedModelsDetailsAsync`, `GenerateEmbeddingsAsync`, `GetEmbeddingDimensionAsync`, `SubscribeToModelDownload`, `UnsubscribeFromModelDownload`) require the `GatewayUser` policy.
+* Control plane methods (`LoadModelAsync`, `SwapModelAsync`, `UnloadModelAsync`, `DownloadModelAsync`, `PurgeIdleContextsAsync`, `SetQueueLimitAsync`, `GetModelsAsync`, `GetQueueMetricsAsync`) require the `GatewayAdmin` policy.
+* On disconnect, a configurable Grace Period (default `30s`) is armed for all sessions bound to that `ConnectionId`; reconnecting within this window preserves the KV-cache without full prompt re-decoding.
+* `JoinSession(sessionId, repoId)` resolves the primary active model if `repoId` is empty, or validates that the requested `repoId` is currently loaded in `ModelManager`.
+* `GenerateEmbeddingsAsync` and `GetEmbeddingDimensionAsync` resolve their target model through `IEmbeddingModelResolver.Resolve(repoId)`, allowing clients to pass `""` or even a chat model ID when a dedicated embedding model is loaded in VRAM.
+
+### Hub Methods (Data Plane — `GatewayUser`)
 | Method | Description |
-|--------|-------------|
-|  `JoinSession(sessionId, repoId)`  | Creates or resumes session, binds to connection |
-|  `LeaveSession(sessionId)`  | Releases session, notifies client |
-|  `DestroySession(sessionId)`  | Force-destroys session slot |
-|  `SendPromptDelta(sessionId, deltaMessage)`  | Streams inference tokens |
-|  `RollbackSession(sessionId, targetPosition)`  | Truncates KV-cache |
-|  `ShiftSessionCache(sessionId, startPos, count)`  | Sliding window eviction |
-|  `GetSessionTokenCount(sessionId)`  | Returns current PastTokens |
-|  `GetGatewayStatus()`  | Returns current gateway status snapshot |
-|  `SubscribeToModelDownload(repoId)`  | Joins download progress group |
-|  `UnsubscribeFromModelDownload(repoId)`  | Leaves download progress group |
-|  `GenerateEmbeddingsAsync(repoId, request)`  | Generates vector embeddings |
-|  `GetEmbeddingDimensionAsync(repoId)`  | Returns embedding vector dimension (n_embd) of the active model |
-Hub Methods (Control Plane — GatewayAdmin): 
+| :--- | :--- |
+| `JoinSession(sessionId, repoId)` | Creates or resumes a session bound to `repoId` (or primary chat model if empty) and binds to `Context.ConnectionId` |
+| `LeaveSession(sessionId)` | Soft-releases session, returns context to the model's VRAM pool, notifies client |
+| `DestroySession(sessionId)` | Hard-destroys session context slot in VRAM (`SuppressPool = true`), notifies client |
+| `SendPromptDelta(sessionId, deltaMessage)` | Streams generated tokens via `ReceiveTokenDelta` |
+| `RollbackSession(sessionId, targetPosition)` | Truncates session KV-cache to `targetPosition` |
+| `ShiftSessionCache(sessionId, startPos, count)` | Applies sliding-window eviction to session KV-cache |
+| `GetSessionTokenCount(sessionId)` | Returns current `PastTokens` count for the session |
+| `GetGatewayStatus()` | Returns current `GatewayStatusDetails` snapshot (including `ActiveModelIds`) |
+| `GetActiveModelDetailsAsync()` | Returns `NativeModelDetails` for the primary active model |
+| `GetLoadedModelsDetailsAsync()` | Returns `IEnumerable<NativeModelDetails>` for all models currently loaded in VRAM |
+| `SubscribeToModelDownload(repoId)` | Joins the `download_{repoId}` progress broadcast group |
+| `UnsubscribeFromModelDownload(repoId)` | Leaves the `download_{repoId}` progress broadcast group |
+| `GenerateEmbeddingsAsync(repoId, request)` | Generates vector embeddings using `IEmbeddingModelResolver` |
+| `GetEmbeddingDimensionAsync(repoId)` | Returns embedding vector dimension (`n_embd`) using `IEmbeddingModelResolver` |
+
+### Hub Methods (Control Plane — `GatewayAdmin`)
 | Method | Description |
-|--------|-------------|
-|  `LoadModelAsync(repoId, profile)`  | Loads model with hardware profile |
-|  `SwapModelAsync(repoId, profile)`  | Hot-swaps active model |
-|  `UnloadModelAsync(repoId)`  | Unloads model, resets state |
-|  `DownloadModelAsync(repoId)`  | Enqueues background download |
-|  `PurgeIdleContextsAsync(repoId)`  | Frees pooled idle contexts |
-|  `SetQueueLimitAsync(limit)`  | Updates dynamic queue capacity |
-|  `GetModelsAsync()`  | Lists active model registry |
-|  `GetQueueMetricsAsync()`  | Returns queue metrics |
+| :--- | :--- |
+| `LoadModelAsync(repoId, profileName)` | Loads a model into the VRAM pool alongside existing models using `HardwareProfilePolicy` |
+| `SwapModelAsync(repoId, profile)` | Type-scoped hot-swap: unloads only active models of the same `ModelType`, then loads the new model |
+| `UnloadModelAsync(repoId)` | Drains and unloads a specific model from VRAM; resets state only if no models remain |
+| `DownloadModelAsync(repoId)` | Enqueues a background model download job |
+| `PurgeIdleContextsAsync(repoId)` | Frees pooled idle contexts for `repoId` (or across all models if `repoId` is empty) |
+| `SetQueueLimitAsync(limit)` | Updates dynamic request queue capacity |
+| `GetModelsAsync()` | Lists `IEnumerable<ModelRegistryStatus>` for all loaded models |
+| `GetQueueMetricsAsync()` | Returns `InferenceMetrics` (`ActiveLeases`, `PendingRequests`) |
 
-Hub Client Contract
-File:`src/InstantAIGate.Server/Hubs/IGatewayHubClient.cs`
-Role: Interface describing all methods the server calls on the client (push notifications).
-Methods: 
+---
+
+## Hub Client Contract
+**File:** `src/InstantAIGate.Server/Hubs/IGatewayHubClient.cs`  
+**Role:** Strongly-typed interface describing all server-to-client push callbacks.
+
 | Method | Description |
-|--------|-------------|
-|  `ReceiveTokenDelta(SessionTokenDelta)`  | Generated text chunk |
-|  `ReceiveContextOverflow(ContextOverflowException)`  | Context window exceeded |
-|  `ReceiveError(string)`  | General error |
-|  `ReceiveSessionClosed(string)`  | Session closed |
-|  `ReceiveDownloadProgress(DownloadProgress)`  | Model download progress |
-|  `ReceiveQueuePosition(int)`  | Inference queue position (Reserved) |
-|  `ReceiveLog(string, string, string)`  | Server logs (admin only) |
-|  `ReceiveMetrics(InferenceMetrics, object)`  | Inference metrics (admin only) |
-|  `ReceiveGatewayStatus(GatewayStatusDetails)`  | Gateway operational status |
+| :--- | :--- |
+| `ReceiveTokenDelta(SessionTokenDelta)` | Generated text chunk or completion marker (`IsDone = true`) |
+| `ReceiveContextOverflow(ContextOverflowException)` | Context window limit exceeded |
+| `ReceiveError(string)` | Operational error message |
+| `ReceiveSessionClosed(string)` | Confirmation that a session was closed |
+| `ReceiveDownloadProgress(DownloadProgress)` | Real-time model download progress |
+| `ReceiveQueuePosition(int)` | Inference queue position |
+| `ReceiveLog(string, string, string)` | Server diagnostic logs (admin group only) |
+| `ReceiveMetrics(InferenceMetrics, object)` | Active lease metrics and native model details (admin group only) |
+| `ReceiveGatewayStatus(GatewayStatusDetails)` | Gateway operational status snapshot |
 
-Gateway State Manager
-File:`src/InstantAIGate.Core/Services/Inference/GatewayStateManager.cs`
-Role: Stores current gateway operational status and publishes changes via `StatusChanged` event. Thread-safe state machine.
-State Transitions:
-Uninitialized → ModelDownloading → ModelLoading → Ready
-Any State → Faulted
-Ready → Uninitialized (via Reset/Unload)
-Key Concepts:
-Thread-safe via `lock (_syncLock)`.
-`UpdateAndPublish` — atomically updates state and invokes all subscribers.
-Exceptions in subscribers are swallowed (do not block other observers).
-Invariants:
-`SetFaulted` concatenates `errorMessage` and `exception.Message`.
-`Reset` returns status to `Uninitialized`.
-`SetDownloading` clamps `progressPercentage` to [0, 100].
-Scenarios:
-`ModelStartupWorker` updates status during startup model loading.
-`MetricsBroadcasterWorker` broadcasts status to admin SignalR group.
-Health check `/health/ready` reads snapshot to determine degraded/unhealthy.
+---
 
-Session State Manager
-File:`src/InstantAIGate.Core/Services/Inference/SessionInferenceManager.cs`
-Role: Single source of truth for all session lifecycle management: token counters, prefix token sequence, native `InferenceContext` (KV-cache), transport connection binding, disconnect Grace Period, and idle timeout evictions. Ensures thread-safe synchronization via `SemaphoreSlim` gates.
-Key Concepts:
-`StatefulSessionEntry` — internal session record with `PastTokens`, `TokenSequence`, `ExecutionGate`, `ContextInitGate`, `BoundConnectionId`, and `DisconnectGraceCts`.
-`AcquireSessionExecutionGateAsync` — locks concurrent generation passes in the same session.
-`ExecutionGate` await in `ReleaseSessionAsync` — guarantees any in-flight native `llama_decode` loop finishes completely before context disposal, preventing Access Violation (`0xc0000005`) crashes.
-`BoundConnectionId` — tracks current owning physical SignalR connection for transport lifecycle synchronization.
-`DisconnectGraceCts` — cancellation token source for the delayed eviction timer armed on connection disconnect.
-`RollbackToPositionAsync` — truncates KV-cache to specified position via `IBackendFacade.RemoveContextMemoryRange`.
-`ShiftMemoryRangeAsync` — shifts KV-cache (sliding window) if `CanShiftContextMemory == true`.
-`UpdatePastTokensCount` / `AppendSessionTokens` / `GetSessionPrefixTokens` — token tracking.
-Invariants:
-A brief network blink (< 30s by default) does NOT destroy the session or clear the KV-cache.
-Reconnecting within the grace period seamlessly resumes the session via idempotent `CreateSessionAsync(request, connectionId)` which rebinds the connection and cancels eviction.
-If the grace period expires without reconnection, the session is evicted safely and its context returned to the pool.
-Explicit `LeaveSession` (pool return) or `DestroySession` (slot destruction) releases the session immediately without grace delay.
-Connected but quiet sessions are evicted after `IdleTimeout` (default 3 minutes).
-`RollbackToPositionAsync` throws `ArgumentOutOfRangeException` if `targetPosition > PastTokens`.
-`ShiftMemoryRangeAsync` throws `NotSupportedException` if FlashAttention or GPU-offload prohibits shifting.
-`ReleaseSessionAsync(destroySlot: true)` sets `SuppressPool = true` on context to prevent VRAM pooling.
-Scenarios:
-Interactive chat sessions surviving Wi-Fi / cellular glitches with full KV-cache reuse.
-CLI and web clients reconnecting seamlessly without recomputing system prompt prefixes.
-Deterministic VRAM recovery when client processes crash or disappear.
-CLI command `/ctx rollback <pos>` and `/ctx shift <start> <count>`.
-Handling `ContextOverflowException` in `LlamaInference`.
+## Gateway State Manager
+**File:** `src/InstantAIGate.Core/Services/Inference/GatewayStateManager.cs`  
+**Role:** Stores current gateway operational status, tracks the set of all ready models in memory (`_readyModels`), and publishes changes via the `StatusChanged` event.
 
-Model Lifecycle Manager
-File:`src/InstantAIGate.Core/Services/Inference/ModelManager.cs`
-Role: Manages model lifecycle: loading, hot-swap, unloading, context purging. Coordinates `IModelProvider` and `IQueueManager`.
-Key Concepts:
-`_globalLock` (SemaphoreSlim) — prevents parallel load/unload operations.
-`_activeLeases` (Interlocked) — counter of active inference operations.
-Graceful swap: pause queue → wait for active leases to complete → unload old model → load new model → resume queue.
-`PurgeIdleContextsAsync` — delegates to `IModelProvider.PurgeIdleContexts` to free pooled VRAM contexts.
-`GetEmbeddingDimensionAsync` — delegates to `IModelProvider.GetEmbeddingDimension`; guards that the requested repoId matches `_activeConfig.RepoId`.
-`NativeModelDetails.EmbeddingDimension` — embedding vector width reported by the native backend; surfaced via `GetActiveModelDetails()` and `GetNativeDetails()`.
-Invariants:
-`AcquireContextAsync` throws `InvalidOperationException` if model is not active or draining.
-`SwapModelAsync` waits until `_activeLeases == 0` before unloading old model.
-`PurgeIdleContextsAsync` is a synchronous operation (no async wait needed).
-`GetEmbeddingDimensionAsync` throws `InvalidOperationException` if no model is active or repoId mismatch.
-Scenarios:
-Admin command `LoadModelAsync` in `GatewayHub`.
-Admin command `SwapModelAsync` in `GatewayHub`.
-CLI command `/vram purge` → `PurgeIdleContextsAsync`.
-CLI command `/embed-dim` → `GetEmbeddingDimensionAsync`.
-Automatic startup model loading via `ModelStartupWorker`.
+**Key Concepts:**
+* Thread-safe via `lock (_syncLock)`.
+* Tracks `_readyModels` (`HashSet<string>`) so `GatewayStatusDetails.ActiveModelIds` always reflects all ready models in the VRAM pool while `ActiveModelId` reflects the primary/latest target model.
+* `SetReady(modelId)` adds `modelId` to `_readyModels`.
+* `SetFaulted(modelId, ...)` removes `modelId` from `_readyModels` and formats the exception message.
+* `Reset()` clears `_readyModels` and transitions back to `Uninitialized`.
 
-Request Concurrency Control
-File:`src/InstantAIGate.Core/Services/Inference/DynamicRequestQueue.cs`
-Role: Limits concurrent inference requests. Implements backpressure via `SemaphoreSlim` and dynamic limit adjustment.
-Key Concepts:
-`EnqueueRequestAsync` — atomically increments `_pendingCount`, waits for semaphore slot, returns `IQueueLease`.
-`UpdateQueueLimit` — dynamically changes `_maxQueueSize` (release/acquire slots).
-`Pause/Resume` — flag `_isPaused` blocks new slot issuance (used during model hot-swap).
-`QueueLease.Dispose()` releases semaphore slot and decrements pending count.
-Invariants:
-`QueueFullException` thrown if `PendingCount >= MaxQueueSize`.
-`TimeoutException` thrown if slot not acquired within `timeout`.
-On token cancellation, `_pendingCount` is decremented.
-`IMetricsEventSource.NotifyStateChanged()` is called on every state mutation.
-Scenarios:
-Gateway-level rate limiting.
-Admin command `SetQueueLimitAsync`.
-Queue pause during `SwapModelAsync`.
+---
 
-Native Inference Engine
-File:`src/InstantAIGate.Native/Inference/LlamaInference.cs`
-Role: Primary inference engine. Converts `ChatMessage` → tokens → llama_decode → token streaming. Works directly with native handles via unsafe code.
-Key Dependencies:
-`IBackendFacade` — abstraction over P/Invoke.
-`ISessionInferenceManager` — session state management.
-`IModelManager` — obtaining `ModelWeights` and `InferenceContext`.
-`IMediaResolver` — image processing for VLM.
-Key Methods:
-| Method | Description |
-|--------|-------------|
-| `TokenizeDataAsync` | Converts text to token IDs |
-| `ApplyChatTemplateAsync` | Applies chat template to messages |
-| `StreamDeltaGenerationAsync` | Main inference loop with token streaming |
-| `GenerateEmbeddingsAsync` | Generates normalized vector embeddings |
-| `GetEmbeddingDimensionAsync` | Returns embedding vector dimension (n_embd) via `IBackendFacade`; allocates no inference context |
-Invariants:
-Throws `ContextOverflowException` if `PastTokens + EstimatedTokens + Reserve > ContextSize`.
-Removes BOS token from delta if `PastTokens > 0`.
-Uses unsafe code for direct `llama_batch` population.
-UTF-8 decoding via `Decoder.GetChars` with flush at end.
-Embedding generation requires `ModelSettings.Embeddings == true`.
-Embedding dimension introspection does NOT require `ModelSettings.Embeddings == true` — it reads a static model property.
-Embedding normalization (L2) is optional via `EmbeddingRequest.Normalize`.
-Scenarios:
-Token streaming via `StreamDeltaGenerationAsync`.
-Processing multimodal requests (images via `mtmd_tokenize`).
-Tokenization and chat-template application.
-Embedding generation for RAG pipelines.
-Vector-store provisioning via dimension introspection.
+## Session State Manager
+**File:** `src/InstantAIGate.Core/Services/Inference/SessionInferenceManager.cs`  
+**Role:** Single source of truth for stateful session lifecycle management: per-session model binding (`RepoId`), token counters (`PastTokens`), prefix token sequences, native `InferenceContext` (KV-cache), SignalR connection binding, disconnect Grace Period, and idle timeout eviction.
 
-Native Backend Facade
-File:`src/InstantAIGate.Native/Inference/BackendFacade.cs`
-Role: Facade over P/Invoke bindings for `llama.cpp`. Converts managed objects (`ModelSettings`) to native parameters and wraps native pointers in `IModelHandle`/`IContextHandle`.
-Key Methods: 
-| Method | Native Call |
-|--------|-------------|
-|  `LoadModel`  |  `llama_model_load_from_file`  |
-|  `CreateContext`  |  `llama_init_from_model`  with TypeK/TypeV config |
-|  `RemoveContextMemoryRange`  |  `llama_memory_seq_rm`  |
-|  `ShiftContextMemoryRange`  |  `llama_memory_seq_add`  |
-|  `CanShiftContextMemory`  |  `llama_memory_can_shift`  (false with FlashAttention) |
-|  `ClearContextMemory`  |  `llama_memory_clear`  |
-|  `GetEmbeddings`  |  `llama_get_embeddings_seq`  |
-|  `GetModelLayerCount`  |  `llama_model_n_layer`  |
-|  `GetEmbeddingDimension`  |  `llama_model_n_embd`  |
-Invariants:
-`KvCacheQuantization` maps to `GgmlType` (F16=2 bytes, Q8_0=1 byte, Q4_K=0.5 byte).
-`FlashAttention` disables KV-cache shifting capability.
-`SetLogCallback` routes native logs to managed `ILogger`.
-`GetEmbeddingDimension` throws `ArgumentException` on invalid handle and `InvalidOperationException` on non-positive native result (Fail-Fast).
-Scenarios:
-Creating context with specified size and quantization.
-Sliding window operations on KV-cache.
-Extracting embeddings after decode.
-Reading embedding vector width for DTOs and RPC responses.
+**Key Concepts:**
+* `StatefulSessionEntry` — holds `Request` (including `RepoId`), `PastTokens`, `TokenSequence`, `ExecutionGate`, `ContextInitGate`, `BoundConnectionId`, and `DisconnectGraceCts`.
+* `GetOrCreateContextAsync(sessionId)` — lazily acquires an `InferenceContext` from `IModelManager.AcquireContextAsync(session.RepoId)` so each session draws from its bound model's context pool.
+* `AcquireSessionExecutionGateAsync` — serializes concurrent generation/memory operations within the same session.
+* `ReleaseSessionAsync` — awaits `ExecutionGate` with `CancellationToken.None` before disposing the native context, preventing native Access Violation (`0xc0000005`) crashes during active `llama_decode` calls.
+* `NotifyConnectionDisconnected(connectionId)` — starts a delayed eviction timer (`DisconnectGracePeriod`, default `30s`) for all sessions bound to the dropped connection.
+* `CreateSessionAsync(request, connectionId)` — idempotent; if `sessionId` exists, cancels `DisconnectGraceCts`, rebinds `BoundConnectionId`, and preserves the hot KV-cache.
 
-Model Validator
-File:`src/InstantAIGate.Native/Inference/NativeModelValidator.cs`
-Role: Validates GGUF model file integrity using native llama.cpp library.
-Key Concepts:
-Loads model with `VocabOnly = true` and `NoAlloc = true` to read headers without allocating tensors.
-Checks if model handle is successfully created.
-Logs validation result.
-Invariants:
-Requires `NativeLibraryLoader.IsLoaded` before validation.
-On validation failure in `ParallelModelDownloader`, temporary files are deleted.
-Returns `false` (never throws) for invalid files.
-Scenarios:
-Post-download validation in `ParallelModelDownloader`.
-Pre-load integrity check.
+---
 
-Background Workers
-ModelStartupWorker
-File:`src/InstantAIGate.Server/Services/Workers/ModelStartupWorker.cs`
-Role: Automatically loads a configured startup model on server boot. Downloads if missing, then loads into VRAM.
-Configuration:
-{
-  "InstantAIGate": {
-    "StartupModel": {
-      "Enabled": true,
-      "RepoId": "qwen3-vl-2b-instruct",
-      "Profile": "Default"
-    }
-  }
-}
-Flow:
-Check if model exists on disk via `IModelLocator.ResolvePathsAsync`.
-If missing → download via `IModelDownloader` with progress broadcasting.
-Load model via `IModelManager.LoadModelAsync`.
-Update `IGatewayStateManager` at each stage.
+## Multi-Model Lifecycle Manager & Provider
+**Files:**
+* `src/InstantAIGate.Core/Services/Inference/ModelManager.cs`
+* `src/InstantAIGate.Core/Services/Inference/ModelProvider.cs`
 
-ModelDownloadWorker
-File:`src/InstantAIGate.Server/Services/Workers/ModelDownloadWorker.cs`
-Role: Processes background download jobs from `ChannelReader<DownloadJob>`. Broadcasts progress to SignalR groups.
-Key Concepts:
-Downloads are queued via `ChannelWriter<DownloadJob>` from `GatewayHub.DownloadModelAsync`.
-Progress is broadcast to `download_{modelId}` group and `GatewayAdminGroup`.
-Uses scoped `IServiceProvider` for transient downloader resolution.
+**Role:** Manages the multi-model VRAM registry, per-model context pools, per-model concurrency semaphores, type-scoped hot-swapping, and safe draining.
 
-MetricsBroadcasterWorker
-File:`src/InstantAIGate.Server/Diagnostics/MetricsBroadcasterWorker.cs`
-Role: Reactive metrics broadcaster. Listens to `IMetricsEventSource.Reader` channel and pushes metrics to admin group on state change.
-Invariants:
-Only broadcasts on event (no polling).
-Status changes are throttled to 1 second intervals.
-Subscribes/unsubscribes to `IGatewayStateManager.StatusChanged`.
+**Key Concepts (`ModelManager`):**
+* `_activeModels` (`ConcurrentDictionary<string, ModelSettings>`) — registry of all currently loaded models.
+* `_contextSemaphores` (`ConcurrentDictionary<string, SemaphoreSlim>`) — enforces `MaxContexts` independently per `repoId`.
+* `_modelLeases` & `_drainingModels` — tracks active context leases per model. Unloading a model sets `_drainingModels[repoId] = true` and waits only for that model's leases (`_modelLeases[repoId] == 0`) to finish.
+* `_primaryRepoId` — tracks the primary generative model (automatically updated when a non-embedding model is loaded).
+* `GetActiveSettings(string? repoId = null)` — returns settings for `repoId` if provided; otherwise returns settings for `_primaryRepoId` (or the first non-embedding model).
+* `SwapModelAsync(ModelSettings newConfig)` — unloads only existing active models where `m.Type == newConfig.Type`, preserving models of other types in VRAM.
+* `PurgeIdleContextsAsync(string repoId)` — purges pooled idle contexts for `repoId`, or across all active models if `repoId` is empty/whitespace.
 
-Parallel Model Downloader
-File:`src/InstantAIGate.SSR/Downloader/ParallelModelDownloader.cs`
-Role: Downloads GGUF model files with range request support, resume capability, parallel download (4 threads), and integrity validation.
-Key Concepts:
-`DownloadManifest` — JSON file `.meta.json` for storing chunk progress.
-`DownloadParallelAsync` — splits file into 4 chunks, downloads in parallel via `Range` header.
-`DownloadSequentialAsync` — fallback for servers without range support.
-After download, calls `IModelValidator.ValidateIntegrityAsync` (native GGUF header check).
-Invariants:
-Minimum size for parallel download: 10 MB.
-On cancellation, progress saved in manifest for resume.
-On validation failure, temporary files deleted and `ModelIntegrityException` thrown.
-Supports both HTTP Range and non-Range servers.
-Scenarios:
-Startup model loading via `ModelStartupWorker`.
-Model download on admin request via `GatewayHub.DownloadModelAsync`.
-CLI command `/download <modelId>`.
+**Key Concepts (`ModelProvider`):**
+* Maintains `_modelCache` (`IModelHandle`), `_visionCache` (`VisionContext`), `_configCache` (`ModelSettings`), `_pools` (`ConcurrentBag<IContextHandle>`), and `_initLocks` keyed by `repoId`.
+* `GetNativeDetails()` — enumerates all loaded models in `_modelCache` and populates `NativeModelDetails` (including `EmbeddingDimension` and `IsEmbedding`).
 
-CLI Entry Point
-File:`src/InstantAIGate.Cli/Program.cs`
-Role: Interactive CLI client entry point. Configures DI, registers commands, creates `GatewayClientProxy` (local or remote mode).
-Key Dependencies:
-`CommandDispatcher` — routes commands by `/` prefix.
-`GatewayClientProxy` — proxy between `LocalGatewayClient` and `RemoteGatewayClient` for seamless local/remote switching.
-`CliHostedService` — main REPL loop.
-`ClientSessionMemoryCoordinator` — orchestrates context operations (shift/rollback/evict).
-Invariants:
-Operating mode determined by `--remote [baseUrl] [--key apiKey]` flag.
-Local mode uses direct DI container with native stack.
-Remote mode connects via SignalR.
-`DebugState` controls native log visibility (`/debug on|off`).
+---
 
-CLI Commands Reference
-Directory:`src/InstantAIGate.Cli/Commands/`
-| Command|Role|
-| ---|---|
-| /load <modelId> [profile]|Load model into VRAM|
-| /ctx info\|shift\|rollback\|clear|Context management|
-| /image <path>|Attach image for next prompt|
-| /connect [url] [key]  or  /connect local|Switch remote/local mode|
-| /vram|Display backend configuration|
-| /vram purge|Purge idle VRAM context pool|
-| /download <modelId>|Download model from catalog|
-| /models|List available models from catalog|
-| /embed <text>|Generate embeddings for text|
-| /embed-dim|Display embedding dimension of the active model|
-| /debug on\|off|Toggle native diagnostic logs|
-| /help|Display command reference|
+## Embedding Model Resolver
+**File:** `src/InstantAIGate.Core/Services/Inference/EmbeddingModelResolver.cs`  
+**Role:** Resolves the target `repoId` for embedding generation and dimension queries in a multi-model pool.
 
-Native Library Loader
-File:`src/InstantAIGate.Native/Bindings/NativeLibraryLoader.cs`
-Role: Loads native libraries `llama.dll`/`libllama.so` and `mtmd.dll`/`libmtmd.so` via `NativeLibrary.SetDllImportResolver`.
-Key Concepts:
-Searches for libraries in `AppDomain.CurrentDomain.BaseDirectory` or custom directory.
-Calls `llama_backend_init()` after successful loading.
-`Unload()` releases libraries via `NativeLibrary.Free`.
-Invariants:
-Loading is idempotent (protected by `LockObj`).
-`IsLoaded` — public flag for native stack readiness.
+**Resolution Order (`Resolve(string? requestedRepoId)`):**
+1. If `requestedRepoId` is non-empty and matches an active model with `Embeddings: true`, returns `requestedRepoId`.
+2. If a dedicated embedding model (`m.Embeddings || m.Type == ModelType.Embedding`) is loaded in `IModelManager.ActiveModels`, automatically routes to it (logging an informational message if `requestedRepoId` was a non-embedding chat model).
+3. Otherwise throws an informative `InvalidOperationException`.
 
-Native Library Binaries
-Directory:`runtimes/`
-Contents:
-Windows:`llama.dll`, `mtmd.dll` (and dependencies) in `runtimes/win-x64/`.
-Linux:`libllama.so`, `libmtmd.so` (and versioned variants like `libmtmd.so.0`, `libmtmd.so.0.4.0`) in `runtimes/linux-x64/`.
-CLI Tools:`llama-cli`, `llama-bench`, `llama-quantize`, `llama-perplexity`, `llama-mtmd-cli`, etc.
-Purpose: Pre-compiled native binaries for llama.cpp and mtmd (multi-modal) backends. Automatically copied to output directory during build based on target OS.
+---
 
-Multi-Modal Context Handler
-File:`src/InstantAIGate.Native/Core/MultiModalContext.cs`
-Role: Manages multi-modal (vision/audio) context for VLM models. Wraps `mtmd` native library for image and audio processing.
-Key Properties:
-`IsInitialized` — whether context is ready.
-`SupportsVision` — whether model supports image input.
-`SupportsAudio` — whether model supports audio input.
-`AudioSampleRate` — required audio sample rate.
-Invariants:
-Must be disposed to free native resources.
-Vision support requires projector file (mmproj/clip).
+## Hardware Profile Policy
+**File:** `src/InstantAIGate.Server/Configuration/HardwareProfilePolicy.cs`  
+**Role:** Centralizes hardware profile resolution and prevents misconfiguration when loading embedding models.
 
-Usage Notes for AI Agents
-When generating inference code — start with `LlamaInference.cs`, then check `BackendFacade.cs` for native calls.
-When working with sessions — key file is `SessionInferenceManager.cs`. All KV-cache operations go through it. Sessions are connection-bound with a disconnect Grace Period (default 30s) and idle timeout (default 3m).
-When adding new CLI commands — create class in `src/InstantAIGate.Cli/Commands/`, implement `IConsoleCommand`, register in `Program.cs`.
-When modifying SignalR contract — update `IGatewayHub.cs`, `IGatewayHubClient.cs`, `GatewayHub.cs`, and corresponding handlers in `RemoteGatewayClient.cs` (CLI), client integration guide `docs/client-integration-guide.md`, and web client.
-When working with VRAM budgeting — check `BackendFacade.CreateContext` (parameter `KvCacheQuantization`) and `HardwareProfileSettings`.
-32B models require `KvCacheQuantization: "Q8_0"` and `MaxContexts: 2` in profile.
-Native libraries are in `runtimes/` directory — do not modify binaries, only update via official llama.cpp releases.
-Multi-modal support requires both text model and projector file (mmproj/clip) — check `MultiModalContext.cs` and `NativeModelValidator.cs`.
-When adding embeddings — ensure `ModelSettings.Embeddings = true` and hardware profile has `Embeddings: true`.
-When exposing embedding metadata — the dimension chain is: `IBackendFacade.GetEmbeddingDimension` (P/Invoke `llama_model_n_embd`) → `IModelProvider.GetEmbeddingDimension` → `IModelManager.GetEmbeddingDimensionAsync` / `IInferenceEngine.GetEmbeddingDimensionAsync` → `GatewayHub.GetEmbeddingDimensionAsync` → CLI `/embed-dim`. Keep all layers in sync when changing it.
-`PrefixTreeContextPool.cs` exists as a reserved prototype for TTFT optimization but is NOT registered in DI and NOT used by any active service.
+**Invariants:**
+* `IsEmbeddingModel(repoId, architecture)` returns `true` if `repoId` or `architecture` contains `"embed"` (case-insensitive).
+* `ResolveProfileName(requestedProfile, isEmbeddingModel)` keeps `requestedProfile` for chat/VLM models, but automatically reroutes embedding models from non-embedding profiles (such as `"Default"`) to `"Embedding"` if the `"Embedding"` profile exists in configuration.
+
+---
+
+## Request Concurrency Control
+**File:** `src/InstantAIGate.Core/Services/Inference/DynamicRequestQueue.cs`  
+**Role:** Limits concurrent gateway requests via `SemaphoreSlim` and supports dynamic queue capacity adjustments (`UpdateQueueLimit`).
+
+---
+
+## Native Inference Engine & Backend Facade
+**Files:**
+* `src/InstantAIGate.Native/Inference/LlamaInference.cs`
+* `src/InstantAIGate.Native/Inference/BackendFacade.cs`
+* `src/InstantAIGate.Native/Inference/VisionFacade.cs`
+* `src/InstantAIGate.Native/Inference/LlamaModelLocator.cs`
+* `src/InstantAIGate.Native/Inference/NativeModelValidator.cs`
+
+**Role:** P/Invoke bridge and execution engine over `llama.cpp` (`llama`) and `mtmd`.
+
+**Invariants (`LlamaInference`):**
+* `StreamDeltaGenerationAsync` looks up the session's bound `repoId` via `_sessionManager.TryGetSessionRepoId(sessionId, out var repoId)` and acquires weights/settings for that specific model.
+* Throws `ContextOverflowException` before decoding if `pastTokens + estimatedTokens + requiredReserve > maxContextLimit`.
+* `GenerateEmbeddingsAsync(modelId, request)` verifies `activeSettings.Embeddings == true`, acquires a temporary context from `modelId`'s pool, decodes tokens in batches, extracts embeddings via `_backendFacade.GetEmbeddings`, optionally applies $L_2$ normalization, and returns the context to the pool on dispose.
+
+---
+
+## Background Workers
+
+### `ModelStartupWorker`
+**File:** `src/InstantAIGate.Server/Services/Workers/ModelStartupWorker.cs`  
+**Role:** Automatically downloads (if missing) and loads configured startup model(s) on server boot.
+* Supports multi-model startup configuration via `StartupModelSettings.Models` (`List<StartupModelItem>`), `StartupModelSettings.RepoId` (`string[]`), or scalar `InstantAIGate:StartupModel:RepoId`.
+* Applies `HardwareProfilePolicy` per model entry and transitions `IGatewayStateManager` to `Ready` with the primary chat model once loading completes.
+
+### `ModelDownloadWorker`
+**File:** `src/InstantAIGate.Server/Services/Workers/ModelDownloadWorker.cs`  
+**Role:** Processes background `DownloadJob` items from `ChannelReader<DownloadJob>` and broadcasts `ReceiveDownloadProgress` to `download_{modelId}` and `GatewayAdminGroup`.
+
+### `MetricsBroadcasterWorker`
+**File:** `src/InstantAIGate.Server/Diagnostics/MetricsBroadcasterWorker.cs`  
+**Role:** Event-driven broadcaster that listens to `IMetricsEventSource.Reader` and `IGatewayStateManager.StatusChanged`, pushing updates to SignalR clients without polling.
+
+---
+
+## Parallel Model Downloader
+**File:** `src/InstantAIGate.SSR/Downloader/ParallelModelDownloader.cs`  
+**Role:** Downloads GGUF model files with HTTP Range support, 4-chunk parallel streaming, `.meta.json` resume manifests, and native `IModelValidator` header verification.
+
+---
+
+## CLI Entry Point, Session State & Commands
+**Files:**
+* `src/InstantAIGate.Cli/Program.cs`
+* `src/InstantAIGate.Cli/CliHostedService.cs`
+* `src/InstantAIGate.Cli/State/CliSession.cs`
+* `src/InstantAIGate.Cli/Core/IGatewayClient.cs` (`LocalGatewayClient.cs`, `RemoteGatewayClient.cs`, `GatewayClientProxy.cs`)
+
+**Multi-Model CLI State (`CliSession`):**
+* `ActiveModelId` — target `repoId` for interactive chat prompts.
+* `ActiveEmbeddingModelId` — target `repoId` for `/embed` and `/embed-dim` commands (auto-synced from loaded models on `/connect` or `/load`).
+* `LoadedModelIds` — set of models loaded during the CLI session.
+
+### CLI Commands Reference (`src/InstantAIGate.Cli/Commands/`)
+| Command | File | Role |
+| :--- | :--- | :--- |
+| `/load <modelId> [profile]` | `LoadCommand.cs` | Loads a model into the VRAM pool (defaults to `Embedding` profile for embed models, sets `ActiveModelId` or `ActiveEmbeddingModelId`) |
+| `/use [modelId]` | `UseCommand.cs` | Displays or switches the active chat model (`ActiveModelId`) among models currently loaded in VRAM and starts a fresh session |
+| `/unload <modelId>` | `UnloadCommand.cs` | Unloads a specific model from VRAM and falls back to remaining loaded models |
+| `/vram [purge [modelId]]` | `VramCommand.cs` | Displays a table of all loaded models in VRAM (via `GetLoadedModelsDetailsAsync`) or purges idle contexts for one/all models |
+| `/embed <text>` | `EmbedCommand.cs` | Generates normalized embeddings using `ActiveEmbeddingModelId` (or gateway auto-resolution) |
+| `/embed-dim [modelId]` | `EmbedDimCommand.cs` | Queries the embedding dimension (`n_embd`) of the specified or active embedding model |
+| `/ctx info\|shift\|rollback\|clear` | `ContextCommand.cs` | Inspects or mutates session KV-cache state |
+| `/image <path>` | `ImageCommand.cs` | Queues a local image file for the next multimodal prompt |
+| `/connect [url] [key] \| local` | `ConnectCommand.cs` | Switches between local engine and remote SignalR gateway, syncing both `ActiveModelId` and `ActiveEmbeddingModelId` |
+| `/download <modelId>` | `DownloadCommand.cs` | Downloads a model from the catalog locally or on the remote server |
+| `/models` | `ModelsCommand.cs` | Lists all supported models from `config/model_catalog.json` |
+| `/debug [on\|off]` | `DebugCommand.cs` | Toggles native and remote server diagnostic logs |
+| `/help` | `HelpCommand.cs` | Displays available CLI commands |
+
+---
+
+## Usage Notes for AI Agents
+* **Multi-Model Invariant:** Never assume only one model is loaded in `ModelManager` or `ModelProvider`. Always resolve settings and contexts by `repoId` (`GetModelSettings(repoId)` or `GetActiveSettings(repoId)`).
+* **Embedding Routing:** Always route external embedding requests through `IEmbeddingModelResolver.Resolve(repoId)` before calling `IInferenceEngine.GenerateEmbeddingsAsync` or `IModelManager.GetEmbeddingDimensionAsync`.
+* **Hardware Profiles:** When loading models on the server, use `HardwareProfilePolicy` so embedding models automatically receive `Embeddings: true`.
+* **SignalR Contract Updates:** When modifying hub methods, keep `IGatewayHub.cs`, `IGatewayHubClient.cs`, `GatewayHub.cs`, `IGatewayClient.cs`, `LocalGatewayClient.cs`, `RemoteGatewayClient.cs`, and `GatewayClientProxy.cs` synchronized.
+* **Reserved Prototype:** `PrefixTreeContextPool.cs` is a standalone prototype for prefix caching and is not registered in DI.
