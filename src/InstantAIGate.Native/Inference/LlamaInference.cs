@@ -441,20 +441,9 @@ public class LlamaInference : IInferenceEngine, IDisposable
             int generatedCount = 0;
             var generatedTokens = new List<int>();
 
-            // ═══════════════════════════════════════════════════════════════════
-            // BPE-safe UTF-8 streaming decoder state.
-            //
-            // CRITICAL: tokenPieceBuffer MUST be a separate array from pendingBytes.
-            // llama_token_to_piece writes into tokenPieceBuffer[0..nPieces); if it
-            // aliases pendingBytes it overwrites the undecoded UTF-8 tail (leading
-            // bytes of a split codepoint / emoji) left over from the previous token.
-            // That aliasing bug silently destroyed multibyte characters.
-            // ═══════════════════════════════════════════════════════════════════
+            var utf8Decoder = new BpeStreamDecoder();
             byte[] tokenPieceBuffer = new byte[64];
-            byte[] pendingBytes = new byte[64];
-            int pendingCount = 0;
-            char[] yieldBuffer = new char[16];
-            int yieldBufferPos = 0;
+            var pendingChunks = new Queue<string>();
 
             var singleTokenBatch = LlamaNative.llama_batch_init(1, 0, 1);
             try
@@ -472,7 +461,6 @@ public class LlamaInference : IInferenceEngine, IDisposable
                     generatedTokens.Add(newTokenId);
                     generatedCount++;
 
-                    // Get raw UTF-8 bytes into SEPARATE buffer. special: false is CRITICAL.
                     int nPieces = LlamaNative.llama_token_to_piece(
                         vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length,
                         lstrip: 0, special: false);
@@ -488,61 +476,13 @@ public class LlamaInference : IInferenceEngine, IDisposable
                     if (nPieces == 0)
                         continue;
 
-                    // Append the fresh piece AFTER the undecoded tail. No aliasing.
-                    if (pendingCount + nPieces > pendingBytes.Length)
-                    {
-                        Array.Resize(ref pendingBytes, Math.Max(pendingBytes.Length * 2, pendingCount + nPieces));
-                    }
-                    Buffer.BlockCopy(tokenPieceBuffer, 0, pendingBytes, pendingCount, nPieces);
-                    pendingCount += nPieces;
+                    utf8Decoder.Feed(tokenPieceBuffer, nPieces, chunk => pendingChunks.Enqueue(chunk));
 
-                    // Decode as many complete UTF-8 codepoints as possible.
-                    int decoded = 0;
-                    while (decoded < pendingCount)
+                    while (pendingChunks.TryDequeue(out var readyChunk))
                     {
-                        OperationStatus status = Rune.DecodeFromUtf8(
-                            pendingBytes.AsSpan(decoded, pendingCount - decoded),
-                            out Rune rune,
-                            out int bytesConsumed);
-
-                        if (status == OperationStatus.Done)
-                        {
-                            // Guarantee room for a surrogate pair BEFORE encoding.
-                            if (yieldBufferPos + 2 > yieldBuffer.Length)
-                            {
-                                yield return new string(yieldBuffer, 0, yieldBufferPos);
-                                yieldBufferPos = 0;
-                            }
-                            yieldBufferPos += rune.EncodeToUtf16(yieldBuffer.AsSpan(yieldBufferPos));
-                            decoded += bytesConsumed;
-                        }
-                        else if (status == OperationStatus.NeedMoreData)
-                        {
-                            break; // split codepoint — wait for the next token's bytes
-                        }
-                        else
-                        {
-                            decoded += Math.Max(1, bytesConsumed); // malformed byte — skip
-                        }
+                        yield return readyChunk;
                     }
 
-                    if (decoded > 0)
-                    {
-                        if (decoded < pendingCount)
-                        {
-                            Buffer.BlockCopy(pendingBytes, decoded, pendingBytes, 0, pendingCount - decoded);
-                        }
-                        pendingCount -= decoded;
-                    }
-
-                    // Flush yield buffer periodically for real-time streaming.
-                    if (yieldBufferPos >= 8)
-                    {
-                        yield return new string(yieldBuffer, 0, yieldBufferPos);
-                        yieldBufferPos = 0;
-                    }
-
-                    // Feed the token back into the model.
                     unsafe
                     {
                         ((int*)singleTokenBatch.Token)[0] = newTokenId;
@@ -563,19 +503,17 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 LlamaNative.llama_batch_free(singleTokenBatch);
             }
 
-            // Flush remaining chars in yield buffer.
-            if (yieldBufferPos > 0)
+            utf8Decoder.Flush(chunk => pendingChunks.Enqueue(chunk));
+            while (pendingChunks.TryDequeue(out var finalChunk))
             {
-                yield return new string(yieldBuffer, 0, yieldBufferPos);
-                yieldBufferPos = 0;
+                yield return finalChunk;
             }
 
-            // Handle any trailing incomplete UTF-8 sequence at end of stream.
-            if (pendingCount > 0)
+            if (utf8Decoder.PendingByteCount > 0)
             {
                 _logger.LogWarning(
-                    "Stream ended with {Count} incomplete UTF-8 byte(s) in session '{SessionId}'.",
-                    pendingCount, sessionId);
+                    "Stream ended with {Count} undecoded UTF-8 byte(s) in session '{SessionId}'.",
+                    utf8Decoder.PendingByteCount, sessionId);
             }
 
             if (generatedCount >= maxTokensToGenerate && maxTokensToGenerate < headroom)
