@@ -7,7 +7,7 @@
     <IsPackable>false</IsPackable>
     <OutputType>Exe</OutputType>
     <NoWarn>$(NoWarn);xUnit1051</NoWarn>
-    <Version>1.5.1</Version>
+    <Version>1.5.2</Version>
     <UseVSTest>false</UseVSTest>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
