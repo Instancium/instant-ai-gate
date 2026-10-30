@@ -6,6 +6,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -22,19 +23,15 @@ public class ModelReadyHealthCheck : IHealthCheck
 
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
+        var activeModels = _modelManager.GetActiveModels()?.ToList() ?? [];
         var activeConfig = _modelManager.GetActiveSettings();
         var snapshot = _stateManager.GetSnapshot();
-
-        if (activeConfig != null || snapshot.Status == GatewayOperationalStatus.Ready)
-        {
-            var modelId = activeConfig?.RepoId ?? snapshot.ActiveModelId ?? "unknown";
-            return Task.FromResult(HealthCheckResult.Healthy($"Model '{modelId}' is loaded and ready."));
-        }
 
         var data = new Dictionary<string, object>
         {
             ["status"] = snapshot.Status.ToString(),
-            ["activeModelId"] = snapshot.ActiveModelId ?? string.Empty,
+            ["activeModelId"] = activeConfig?.RepoId ?? snapshot.ActiveModelId ?? string.Empty,
+            ["activeModels"] = activeModels,
             ["stageDescription"] = snapshot.StageDescription ?? string.Empty,
             ["progressPercentage"] = snapshot.ProgressPercentage,
             ["downloadedBytes"] = snapshot.DownloadedBytes,
@@ -47,10 +44,17 @@ public class ModelReadyHealthCheck : IHealthCheck
             string description = string.Create(
                 CultureInfo.InvariantCulture,
                 $"{snapshot.StageDescription} ({snapshot.ProgressPercentage:F1}%)");
-
             return Task.FromResult(HealthCheckResult.Degraded(
                 description: description,
                 data: data));
+        }
+
+        if (activeConfig != null || activeModels.Count > 0 || snapshot.Status == GatewayOperationalStatus.Ready)
+        {
+            var modelId = activeModels.Count > 0
+                ? string.Join(", ", activeModels)
+                : (activeConfig?.RepoId ?? snapshot.ActiveModelId ?? "unknown");
+            return Task.FromResult(HealthCheckResult.Healthy($"Model '{modelId}' is loaded and ready.", data));
         }
 
         if (snapshot.Status == GatewayOperationalStatus.Faulted)
