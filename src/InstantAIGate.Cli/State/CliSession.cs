@@ -11,6 +11,8 @@ public class CliSession
 
     public bool IsRemoteMode { get; set; }
     public string? ActiveModelId { get; set; }
+    public string? ActiveEmbeddingModelId { get; set; }
+    public HashSet<string> LoadedModelIds { get; } = new(StringComparer.OrdinalIgnoreCase);
     public ModelSettings? ActiveModelConfig { get; set; }
 
     public List<ChatMessage> ChatHistory { get; } = new();

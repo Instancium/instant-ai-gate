@@ -21,8 +21,7 @@ public sealed class EmbedCommand : IConsoleCommand
     }
 
     public string Name => "/embed";
-
-    public string Description => "Generates embeddings for the given text (e.g., /embed Hello world).";
+    public string Description => "Generates embeddings for the given text using the active embedding model (e.g., /embed Hello world).";
 
     public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
     {
@@ -32,13 +31,14 @@ public sealed class EmbedCommand : IConsoleCommand
             return;
         }
 
-        if (!_session.IsRemoteMode && string.IsNullOrEmpty(_session.ActiveModelId))
+        string? modelId = _session.ActiveEmbeddingModelId ?? _session.ActiveModelId;
+        if (!_session.IsRemoteMode && string.IsNullOrEmpty(modelId))
         {
-            AnsiConsole.MarkupLine("[red]No model is currently loaded. Use /load <id> first.[/]");
+            AnsiConsole.MarkupLine("[red]No model is currently loaded. Use /load <id> Embedding first.[/]");
             return;
         }
 
-        string modelId = _session.ActiveModelId ?? string.Empty;
+        string targetModel = modelId ?? string.Empty;
         var request = new EmbeddingRequest(argument, Normalize: true);
 
         try
@@ -48,16 +48,15 @@ public sealed class EmbedCommand : IConsoleCommand
                 .SpinnerStyle(Style.Parse("cyan"))
                 .StartAsync($"Generating embeddings for '{Markup.Escape(argument)}'...", async ctx =>
                 {
-                    var response = await _gatewayClient.GenerateEmbeddingsAsync(modelId, request, cancellationToken);
-
-                    ctx.Status($"Embeddings generated successfully!");
+                    var response = await _gatewayClient.GenerateEmbeddingsAsync(targetModel, request, cancellationToken);
+                    ctx.Status("Embeddings generated successfully!");
 
                     var table = new Table()
                         .Border(TableBorder.Rounded)
                         .AddColumn("[cyan]Property[/]")
                         .AddColumn("[cyan]Value[/]");
 
-                    table.AddRow("Model", Markup.Escape(modelId));
+                    table.AddRow("Model", Markup.Escape(string.IsNullOrEmpty(targetModel) ? "auto-resolved" : targetModel));
                     table.AddRow("Input Text", Markup.Escape(argument));
                     table.AddRow("Token Count", response.TokenCount.ToString());
                     table.AddRow("Embedding Dimension", response.EmbeddingDimension.ToString());
@@ -68,8 +67,8 @@ public sealed class EmbedCommand : IConsoleCommand
                     {
                         previewStr += $", ... ({response.Embedding.Length - 10} more)";
                     }
-                    table.AddRow("Preview", $"[dim]{previewStr}[/]");
 
+                    table.AddRow("Preview", $"[dim]{previewStr}[/]");
                     double norm = Math.Sqrt(response.Embedding.Sum(v => v * v));
                     table.AddRow("L2 Norm", norm.ToString("F4"));
 

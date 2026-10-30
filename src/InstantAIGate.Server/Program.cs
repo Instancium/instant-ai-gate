@@ -56,6 +56,7 @@ public class Program
 
         builder.Services.Configure<StartupModelSettings>(
             builder.Configuration.GetSection("InstantAIGate:StartupModel"));
+        builder.Services.AddSingleton<HardwareProfilePolicy>();
         builder.Services.AddHostedService<ModelStartupWorker>();
 
         var app = builder.Build();

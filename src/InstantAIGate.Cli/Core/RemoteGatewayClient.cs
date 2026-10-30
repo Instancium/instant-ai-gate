@@ -380,6 +380,13 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         return await _hubConnection!.InvokeAsync<NativeModelDetails>("GetActiveModelDetailsAsync", ct);
     }
 
+    public async Task<IReadOnlyList<NativeModelDetails>> GetLoadedModelsDetailsAsync(CancellationToken ct = default)
+    {
+        await EnsureConnectedAsync(ct);
+        var details = await _hubConnection!.InvokeAsync<IEnumerable<NativeModelDetails>>("GetLoadedModelsDetailsAsync", ct);
+        return details != null ? new List<NativeModelDetails>(details) : Array.Empty<NativeModelDetails>();
+    }
+
     public async Task LoadModelAsync(string repoId, string? profile = null, CancellationToken ct = default)
     {
         await EnsureConnectedAsync(ct);

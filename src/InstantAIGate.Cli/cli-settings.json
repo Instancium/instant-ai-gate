@@ -29,7 +29,8 @@
         "BatchSize": 512,
         "Threads": 8,
         "FlashAttention": true,
-        "KvCacheQuantization": "Q4_0"
+        "KvCacheQuantization": "Q8_0",
+        "MaxContexts": 4
       },
       "Embedding": {
         "GpuLayerCount": 0,

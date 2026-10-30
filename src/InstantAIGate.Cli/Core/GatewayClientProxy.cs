@@ -99,6 +99,9 @@ public class GatewayClientProxy : IGatewayClient
     public Task<NativeModelDetails> GetActiveModelDetailsAsync(CancellationToken ct = default) =>
         _activeClient.GetActiveModelDetailsAsync(ct);
 
+    public Task<IReadOnlyList<NativeModelDetails>> GetLoadedModelsDetailsAsync(CancellationToken ct = default) =>
+        _activeClient.GetLoadedModelsDetailsAsync(ct);
+
     public Task<GatewayStatusDetails> GetGatewayStatusAsync(CancellationToken ct = default) =>
         _activeClient.GetGatewayStatusAsync(ct);
 

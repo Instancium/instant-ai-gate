@@ -10,20 +10,19 @@ using System.Threading.Tasks;
 
 public interface IModelManager : IDisposable
 {
+    IReadOnlyDictionary<string, ModelSettings> ActiveModels { get; }
     Task LoadModelAsync(ModelSettings config, CancellationToken ct = default);
     Task SwapModelAsync(ModelSettings newConfig, CancellationToken ct = default);
     Task<InferenceContext> AcquireContextAsync(string repoId, CancellationToken ct = default);
     Task UnloadModelAsync(string repoId, CancellationToken ct = default);
     Task<ModelWeights> AcquireModelAsync(string repoId, CancellationToken ct = default);
-    ModelSettings? GetActiveSettings();
-    NativeModelDetails GetActiveModelDetails();
+    ModelSettings? GetActiveSettings(string? repoId = null);
+    ModelSettings? GetModelSettings(string repoId);
+    NativeModelDetails GetActiveModelDetails(string? repoId = null);
     InferenceMetrics GetMetrics();
     IEnumerable<ModelRegistryStatus> GetActiveModelsStatus();
     IEnumerable<string> GetActiveModels();
     IEnumerable<NativeModelDetails> GetNativeDetails();
     Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default);
-
     Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default);
-
-
 }

@@ -6,6 +6,7 @@ using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Exceptions;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Server.Configuration;
 using InstantAIGate.Server.Services.Workers;
 using InstantAIGate.SSR.Contracts;
 using InstantAIGate.SSR.Dtos;
@@ -35,6 +36,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
     private readonly StorageSettings _storageSettings;
     private readonly ChannelWriter<DownloadJob> _downloadChannelWriter;
     private readonly IGatewayStateManager _stateManager;
+    private readonly HardwareProfilePolicy _profilePolicy;
     private readonly ILogger<GatewayHub> _logger;
 
     public GatewayHub(
@@ -47,6 +49,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         IOptions<StorageSettings> storageSettings,
         ChannelWriter<DownloadJob> downloadChannelWriter,
         IGatewayStateManager stateManager,
+        HardwareProfilePolicy profilePolicy,
         ILogger<GatewayHub> logger)
     {
         _sessionManager = sessionManager;
@@ -58,6 +61,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         _storageSettings = storageSettings.Value;
         _downloadChannelWriter = downloadChannelWriter;
         _stateManager = stateManager;
+        _profilePolicy = profilePolicy ?? throw new ArgumentNullException(nameof(profilePolicy));
         _logger = logger;
     }
 
@@ -141,22 +145,23 @@ public class GatewayHub : Hub<IGatewayHubClient>
                 return;
             }
 
+            var activeModels = _modelManager.GetActiveModels().ToList();
+
             if (string.IsNullOrWhiteSpace(repoId))
             {
-                var activeSettings = _modelManager.GetActiveSettings();
-                if (activeSettings == null || string.IsNullOrWhiteSpace(activeSettings.RepoId))
+                var defaultSettings = _modelManager.GetActiveSettings();
+                if (defaultSettings == null || string.IsNullOrWhiteSpace(defaultSettings.RepoId))
                 {
                     await Clients.Caller.ReceiveError(
                         "No active model is loaded on Remote Gateway. Server has no model in memory.");
                     return;
                 }
-                repoId = activeSettings.RepoId;
+                repoId = defaultSettings.RepoId;
             }
             else
             {
-                var activeSettings = _modelManager.GetActiveSettings();
-                if (activeSettings == null ||
-                    !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
+                var targetSettings = _modelManager.GetModelSettings(repoId) ?? _modelManager.GetActiveSettings(repoId);
+                if (targetSettings == null || !string.Equals(targetSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
                 {
                     await Clients.Caller.ReceiveError(
                         $"Requested model '{repoId}' is not active on Remote Gateway.");
@@ -165,13 +170,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
             }
 
             var request = new SessionStartRequest(sessionId, repoId);
-
-            // CreateSessionAsync is idempotent: if the session already exists
-            // (client reconnected after a network blink or within grace period),
-            // it cancels any disconnect grace eviction, rebinds connectionId,
-            // and preserves the KV-cache.
             await _sessionManager.CreateSessionAsync(request, Context.ConnectionId, Context.ConnectionAborted);
-
             _logger.LogInformation(
                 "Client {ConnectionId} joined session {SessionId} for repo {RepoId}",
                 Context.ConnectionId, sessionId, repoId);
@@ -313,29 +312,53 @@ public class GatewayHub : Hub<IGatewayHubClient>
         return Task.FromResult(_modelManager.GetActiveModelDetails());
     }
 
+    [Authorize(Policy = "GatewayUser")]
+    public Task<IEnumerable<NativeModelDetails>> GetLoadedModelsDetailsAsync()
+    {
+        return Task.FromResult(_modelManager.GetNativeDetails());
+    }
+
     [Authorize(Policy = "GatewayAdmin")]
     public async Task LoadModelAsync(string repoId, string? profileName = null)
     {
-        var profile = profileName ?? "Default";
-        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profile}").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
+        var targetModel = await _catalogService.FindModelByIdAsync(repoId, Context.ConnectionAborted);
+        bool isEmbedding = HardwareProfilePolicy.IsEmbeddingModel(repoId, targetModel?.Architecture);
+        string profile = _profilePolicy.ResolveProfileName(profileName, isEmbedding);
+        HardwareProfileSettings hwProfile = _profilePolicy.ResolveProfile(profile);
+        bool visionSupport = targetModel?.RequiresVisionProjector ?? false;
+        bool embeddingsEnabled = hwProfile.Embeddings || isEmbedding;
 
         var settings = new ModelSettings
         {
             RepoId = repoId,
+            VisionSupport = visionSupport,
+            Type = visionSupport ? ModelType.Vlm : (embeddingsEnabled ? ModelType.Embedding : ModelType.Llm),
             GpuLayerCount = hwProfile.GpuLayerCount,
             MainGPU = hwProfile.MainGPU,
             ContextSize = hwProfile.ContextSize,
             BatchSize = hwProfile.BatchSize,
             Threads = hwProfile.Threads,
             FlashAttention = hwProfile.FlashAttention,
-            Embeddings = hwProfile.Embeddings,
+            Embeddings = embeddingsEnabled,
             KvCacheQuantization = hwProfile.KvCacheQuantization,
-            UseMemoryLock = hwProfile.UseMemoryLock
+            UseMemoryLock = hwProfile.UseMemoryLock,
+            MaxContexts = hwProfile.MaxContexts
         };
 
-        await _modelManager.LoadModelAsync(settings, Context.ConnectionAborted);
-        _logger.LogInformation("Model {RepoId} loaded with profile {Profile} (Embeddings={Embeddings})",
-            repoId, profile, settings.Embeddings);
+        _stateManager.SetLoading(repoId, $"Loading model '{repoId}'");
+        try
+        {
+            await _modelManager.LoadModelAsync(settings, Context.ConnectionAborted);
+            string primaryRepoId = _modelManager.GetActiveSettings()?.RepoId ?? repoId;
+            _stateManager.SetReady(primaryRepoId);
+            _logger.LogInformation("Model {RepoId} loaded with profile {Profile} (Embeddings={Embeddings}). Primary: {Primary}",
+                repoId, profile, settings.Embeddings, primaryRepoId);
+        }
+        catch (Exception ex)
+        {
+            _stateManager.SetFaulted(repoId, $"Failed to load model '{repoId}'", ex);
+            throw;
+        }
     }
 
     [Authorize(Policy = "GatewayAdmin")]
@@ -352,7 +375,8 @@ public class GatewayHub : Hub<IGatewayHubClient>
         try
         {
             await _modelManager.SwapModelAsync(config, Context.ConnectionAborted);
-            _stateManager.SetReady(repoId);
+            string primaryRepoId = _modelManager.GetActiveSettings()?.RepoId ?? repoId;
+            _stateManager.SetReady(primaryRepoId);
         }
         catch (Exception ex)
         {
@@ -365,7 +389,16 @@ public class GatewayHub : Hub<IGatewayHubClient>
     public async Task UnloadModelAsync(string repoId)
     {
         await _modelManager.UnloadModelAsync(repoId, Context.ConnectionAborted);
-        _stateManager.Reset();
+        var remaining = _modelManager.GetActiveModels().ToList();
+        if (remaining.Count == 0)
+        {
+            _stateManager.Reset();
+        }
+        else
+        {
+            string primaryRepoId = _modelManager.GetActiveSettings()?.RepoId ?? remaining[0];
+            _stateManager.SetReady(primaryRepoId);
+        }
     }
 
     [Authorize(Policy = "GatewayAdmin")]
@@ -414,28 +447,20 @@ public class GatewayHub : Hub<IGatewayHubClient>
     {
         try
         {
-            var snapshot = _stateManager.GetSnapshot();
-            if (snapshot.Status != GatewayOperationalStatus.Ready)
-            {
-                throw new HubException($"Gateway is not ready. Current status: {snapshot.Status}");
-            }
-
-            var activeSettings = _modelManager.GetActiveSettings();
-            if (activeSettings == null || !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new HubException($"Requested model '{repoId}' is not active. Active model: {activeSettings?.RepoId ?? "none"}");
-            }
-
-            var response = await _inferenceEngine.GenerateEmbeddingsAsync(repoId, request, Context.ConnectionAborted);
+            string targetRepoId = ResolveEmbeddingRepoId(repoId);
+            var response = await _inferenceEngine.GenerateEmbeddingsAsync(targetRepoId, request, Context.ConnectionAborted);
             _logger.LogInformation("Generated embeddings for model {ModelId}: {TokenCount} tokens, {Dim}D vector",
-                repoId, response.TokenCount, response.EmbeddingDimension);
-
+                targetRepoId, response.TokenCount, response.EmbeddingDimension);
             return response;
         }
         catch (ContextOverflowException ex)
         {
             _logger.LogWarning(ex, "Context overflow during embedding generation for model {ModelId}", repoId);
             throw new HubException($"Input text exceeds model context size: {ex.Message}");
+        }
+        catch (HubException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -444,23 +469,19 @@ public class GatewayHub : Hub<IGatewayHubClient>
         }
     }
 
-
     [Authorize(Policy = "GatewayUser")]
     public async Task<int> GetEmbeddingDimensionAsync(string repoId)
     {
-        var snapshot = _stateManager.GetSnapshot();
-        if (snapshot.Status != GatewayOperationalStatus.Ready)
-            throw new HubException($"Gateway is not ready. Current status: {snapshot.Status}");
-
-        var activeSettings = _modelManager.GetActiveSettings();
-        if (activeSettings == null || !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
-            throw new HubException($"Model '{repoId}' is not active. Active model: {activeSettings?.RepoId ?? "none"}");
-
         try
         {
-            int dimension = await _inferenceEngine.GetEmbeddingDimensionAsync(repoId, Context.ConnectionAborted);
-            _logger.LogInformation("Embedding dimension for model {ModelId}: {Dimension}", repoId, dimension);
+            string targetRepoId = ResolveEmbeddingRepoId(repoId);
+            int dimension = await _inferenceEngine.GetEmbeddingDimensionAsync(targetRepoId, Context.ConnectionAborted);
+            _logger.LogInformation("Embedding dimension for model {ModelId}: {Dimension}", targetRepoId, dimension);
             return dimension;
+        }
+        catch (HubException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -469,22 +490,56 @@ public class GatewayHub : Hub<IGatewayHubClient>
         }
     }
 
+    private string ResolveEmbeddingRepoId(string? requestedRepoId)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedRepoId))
+        {
+            var explicitSettings = _modelManager.GetModelSettings(requestedRepoId) ?? _modelManager.GetActiveSettings(requestedRepoId);
+            if (explicitSettings != null && string.Equals(explicitSettings.RepoId, requestedRepoId, StringComparison.OrdinalIgnoreCase))
+            {
+                return explicitSettings.RepoId;
+            }
+
+            var fallbackEmbedding = _modelManager.ActiveModels?.Values
+                .FirstOrDefault(m => m.Embeddings || m.Type == ModelType.Embedding);
+            if (fallbackEmbedding != null)
+            {
+                return fallbackEmbedding.RepoId;
+            }
+
+            throw new HubException($"Requested model '{requestedRepoId}' is not active.");
+        }
+
+        var autoEmbedding = _modelManager.ActiveModels?.Values
+            .FirstOrDefault(m => m.Embeddings || m.Type == ModelType.Embedding)
+            ?? _modelManager.GetActiveSettings();
+
+        if (autoEmbedding == null)
+        {
+            throw new HubException("No active model is loaded on Remote Gateway.");
+        }
+
+        return autoEmbedding.RepoId;
+    }
+
     private ModelSettings BuildModelSettings(CatalogModelEntry targetModel, string? profile)
     {
-        var profileName = profile ?? "Default";
-        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
+        bool isEmbedding = HardwareProfilePolicy.IsEmbeddingModel(targetModel.Id, targetModel.Architecture);
+        string profileName = _profilePolicy.ResolveProfileName(profile, isEmbedding);
+        HardwareProfileSettings hwProfile = _profilePolicy.ResolveProfile(profileName);
+
         return new ModelSettings
         {
             RepoId = targetModel.Id,
             VisionSupport = targetModel.RequiresVisionProjector,
-            Type = targetModel.RequiresVisionProjector ? ModelType.Vlm : ModelType.Llm,
+            Type = targetModel.RequiresVisionProjector ? ModelType.Vlm : (hwProfile.Embeddings || isEmbedding ? ModelType.Embedding : ModelType.Llm),
             GpuLayerCount = hwProfile.GpuLayerCount,
             MainGPU = hwProfile.MainGPU,
             ContextSize = hwProfile.ContextSize,
             BatchSize = hwProfile.BatchSize,
             Threads = hwProfile.Threads,
             FlashAttention = hwProfile.FlashAttention,
-            Embeddings = hwProfile.Embeddings,
+            Embeddings = hwProfile.Embeddings || isEmbedding,
             KvCacheQuantization = hwProfile.KvCacheQuantization,
             UseMemoryLock = hwProfile.UseMemoryLock,
             MaxContexts = hwProfile.MaxContexts
