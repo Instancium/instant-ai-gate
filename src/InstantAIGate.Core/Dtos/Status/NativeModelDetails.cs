@@ -43,4 +43,39 @@ public record NativeModelDetails
     public string Backend { get; init; } = string.Empty;
 
     public int EmbeddingDimension { get; init; } = 1024;
+
+    /// <summary>
+    /// Whether this model is configured for embedding inference.
+    /// </summary>
+    public bool IsEmbedding { get; init; }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -36,6 +36,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
     private readonly StorageSettings _storageSettings;
     private readonly ChannelWriter<DownloadJob> _downloadChannelWriter;
     private readonly IGatewayStateManager _stateManager;
+    private readonly IEmbeddingModelResolver _embeddingResolver;
     private readonly HardwareProfilePolicy _profilePolicy;
     private readonly ILogger<GatewayHub> _logger;
 
@@ -49,6 +50,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         IOptions<StorageSettings> storageSettings,
         ChannelWriter<DownloadJob> downloadChannelWriter,
         IGatewayStateManager stateManager,
+        IEmbeddingModelResolver embeddingResolver,
         HardwareProfilePolicy profilePolicy,
         ILogger<GatewayHub> logger)
     {
@@ -61,9 +63,641 @@ public class GatewayHub : Hub<IGatewayHubClient>
         _storageSettings = storageSettings.Value;
         _downloadChannelWriter = downloadChannelWriter;
         _stateManager = stateManager;
+        _embeddingResolver = embeddingResolver ?? throw new ArgumentNullException(nameof(embeddingResolver));
         _profilePolicy = profilePolicy ?? throw new ArgumentNullException(nameof(profilePolicy));
         _logger = logger;
     }
+
+
+    [Authorize(Policy = "GatewayUser")]
+    public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request)
+    {
+        string targetRepoId;
+        try
+        {
+            targetRepoId = _embeddingResolver.Resolve(repoId);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("Embedding target resolution rejected for '{RepoId}': {Message}", repoId, ex.Message);
+            throw new HubException(ex.Message);
+        }
+
+        try
+        {
+            var response = await _inferenceEngine.GenerateEmbeddingsAsync(targetRepoId, request, Context.ConnectionAborted);
+            _logger.LogInformation("Generated embeddings for model {ModelId}: {TokenCount} tokens, {Dim}D vector",
+                targetRepoId, response.TokenCount, response.EmbeddingDimension);
+            return response;
+        }
+        catch (ContextOverflowException ex)
+        {
+            _logger.LogWarning(ex, "Context overflow during embedding generation for model {ModelId}", targetRepoId);
+            throw new HubException($"Input text exceeds model context size: {ex.Message}");
+        }
+        catch (HubException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate embeddings for model {ModelId}", targetRepoId);
+            throw new HubException($"Embedding generation failed: {ex.Message}");
+        }
+    }
+
+    [Authorize(Policy = "GatewayUser")]
+    public async Task<int> GetEmbeddingDimensionAsync(string repoId)
+    {
+        string targetRepoId;
+        try
+        {
+            targetRepoId = _embeddingResolver.Resolve(repoId);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("Embedding target resolution rejected for '{RepoId}': {Message}", repoId, ex.Message);
+            throw new HubException(ex.Message);
+        }
+
+        try
+        {
+            int dimension = await _inferenceEngine.GetEmbeddingDimensionAsync(targetRepoId, Context.ConnectionAborted);
+            _logger.LogInformation("Embedding dimension for model {ModelId}: {Dimension}", targetRepoId, dimension);
+            return dimension;
+        }
+        catch (HubException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get embedding dimension for model {ModelId}", targetRepoId);
+            throw new HubException($"Failed to retrieve embedding dimension: {ex.Message}");
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     #region Connection Lifecycle
 
@@ -442,85 +1076,185 @@ public class GatewayHub : Hub<IGatewayHubClient>
 
     #region Helpers
 
-    [Authorize(Policy = "GatewayUser")]
-    public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request)
-    {
-        try
-        {
-            string targetRepoId = ResolveEmbeddingRepoId(repoId);
-            var response = await _inferenceEngine.GenerateEmbeddingsAsync(targetRepoId, request, Context.ConnectionAborted);
-            _logger.LogInformation("Generated embeddings for model {ModelId}: {TokenCount} tokens, {Dim}D vector",
-                targetRepoId, response.TokenCount, response.EmbeddingDimension);
-            return response;
-        }
-        catch (ContextOverflowException ex)
-        {
-            _logger.LogWarning(ex, "Context overflow during embedding generation for model {ModelId}", repoId);
-            throw new HubException($"Input text exceeds model context size: {ex.Message}");
-        }
-        catch (HubException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to generate embeddings for model {ModelId}", repoId);
-            throw new HubException($"Embedding generation failed: {ex.Message}");
-        }
-    }
 
-    [Authorize(Policy = "GatewayUser")]
-    public async Task<int> GetEmbeddingDimensionAsync(string repoId)
-    {
-        try
-        {
-            string targetRepoId = ResolveEmbeddingRepoId(repoId);
-            int dimension = await _inferenceEngine.GetEmbeddingDimensionAsync(targetRepoId, Context.ConnectionAborted);
-            _logger.LogInformation("Embedding dimension for model {ModelId}: {Dimension}", targetRepoId, dimension);
-            return dimension;
-        }
-        catch (HubException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get embedding dimension for model {ModelId}", repoId);
-            throw new HubException($"Failed to retrieve embedding dimension: {ex.Message}");
-        }
-    }
 
-    private string ResolveEmbeddingRepoId(string? requestedRepoId)
-    {
-        if (!string.IsNullOrWhiteSpace(requestedRepoId))
-        {
-            var explicitSettings = _modelManager.GetModelSettings(requestedRepoId) ?? _modelManager.GetActiveSettings(requestedRepoId);
-            if (explicitSettings != null && string.Equals(explicitSettings.RepoId, requestedRepoId, StringComparison.OrdinalIgnoreCase))
-            {
-                return explicitSettings.RepoId;
-            }
 
-            var fallbackEmbedding = _modelManager.ActiveModels?.Values
-                .FirstOrDefault(m => m.Embeddings || m.Type == ModelType.Embedding);
-            if (fallbackEmbedding != null)
-            {
-                return fallbackEmbedding.RepoId;
-            }
 
-            throw new HubException($"Requested model '{requestedRepoId}' is not active.");
-        }
 
-        var autoEmbedding = _modelManager.ActiveModels?.Values
-            .FirstOrDefault(m => m.Embeddings || m.Type == ModelType.Embedding)
-            ?? _modelManager.GetActiveSettings();
 
-        if (autoEmbedding == null)
-        {
-            throw new HubException("No active model is loaded on Remote Gateway.");
-        }
 
-        return autoEmbedding.RepoId;
-    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private ModelSettings BuildModelSettings(CatalogModelEntry targetModel, string? profile)
     {

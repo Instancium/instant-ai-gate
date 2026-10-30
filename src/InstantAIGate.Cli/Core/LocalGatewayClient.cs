@@ -27,6 +27,7 @@ public class LocalGatewayClient : IGatewayClient
     private readonly ISessionInferenceManager _sessionManager;
     private readonly StorageSettings _storageSettings;
     private readonly IGatewayStateManager? _stateManager;
+    private readonly IEmbeddingModelResolver _embeddingResolver;
 
     public event Action<int>? QueuePositionReceived { add { } remove { } }
     public event Action<string, string, string>? LogReceived { add { } remove { } }
@@ -41,6 +42,7 @@ public class LocalGatewayClient : IGatewayClient
         IConfiguration configuration,
         ISessionInferenceManager sessionManager,
         IOptions<StorageSettings> storageSettings,
+        IEmbeddingModelResolver embeddingResolver,
         IGatewayStateManager? stateManager = null)
     {
         _inferenceEngine = inferenceEngine;
@@ -50,6 +52,7 @@ public class LocalGatewayClient : IGatewayClient
         _configuration = configuration;
         _sessionManager = sessionManager;
         _storageSettings = storageSettings.Value;
+        _embeddingResolver = embeddingResolver ?? throw new ArgumentNullException(nameof(embeddingResolver));
         _stateManager = stateManager;
 
         if (_stateManager != null)
@@ -246,36 +249,13 @@ public class LocalGatewayClient : IGatewayClient
 
     public Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default)
     {
-        string targetRepoId = ResolveTargetEmbeddingModel(repoId);
+        string targetRepoId = _embeddingResolver.Resolve(repoId);
         return _modelManager.GetEmbeddingDimensionAsync(targetRepoId, ct);
     }
 
     public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request, CancellationToken ct = default)
     {
-        string targetRepoId = ResolveTargetEmbeddingModel(repoId);
+        string targetRepoId = _embeddingResolver.Resolve(repoId);
         return await _inferenceEngine.GenerateEmbeddingsAsync(targetRepoId, request, ct);
-    }
-
-    private string ResolveTargetEmbeddingModel(string requestedRepoId)
-    {
-        var settings = _modelManager.GetModelSettings(requestedRepoId);
-        if (settings is { Embeddings: true })
-        {
-            return settings.RepoId;
-        }
-
-        var dedicatedEmbedding = _modelManager.ActiveModels.Values
-            .FirstOrDefault(m => m.Embeddings || m.Type == ModelType.Embedding);
-        if (dedicatedEmbedding != null)
-        {
-            return dedicatedEmbedding.RepoId;
-        }
-
-        if (settings != null)
-        {
-            return settings.RepoId;
-        }
-
-        throw new InvalidOperationException($"Model '{requestedRepoId}' is not active.");
     }
 }
