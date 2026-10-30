@@ -413,21 +413,27 @@ public class LlamaInference : IInferenceEngine, IDisposable
         IntPtr samplerChain = LlamaNative.llama_sampler_chain_init(samplerParams);
         try
         {
+            // Sampler chain order follows llama.cpp guidance:
+            // penalties -> top_k -> top_p -> temp -> dist.
+            // Repetition penalty is CRITICAL: without it Qwen-family models
+            // collapse into degenerate n-gram loops on list/bullet formats.
             LlamaNative.llama_sampler_chain_add(
                 samplerChain,
-                LlamaNative.llama_sampler_init_temp(overrideSettings?.Temperature ?? 0.7f));
+                LlamaNative.llama_sampler_init_top_k(overrideSettings?.TopK ?? 40));
+
             LlamaNative.llama_sampler_chain_add(
                 samplerChain,
                 LlamaNative.llama_sampler_init_top_p(overrideSettings?.TopP ?? 0.9f, 1));
+
+            LlamaNative.llama_sampler_chain_add(
+                samplerChain,
+                LlamaNative.llama_sampler_init_temp(overrideSettings?.Temperature ?? 0.7f));
+
             LlamaNative.llama_sampler_chain_add(
                 samplerChain,
                 LlamaNative.llama_sampler_init_dist(
                     overrideSettings?.Seed ?? (uint)Random.Shared.Next()));
 
-            // ═══════════════════════════════════════════════════════════════════
-            // Dynamic headroom calculation for long-form generation.
-            // Instead of hardcoded 256/1024, use physical free space in context.
-            // ═══════════════════════════════════════════════════════════════════
             int headroom = (int)maxContextLimit - currentPos;
             if (headroom <= 0)
             {
@@ -441,9 +447,15 @@ public class LlamaInference : IInferenceEngine, IDisposable
             int generatedCount = 0;
             var generatedTokens = new List<int>();
 
+            // BPE-safe UTF-8 streaming via extracted decoder (see BpeStreamDecoder).
             var utf8Decoder = new BpeStreamDecoder();
             byte[] tokenPieceBuffer = new byte[64];
             var pendingChunks = new Queue<string>();
+
+            // Degenerate-loop circuit breaker. Stops runaway repetition
+            // instead of burning the whole context headroom.
+            var repetitionGuard = new RepetitionGuard();
+            bool loopDetected = false;
 
             var singleTokenBatch = LlamaNative.llama_batch_init(1, 0, 1);
             try
@@ -460,6 +472,15 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
                     generatedTokens.Add(newTokenId);
                     generatedCount++;
+
+                    if (repetitionGuard.Feed(newTokenId))
+                    {
+                        loopDetected = true;
+                        _logger.LogWarning(
+                            "Degenerate repetition loop detected in session '{SessionId}' after {Count} tokens. Aborting generation.",
+                            sessionId, generatedCount);
+                        break;
+                    }
 
                     int nPieces = LlamaNative.llama_token_to_piece(
                         vocab, newTokenId, tokenPieceBuffer, tokenPieceBuffer.Length,
@@ -507,6 +528,11 @@ public class LlamaInference : IInferenceEngine, IDisposable
             while (pendingChunks.TryDequeue(out var finalChunk))
             {
                 yield return finalChunk;
+            }
+
+            if (loopDetected)
+            {
+                yield return "\n[generation stopped: repetitive loop detected]";
             }
 
             if (utf8Decoder.PendingByteCount > 0)
