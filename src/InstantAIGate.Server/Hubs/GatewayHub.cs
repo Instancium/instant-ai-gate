@@ -852,7 +852,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         catch (ContextOverflowException ex)
         {
             _logger.LogWarning(ex, "Context overflow in session {SessionId}", ex.SessionId);
-            await Clients.Caller.ReceiveContextOverflow(ex);
+            await Clients.Caller.ReceiveContextOverflow(ContextOverflowReport.FromException(ex));
         }
         catch (Exception ex)
         {
