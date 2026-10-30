@@ -8,7 +8,7 @@
     <IsPackable>true</IsPackable>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <PackageId>InstantAIGate.Core</PackageId>
-    <Version>1.5.0-rc.1</Version>
+    <Version>1.5.0-rc.2</Version>
     <Authors>InstantAIGate Team</Authors>
     <Description>Core domain models, DTOs, and interface contracts for the InstantAIGate inference engine.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
