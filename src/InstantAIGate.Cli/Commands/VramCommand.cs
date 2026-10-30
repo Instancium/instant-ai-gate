@@ -16,17 +16,19 @@ public sealed class VramCommand : IConsoleCommand
     }
 
     public string Name => "/vram";
-    public string Description => "Displays backend config or purges idle VRAM pool (e.g., /vram or /vram purge).";
+    public string Description => "Displays all loaded models in VRAM or purges idle pool (/vram or /vram purge [modelId]).";
 
     public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
     {
-        string subCommand = argument?.Trim().ToLowerInvariant() ?? string.Empty;
+        var parts = (argument ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string subCommand = parts.Length > 0 ? parts[0].ToLowerInvariant() : string.Empty;
+        string? targetRepoId = parts.Length > 1 ? parts[1] : null;
 
         try
         {
             if (subCommand == "purge")
             {
-                await HandlePurgeAsync(cancellationToken);
+                await HandlePurgeAsync(targetRepoId, cancellationToken);
             }
             else
             {
@@ -39,49 +41,76 @@ public sealed class VramCommand : IConsoleCommand
         }
     }
 
-    private async Task HandlePurgeAsync(CancellationToken ct)
+    private async Task HandlePurgeAsync(string? targetRepoId, CancellationToken ct)
     {
-        var details = await _gatewayClient.GetActiveModelDetailsAsync(ct);
-        if (details == null || string.IsNullOrWhiteSpace(details.RepoId))
+        var models = await _gatewayClient.GetLoadedModelsDetailsAsync(ct);
+        if (models.Count == 0)
         {
-            AnsiConsole.MarkupLine("[yellow]No active model is loaded in memory to purge.[/]");
+            AnsiConsole.MarkupLine("[yellow]No active models are loaded in memory to purge.[/]");
             return;
         }
 
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
-            .StartAsync("Purging idle context pool from VRAM...", async ctx =>
+            .StartAsync("Purging idle context pool from VRAM...", async _ =>
             {
-                await _gatewayClient.PurgeIdleContextsAsync(details.RepoId, ct);
+                if (!string.IsNullOrWhiteSpace(targetRepoId))
+                {
+                    await _gatewayClient.PurgeIdleContextsAsync(targetRepoId, ct);
+                }
+                else
+                {
+                    foreach (var m in models)
+                    {
+                        await _gatewayClient.PurgeIdleContextsAsync(m.RepoId, ct);
+                    }
+                }
             });
 
-        AnsiConsole.MarkupLine($"[green]Successfully purged idle context pool for model '{Markup.Escape(details.RepoId)}'. VRAM slots freed.[/]");
+        AnsiConsole.MarkupLine("[green]Successfully purged idle context pool(s). VRAM slots freed.[/]");
     }
 
     private async Task HandleStatusAsync(CancellationToken ct)
     {
-        var details = await _gatewayClient.GetActiveModelDetailsAsync(ct);
-        if (details == null || string.IsNullOrWhiteSpace(details.RepoId))
+        var models = await _gatewayClient.GetLoadedModelsDetailsAsync(ct);
+        if (models.Count == 0)
         {
-            AnsiConsole.MarkupLine("[yellow]No active model is loaded in memory.[/]");
-            return;
+            var single = await _gatewayClient.GetActiveModelDetailsAsync(ct);
+            if (single == null || string.IsNullOrWhiteSpace(single.RepoId))
+            {
+                AnsiConsole.MarkupLine("[yellow]No active models are loaded in memory.[/]");
+                return;
+            }
+
+            models = [single];
         }
 
-        string layerText = details.TotalLayers > 0
-            ? $"{Math.Min(details.GpuLayers, details.TotalLayers)} / {details.TotalLayers} layers"
-            : $"{details.GpuLayers} layers";
-
         var table = new Table().Border(TableBorder.Rounded).Expand();
-        table.AddColumn("[cyan]Hardware Parameter[/]");
-        table.AddColumn("[cyan]Active Configuration[/]");
+        table.AddColumn("[cyan]Loaded Model[/]");
+        table.AddColumn("[cyan]Backend[/]");
+        table.AddColumn("[cyan]Context (n_ctx)[/]");
+        table.AddColumn("[cyan]GPU Layers[/]");
+        table.AddColumn("[cyan]Threads[/]");
+        table.AddColumn("[cyan]Flash Attn[/]");
+        table.AddColumn("[cyan]Embedding Dim[/]");
+        table.AddColumn("[cyan]Idle Contexts[/]");
 
-        table.AddRow("Active Model", $"[bold]{Markup.Escape(details.RepoId)}[/]");
-        table.AddRow("Inference Backend", $"[green]{Markup.Escape(details.Backend)}[/]");
-        table.AddRow("Context Window (n_ctx)", $"{details.ContextSize:N0} tokens");
-        table.AddRow("Offloaded GPU Layers", $"[green]{layerText}[/]");
-        table.AddRow("Thread Concurrency", details.Threads.ToString());
-        table.AddRow("Flash Attention", details.FlashAttention ? "[green]Enabled[/]" : "[yellow]Disabled[/]");
-        table.AddRow("Idle Pool Contexts", details.IdleContextsCount.ToString());
+        foreach (var details in models.Where(d => !string.IsNullOrWhiteSpace(d.RepoId)))
+        {
+            string layerText = details.TotalLayers > 0
+                ? $"{Math.Min(details.GpuLayers, details.TotalLayers)} / {details.TotalLayers}"
+                : $"{details.GpuLayers}";
+
+            table.AddRow(
+                $"[bold]{Markup.Escape(details.RepoId)}[/]",
+                $"[green]{Markup.Escape(details.Backend)}[/]",
+                $"{details.ContextSize:N0}",
+                $"[green]{layerText}[/]",
+                details.Threads.ToString(),
+                details.FlashAttention ? "[green]Enabled[/]" : "[yellow]Disabled[/]",
+                details.EmbeddingDimension.ToString(),
+                details.IdleContextsCount.ToString());
+        }
 
         AnsiConsole.Write(table);
     }

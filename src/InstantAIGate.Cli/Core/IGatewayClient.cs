@@ -20,6 +20,7 @@ public interface IGatewayClient
     Task SwapModelAsync(string repoId, string? profile = null, CancellationToken ct = default);
     Task DownloadModelAsync(string repoId, CancellationToken ct = default);
     Task<NativeModelDetails> GetActiveModelDetailsAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<NativeModelDetails>> GetLoadedModelsDetailsAsync(CancellationToken ct = default);
     Task<GatewayStatusDetails> GetGatewayStatusAsync(CancellationToken ct = default);
     Task ConnectTelemetryAsync(Action<InferenceMetrics> onMetrics, Action<DownloadProgress> onSsrProgress, CancellationToken ct);
     Task SubscribeToModelDownloadAsync(string repoId, CancellationToken ct = default);

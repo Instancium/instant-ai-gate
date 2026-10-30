@@ -22,7 +22,7 @@ public sealed class LoadCommand : IConsoleCommand
     }
 
     public string Name => "/load";
-    public string Description => "Loads a model into VRAM via Gateway Client (e.g., /load qwen3-vl-8b-instruct).";
+    public string Description => "Loads a model into VRAM pool via Gateway Client (e.g., /load qwen3-vl-8b-instruct [profile]).";
 
     public async Task ExecuteAsync(string argument, CancellationToken cancellationToken)
     {
@@ -34,22 +34,38 @@ public sealed class LoadCommand : IConsoleCommand
         }
 
         string repoId = parts[0];
-        string? profile = parts.Length > 1 ? parts[1] : null;
+        bool isEmbedding = repoId.Contains("embed", StringComparison.OrdinalIgnoreCase);
+        string? profile = parts.Length > 1 ? parts[1] : (isEmbedding ? "Embedding" : "Default");
 
         try
         {
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .SpinnerStyle(Style.Parse("cyan"))
-                .StartAsync($"Loading model '{Markup.Escape(repoId)}' with profile '{Markup.Escape(profile ?? "Default")}'...",
+                .StartAsync($"Loading model '{Markup.Escape(repoId)}' with profile '{Markup.Escape(profile)}'...",
                     async ctx =>
                     {
                         await _gatewayClient.LoadModelAsync(repoId, profile, cancellationToken);
                         ctx.Status("[green]Model loaded successfully![/]");
                     });
 
-            _session.ActiveModelId = repoId;
-            AnsiConsole.MarkupLine($"[green]Model '{Markup.Escape(repoId)}' is ready for inference.[/]");
+            _session.LoadedModelIds.Add(repoId);
+
+            if (string.Equals(profile, "Embedding", StringComparison.OrdinalIgnoreCase) || isEmbedding)
+            {
+                _session.ActiveEmbeddingModelId = repoId;
+                if (string.IsNullOrEmpty(_session.ActiveModelId))
+                {
+                    _session.ActiveModelId = repoId;
+                }
+
+                AnsiConsole.MarkupLine($"[green]Embedding model '{Markup.Escape(repoId)}' loaded into pool and ready for /embed.[/]");
+            }
+            else
+            {
+                _session.ActiveModelId = repoId;
+                AnsiConsole.MarkupLine($"[green]Model '{Markup.Escape(repoId)}' is loaded and set as active chat model.[/]");
+            }
         }
         catch (Exception ex)
         {

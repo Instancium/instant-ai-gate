@@ -57,6 +57,8 @@ public static class Program
                 services.AddSingleton<CommandDispatcher>();
 
                 services.AddTransient<IConsoleCommand, LoadCommand>();
+                services.AddTransient<IConsoleCommand, UseCommand>();
+                services.AddTransient<IConsoleCommand, UnloadCommand>();
                 services.AddTransient<IConsoleCommand, ImageCommand>();
                 services.AddTransient<IConsoleCommand, HelpCommand>();
                 services.AddTransient<IConsoleCommand, DebugCommand>();

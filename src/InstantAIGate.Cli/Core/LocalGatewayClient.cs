@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -189,6 +190,12 @@ public class LocalGatewayClient : IGatewayClient
         return Task.FromResult(_modelManager.GetActiveModelDetails());
     }
 
+    public Task<IReadOnlyList<NativeModelDetails>> GetLoadedModelsDetailsAsync(CancellationToken ct = default)
+    {
+        IReadOnlyList<NativeModelDetails> list = _modelManager.GetNativeDetails().ToList();
+        return Task.FromResult(list);
+    }
+
     public Task<int> GetSessionTokenCountAsync(string sessionId, CancellationToken ct = default)
     {
         return Task.FromResult(_sessionManager.GetPastTokensCount(sessionId));
@@ -212,21 +219,25 @@ public class LocalGatewayClient : IGatewayClient
             throw new InvalidOperationException($"Model '{repoId}' was not found in catalog.");
         }
 
-        var profileName = profile ?? "Default";
-        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>() ?? new HardwareProfileSettings();
+        bool isEmbeddingModel = model.Id.Contains("embed", StringComparison.OrdinalIgnoreCase);
+        var profileName = profile ?? (isEmbeddingModel ? "Embedding" : "Default");
+        var hwProfile = _configuration.GetSection($"InstantAIGate:HardwareProfiles:{profileName}").Get<HardwareProfileSettings>()
+            ?? new HardwareProfileSettings();
+
+        bool embeddingsEnabled = hwProfile.Embeddings || isEmbeddingModel;
 
         return new ModelSettings
         {
             RepoId = model.Id,
             VisionSupport = model.RequiresVisionProjector,
-            Type = model.RequiresVisionProjector ? ModelType.Vlm : ModelType.Llm,
+            Type = model.RequiresVisionProjector ? ModelType.Vlm : (embeddingsEnabled ? ModelType.Embedding : ModelType.Llm),
             GpuLayerCount = hwProfile.GpuLayerCount,
             MainGPU = hwProfile.MainGPU,
             ContextSize = hwProfile.ContextSize,
             BatchSize = hwProfile.BatchSize,
             Threads = hwProfile.Threads,
             FlashAttention = hwProfile.FlashAttention,
-            Embeddings = hwProfile.Embeddings,
+            Embeddings = embeddingsEnabled,
             KvCacheQuantization = hwProfile.KvCacheQuantization,
             UseMemoryLock = hwProfile.UseMemoryLock,
             MaxContexts = hwProfile.MaxContexts
@@ -235,17 +246,36 @@ public class LocalGatewayClient : IGatewayClient
 
     public Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default)
     {
-        return _modelManager.GetEmbeddingDimensionAsync(repoId, ct);
+        string targetRepoId = ResolveTargetEmbeddingModel(repoId);
+        return _modelManager.GetEmbeddingDimensionAsync(targetRepoId, ct);
     }
 
     public async Task<EmbeddingResponse> GenerateEmbeddingsAsync(string repoId, EmbeddingRequest request, CancellationToken ct = default)
     {
-        var activeSettings = _modelManager.GetActiveSettings();
-        if (activeSettings == null || !string.Equals(activeSettings.RepoId, repoId, StringComparison.OrdinalIgnoreCase))
+        string targetRepoId = ResolveTargetEmbeddingModel(repoId);
+        return await _inferenceEngine.GenerateEmbeddingsAsync(targetRepoId, request, ct);
+    }
+
+    private string ResolveTargetEmbeddingModel(string requestedRepoId)
+    {
+        var settings = _modelManager.GetModelSettings(requestedRepoId);
+        if (settings is { Embeddings: true })
         {
-            throw new InvalidOperationException($"Model '{repoId}' is not active. Active model: {activeSettings?.RepoId ?? "none"}");
+            return settings.RepoId;
         }
 
-        return await _inferenceEngine.GenerateEmbeddingsAsync(repoId, request, ct);
+        var dedicatedEmbedding = _modelManager.ActiveModels.Values
+            .FirstOrDefault(m => m.Embeddings || m.Type == ModelType.Embedding);
+        if (dedicatedEmbedding != null)
+        {
+            return dedicatedEmbedding.RepoId;
+        }
+
+        if (settings != null)
+        {
+            return settings.RepoId;
+        }
+
+        throw new InvalidOperationException($"Model '{requestedRepoId}' is not active.");
     }
 }
