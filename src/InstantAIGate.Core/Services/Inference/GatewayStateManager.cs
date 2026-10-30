@@ -3,6 +3,8 @@
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 /// <summary>
 /// Thread-safe singleton coordinator managing gateway lifecycle transitions and diagnostics broadcast.
@@ -11,6 +13,7 @@ public sealed class GatewayStateManager : IGatewayStateManager
 {
     private readonly object _syncLock = new();
     private readonly TimeProvider _timeProvider;
+    private readonly HashSet<string> _readyModels = new(StringComparer.OrdinalIgnoreCase);
     private GatewayStatusDetails _currentStatus;
 
     public event Action<GatewayStatusDetails>? StatusChanged;
@@ -41,10 +44,17 @@ public sealed class GatewayStateManager : IGatewayStateManager
         double bytesPerSecond,
         string? stageDescription = null)
     {
+        IReadOnlyList<string> readySnapshot;
+        lock (_syncLock)
+        {
+            readySnapshot = _readyModels.ToList();
+        }
+
         UpdateAndPublish(new GatewayStatusDetails
         {
             Status = GatewayOperationalStatus.ModelDownloading,
             ActiveModelId = modelId,
+            ActiveModelIds = readySnapshot,
             StageDescription = stageDescription ?? $"Downloading model '{modelId}'",
             ProgressPercentage = Math.Clamp(progressPercentage, 0.0f, 100.0f),
             DownloadedBytes = downloadedBytes,
@@ -57,10 +67,17 @@ public sealed class GatewayStateManager : IGatewayStateManager
 
     public void SetLoading(string modelId, string? stageDescription = null)
     {
+        IReadOnlyList<string> readySnapshot;
+        lock (_syncLock)
+        {
+            readySnapshot = _readyModels.ToList();
+        }
+
         UpdateAndPublish(new GatewayStatusDetails
         {
             Status = GatewayOperationalStatus.ModelLoading,
             ActiveModelId = modelId,
+            ActiveModelIds = readySnapshot,
             StageDescription = stageDescription ?? $"Loading model '{modelId}' into memory",
             ProgressPercentage = 100.0f,
             DownloadedBytes = 0,
@@ -73,10 +90,21 @@ public sealed class GatewayStateManager : IGatewayStateManager
 
     public void SetReady(string modelId, string? stageDescription = null)
     {
+        IReadOnlyList<string> readySnapshot;
+        lock (_syncLock)
+        {
+            if (!string.IsNullOrWhiteSpace(modelId))
+            {
+                _readyModels.Add(modelId);
+            }
+            readySnapshot = _readyModels.ToList();
+        }
+
         UpdateAndPublish(new GatewayStatusDetails
         {
             Status = GatewayOperationalStatus.Ready,
             ActiveModelId = modelId,
+            ActiveModelIds = readySnapshot,
             StageDescription = stageDescription ?? $"Model '{modelId}' is ready for inference",
             ProgressPercentage = 100.0f,
             DownloadedBytes = 0,
@@ -93,10 +121,21 @@ public sealed class GatewayStateManager : IGatewayStateManager
             ? $"{errorMessage}: {exception.Message}"
             : errorMessage;
 
+        IReadOnlyList<string> readySnapshot;
+        lock (_syncLock)
+        {
+            if (!string.IsNullOrWhiteSpace(modelId))
+            {
+                _readyModels.Remove(modelId);
+            }
+            readySnapshot = _readyModels.ToList();
+        }
+
         UpdateAndPublish(new GatewayStatusDetails
         {
             Status = GatewayOperationalStatus.Faulted,
             ActiveModelId = modelId,
+            ActiveModelIds = readySnapshot,
             StageDescription = "Faulted",
             ProgressPercentage = 0.0f,
             DownloadedBytes = 0,
@@ -109,10 +148,16 @@ public sealed class GatewayStateManager : IGatewayStateManager
 
     public void Reset()
     {
+        lock (_syncLock)
+        {
+            _readyModels.Clear();
+        }
+
         UpdateAndPublish(new GatewayStatusDetails
         {
             Status = GatewayOperationalStatus.Uninitialized,
             ActiveModelId = null,
+            ActiveModelIds = Array.Empty<string>(),
             StageDescription = null,
             ProgressPercentage = 0.0f,
             DownloadedBytes = 0,
@@ -137,7 +182,6 @@ public sealed class GatewayStateManager : IGatewayStateManager
             return;
         }
 
-        // Invoke outside the lock to prevent deadlocks and isolate faulty subscribers
         foreach (var callback in handler.GetInvocationList())
         {
             try
@@ -146,7 +190,6 @@ public sealed class GatewayStateManager : IGatewayStateManager
             }
             catch
             {
-                // Fault-isolation: a broken observer cannot disrupt the core state machine
             }
         }
     }

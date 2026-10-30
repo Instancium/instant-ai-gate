@@ -128,7 +128,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
         using var model = await _modelManager.AcquireModelAsync(modelId, ct);
         IntPtr nativeModelPtr = UnwrapModel(model);
 
-        var activeSettings = _modelManager.GetActiveSettings();
+        var activeSettings = _modelManager.GetModelSettings(modelId) ?? _modelManager.GetActiveSettings(modelId);
         if (activeSettings == null || !activeSettings.Embeddings)
         {
             throw new InvalidOperationException(
@@ -280,7 +280,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
                 deltaTokens = slicedTokens;
             }
         }
-        var activeConfig = _modelManager.GetActiveSettings();
+        var activeConfig = _modelManager.GetModelSettings(repoId) ?? _modelManager.GetActiveSettings(repoId);
         uint maxContextLimit = activeConfig != null ? (uint)activeConfig.ContextSize : LlamaNative.llama_n_ctx(ctxHandle);
         int maxBatchSize = activeConfig?.BatchSize > 0 ? activeConfig.BatchSize : 512;
         int requiredReserve = overrideSettings?.MaxTokens > 0 ? Math.Min(overrideSettings.MaxTokens, (int)(maxContextLimit * 0.5)) : 256;
