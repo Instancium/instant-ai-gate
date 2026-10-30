@@ -8,6 +8,7 @@ using InstantAIGate.SSR.Dtos;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
 using System;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -74,6 +75,7 @@ public class ConnectCommand : IConsoleCommand
                         AnsiConsole.MarkupLine($"[dim]Active Model:[/] [bold green]{Markup.Escape(status.ActiveModelId)}[/] [dim](Ready)[/]");
                         _session.ActiveModelId = status.ActiveModelId;
                     }
+                    await SyncEmbeddingModelAsync(cancellationToken);
                     break;
 
                 case GatewayOperationalStatus.ModelDownloading:
@@ -108,6 +110,19 @@ public class ConnectCommand : IConsoleCommand
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"[red]Failed to connect:[/] {Markup.Escape(ex.Message)}");
+        }
+    }
+
+    private async Task SyncEmbeddingModelAsync(CancellationToken ct)
+    {
+        try
+        {
+            var loaded = await _proxy.GetLoadedModelsDetailsAsync(ct);
+            _session.ActiveEmbeddingModelId = loaded.FirstOrDefault(m => m.IsEmbedding)?.RepoId;
+        }
+        catch (Exception)
+        {
+            // Best-effort: server-side auto-routing still guarantees correct embedding target.
         }
     }
 

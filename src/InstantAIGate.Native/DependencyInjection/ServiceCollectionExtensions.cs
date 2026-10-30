@@ -26,6 +26,7 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IMetricsEventSource>()));
         services.AddSingleton<IModelProvider, ModelProvider>();
         services.AddSingleton<IModelManager, ModelManager>();
+        services.AddSingleton<IEmbeddingModelResolver, EmbeddingModelResolver>();
         services.AddSingleton<IInferenceEngine, LlamaInference>();
         services.AddSingleton<ISessionInferenceManager, SessionInferenceManager>();
         services.AddSingleton<HttpClient>();

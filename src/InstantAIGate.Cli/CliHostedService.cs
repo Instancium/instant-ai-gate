@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -151,12 +152,26 @@ public class CliHostedService : IHostedService
             else if (status.Status == GatewayOperationalStatus.Ready)
             {
                 _session.ActiveModelId = status.ActiveModelId;
+                await SyncEmbeddingModelAsync(ct);
                 AnsiConsole.MarkupLine($"[green]Connected to Remote Gateway. Active model:[/] [bold cyan]{Markup.Escape(status.ActiveModelId ?? string.Empty)}[/] [dim](Ready)[/]\n");
             }
         }
         catch (Exception ex)
         {
             _logger.LogTrace(ex, "Could not query initial remote gateway status.");
+        }
+    }
+
+    private async Task SyncEmbeddingModelAsync(CancellationToken ct)
+    {
+        try
+        {
+            var loaded = await _gatewayClient.GetLoadedModelsDetailsAsync(ct);
+            _session.ActiveEmbeddingModelId = loaded.FirstOrDefault(m => m.IsEmbedding)?.RepoId;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogTrace(ex, "Could not sync active embedding model from remote gateway.");
         }
     }
 

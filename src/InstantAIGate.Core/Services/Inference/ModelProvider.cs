@@ -343,7 +343,8 @@ public class ModelProvider : IModelProvider, IDisposable
             FlashAttention = c?.FlashAttention ?? false,
             IdleContextsCount = p?.Count ?? 0,
             Backend = modelHandle?.BackendType ?? "llama.cpp",
-            EmbeddingDimension = embeddingDim
+            EmbeddingDimension = embeddingDim,
+            IsEmbedding = c != null && (c.Embeddings || c.Type == ModelType.Embedding)
         };
     });
 
