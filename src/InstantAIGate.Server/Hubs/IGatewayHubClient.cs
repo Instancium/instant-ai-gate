@@ -11,7 +11,7 @@ public interface IGatewayHubClient
 {
     Task ReceiveTokenDelta(SessionTokenDelta delta);
     Task ReceiveError(string message);
-    Task ReceiveContextOverflow(ContextOverflowException payload);
+    Task ReceiveContextOverflow(ContextOverflowReport payload);
     Task ReceiveSessionClosed(string sessionId);
     Task ReceiveDownloadProgress(DownloadProgress progress);
     Task ReceiveQueuePosition(int position);

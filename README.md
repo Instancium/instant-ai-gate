@@ -19,10 +19,8 @@ By serving as the laboratory's core inference gateway, InstantAIGate enables Ins
 
 **Context. State. Memory. Control. Precision.**
 
-Unlike conventional stateless proxies that attempt to be a generic, one-size-fits-all solution for every model architecture, InstantAIGate is purpose-built. We operate on the principle that forced universality inevitably degrades performance, introduces edge-case fragility, and kills quality. Therefore, our gateway is deeply specialized and rigorously optimized specifically for the Qwen family of models. Beyond their architectural excellence, our specialization is driven by a shared vision: we fully embrace Qwen's core philosophy and mission to democratize artificial intelligence (AGI) and make state-of-the-art models truly accessible to everyone.
-
-Our development strategy prioritizes extreme stability and predictability over experimental feature bloat. We adhere to a strict curation philosophy: only thoroughly tested, rigorously validated, and guaranteed model configurations are integrated into the core runtime. This ensures production-grade reliability, deterministic behavior, and maximum hardware efficiency, eliminating the unpredictability of untested builds.
-
+Unlike conventional stateless proxies that attempt to be a generic, one-size-fits-all solution for every model architecture, InstantAIGate is purpose-built. We operate on the principle that forced universality inevitably degrades performance, introduces edge-case fragility, and kills quality. Therefore, our gateway ships with deep, production-grade specialization for the Qwen family of models — our reference architecture and first-class citizen. This choice is not arbitrary: beyond Qwen's architectural excellence, we fully embrace its core philosophy and mission to democratize artificial intelligence and make state-of-the-art models truly accessible to everyone. The underlying runtime is model-agnostic at the engine boundary (`llama.cpp` / `mtmd`), and the gateway is designed to be extended with additional model families through the same `config/model_catalog.json` curation pipeline — each new family must pass the same rigorous validation, determinism checks, and hardware-profile tuning that Qwen receives today.
+Our development strategy prioritizes extreme stability and predictability over experimental feature bloat. We adhere to a strict curation philosophy: every model family integrated into the core runtime — Qwen today, others tomorrow — must be thoroughly tested, rigorously validated, and guaranteed before shipping. This ensures production-grade reliability, deterministic behavior, and maximum hardware efficiency, eliminating the unpredictability of untested builds.
 Cloud APIs often rely on opaque server-side mitigations—hidden sliding windows, lossy token summarization, and unseen system prefixes—that cause critical context drift, attention loss, and silent hallucinations. InstantAIGate rejects invisible optimizations:
 
 - **Zero Silent Truncation:** What you send is exactly what resides in memory. No silent pruning, no surprise drops.
@@ -31,7 +29,7 @@ Cloud APIs often rely on opaque server-side mitigations—hidden sliding windows
 
 > You cannot control an intelligence if you do not control its memory. InstantAIGate provides the raw primitives to manage conversational state explicitly, reliably, and deterministically.
 
-**Supported Models:** For a definitive list of officially supported, tested, and guaranteed Qwen model configurations, refer to the [`config/model_catalog.json`](config/model_catalog.json) file.
+**Supported Models:** For a definitive list of officially supported, tested, and guaranteed model configurations, refer to the [`config/model_catalog.json`](config/model_catalog.json) file. Qwen is the reference family; additional families are added through the same curation pipeline as the project evolves.
 
 ---
 

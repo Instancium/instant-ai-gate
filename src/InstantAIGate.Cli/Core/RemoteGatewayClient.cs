@@ -77,6 +77,9 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
         connection.Reconnected += _ =>
         {
             _joinedSessions.Clear();
+            AbortAllActiveStreams(new InvalidOperationException(
+                "SignalR transport was re-established after a failure. " +
+                "In-flight generation state was lost; please retry the request."));
             return Task.CompletedTask;
         };
 
@@ -105,14 +108,15 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
             AbortAllActiveStreams(exception);
         });
 
-        connection.On<ContextOverflowException>("ReceiveContextOverflow", overflow =>
+        connection.On<ContextOverflowReport>("ReceiveContextOverflow", report =>
         {
-            if (_activeChannels.TryGetValue(overflow.SessionId, out var channel))
+            var overflow = report.ToException();
+            if (_activeChannels.TryGetValue(report.SessionId, out var channel))
             {
                 channel.Writer.TryComplete(overflow);
             }
 
-            if (_activeCompletions.TryGetValue(overflow.SessionId, out var tcs))
+            if (_activeCompletions.TryGetValue(report.SessionId, out var tcs))
             {
                 tcs.TrySetException(overflow);
             }
@@ -201,18 +205,6 @@ public sealed class RemoteGatewayClient : IGatewayClient, IAsyncDisposable
                 })
                 .WithAutomaticReconnect()
                 .Build();
-
-            _hubConnection.Closed += _ =>
-            {
-                _joinedSessions.Clear();
-                return Task.CompletedTask;
-            };
-
-            _hubConnection.Reconnected += _ =>
-            {
-                _joinedSessions.Clear();
-                return Task.CompletedTask;
-            };
 
             RegisterHubEventHandlers(_hubConnection);
             await _hubConnection.StartAsync(ct);
