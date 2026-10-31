@@ -333,6 +333,7 @@ public class ModelProvider : IModelProvider, IDisposable
         _modelCache.TryGetValue(r, out var modelHandle);
         int totalLayers = modelHandle != null ? _backendFacade.GetModelLayerCount(modelHandle) : 0;
         int embeddingDim = modelHandle != null ? _backendFacade.GetEmbeddingDimension(modelHandle) : 0;
+        long modelWeightsBytes = modelHandle != null ? (long)_backendFacade.GetModelSizeBytes(modelHandle) : 0;
         return new NativeModelDetails
         {
             RepoId = r,
@@ -344,7 +345,8 @@ public class ModelProvider : IModelProvider, IDisposable
             IdleContextsCount = p?.Count ?? 0,
             Backend = modelHandle?.BackendType ?? "llama.cpp",
             EmbeddingDimension = embeddingDim,
-            IsEmbedding = c != null && (c.Embeddings || c.Type == ModelType.Embedding)
+            IsEmbedding = c != null && (c.Embeddings || c.Type == ModelType.Embedding),
+            ModelWeightsBytes = modelWeightsBytes
         };
     });
 

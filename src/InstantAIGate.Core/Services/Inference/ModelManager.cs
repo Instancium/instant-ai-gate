@@ -116,7 +116,8 @@ public sealed class ModelManager : IDisposable, IModelManager
                 Threads = 0,
                 FlashAttention = false,
                 IdleContextsCount = 0,
-                Backend = "none"
+                Backend = "none",
+                ModelWeightsBytes = 0
             };
         }
 
@@ -131,7 +132,8 @@ public sealed class ModelManager : IDisposable, IModelManager
             Threads = targetConfig.Threads,
             FlashAttention = targetConfig.FlashAttention,
             IdleContextsCount = 0,
-            Backend = "llama.cpp"
+            Backend = "llama.cpp",
+            ModelWeightsBytes = 0
         };
     }
 
@@ -339,25 +341,22 @@ public sealed class ModelManager : IDisposable, IModelManager
     {
         var nativeDetailsMap = _modelProvider.GetNativeDetails()
             .ToDictionary(d => d.RepoId, StringComparer.OrdinalIgnoreCase);
-
         var result = new List<ModelPoolTelemetryDto>(_activeModels.Count);
-
         foreach (var kvp in _activeModels)
         {
             var repoId = kvp.Key;
             var settings = kvp.Value;
-
             _modelLeases.TryGetValue(repoId, out int activeLeases);
             _drainingModels.TryGetValue(repoId, out bool isDraining);
-
             int idlePooledContexts = 0;
             int totalLayers = 0;
+            long modelWeightsBytes = 0;
             if (nativeDetailsMap.TryGetValue(repoId, out var native))
             {
                 idlePooledContexts = native.IdleContextsCount;
                 totalLayers = native.TotalLayers;
+                modelWeightsBytes = native.ModelWeightsBytes;
             }
-
             result.Add(new ModelPoolTelemetryDto
             {
                 RepoId = repoId,
@@ -371,10 +370,9 @@ public sealed class ModelManager : IDisposable, IModelManager
                 TotalLayers = totalLayers,
                 ContextSize = settings.ContextSize,
                 KvCacheQuantization = settings.KvCacheQuantization,
-                ModelWeightsBytes = 0
+                ModelWeightsBytes = modelWeightsBytes
             });
         }
-
         return result;
     }
 

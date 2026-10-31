@@ -1,6 +1,7 @@
 ﻿namespace InstantAIGate.Native.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
+using InstantAIGate.Core.Dtos.Inference.Native;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Interfaces.Native;
 using InstantAIGate.Native.Bindings;
@@ -10,11 +11,12 @@ using System.Runtime.InteropServices;
 
 public class BackendFacade : IBackendFacade
 {
+    private static GgmlLogCallback? _nativeLogCallback;
+
     public void LoadAllBackends() => LlamaNative.llama_backend_init();
     public void BackendInit() => LlamaNative.llama_backend_init();
     public void BackendFree() => LlamaNative.llama_backend_free();
     public bool SupportsGpuOffload() => LlamaNative.llama_supports_gpu_offload();
-    private static GgmlLogCallback? _nativeLogCallback;
 
     public IModelHandle LoadModel(ModelSettings settings, string modelPath)
     {
@@ -156,7 +158,7 @@ public class BackendFacade : IBackendFacade
         return embeddings;
     }
 
-    public void SetLogCallback(BackendLogCallback callback)
+    public void SetLogCallback(global::InstantAIGate.Core.Interfaces.Inference.BackendLogCallback callback)
     {
         _nativeLogCallback = (level, text, _) =>
         {
@@ -178,5 +180,42 @@ public class BackendFacade : IBackendFacade
             }
         };
         LlamaNative.llama_log_set(_nativeLogCallback, IntPtr.Zero);
+    }
+
+    public ulong GetModelSizeBytes(IModelHandle modelHandle)
+    {
+        if (modelHandle is not LlamaModelHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+        {
+            return 0;
+        }
+
+        return LlamaNative.llama_model_size(nativeHandle.Pointer);
+    }
+
+    public ContextPerformanceData GetContextPerformance(IContextHandle contextHandle)
+    {
+        if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+        {
+            return default;
+        }
+
+        LlamaPerfContextData perf = LlamaNative.llama_perf_context(nativeHandle.Pointer);
+        return new ContextPerformanceData(
+            PromptMs: perf.TPromptMs,
+            EvalMs: perf.TEvalMs,
+            SampleMs: perf.TSampleMs,
+            PromptTokens: perf.NPrompt,
+            EvalTokens: perf.NEval,
+            SampleCount: perf.NSample);
+    }
+
+    public void ResetContextPerformance(IContextHandle contextHandle)
+    {
+        if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+        {
+            return;
+        }
+
+        LlamaNative.llama_perf_context_reset(nativeHandle.Pointer);
     }
 }
