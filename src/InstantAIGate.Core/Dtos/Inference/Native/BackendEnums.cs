@@ -112,8 +112,11 @@
     }
 
     /// <summary>
-    /// Native logging callback delegate.
+    /// Deprecated duplicate of <c>InstantAIGate.Core.Interfaces.Inference.BackendLogCallback</c>.
+    /// Retained only for binary compatibility of the packed Core package;
+    /// scheduled for removal in 2.0. New code must use the interface-namespace delegate.
     /// </summary>
+    [Obsolete("Use InstantAIGate.Core.Interfaces.Inference.BackendLogCallback instead. This duplicate delegate will be removed in 2.0.", false)]
     public delegate void BackendLogCallback(BackendLogLevel level, string message);
 
 }

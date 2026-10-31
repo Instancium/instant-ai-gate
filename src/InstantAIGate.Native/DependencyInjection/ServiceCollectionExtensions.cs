@@ -10,6 +10,7 @@ using InstantAIGate.Native.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 
 public static class ServiceCollectionExtensions
@@ -34,16 +35,31 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<HttpClient>();
         services.AddSingleton<IAssetManager, MemoryAssetManager>();
         services.AddSingleton<IMediaResolver, LocalTempMediaResolver>();
-        services.AddSingleton<IVramProbe>(sp =>
-            OperatingSystem.IsWindows()
-                ? new WindowsVramProbe(sp.GetRequiredService<ILogger<WindowsVramProbe>>())
-                : new LinuxVramProbe(sp.GetRequiredService<ILogger<LinuxVramProbe>>()));
-        services.AddSingleton<IHardwareTelemetryProvider, SystemHardwareTelemetryProvider>();
         NativeStreamRedirector.Initialize(logMessage =>
         {
             Console.Out.WriteLine($"[ggml/clip] {logMessage}");
         });
         services.AddSingleton<IModelValidator, NativeModelValidator>();
+
+        services.AddSingleton<IVramProbe>(sp =>
+        {
+            ILoggerFactory loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            var probes = new List<IVramProbe>();
+
+            if (OperatingSystem.IsWindows())
+            {
+                probes.Add(new WindowsVramProbe(loggerFactory.CreateLogger<WindowsVramProbe>()));
+            }
+            else if (OperatingSystem.IsLinux())
+            {
+                probes.Add(new LinuxVramProbe(loggerFactory.CreateLogger<LinuxVramProbe>()));
+            }
+
+            probes.Add(new VulkanVramProbe(loggerFactory.CreateLogger<VulkanVramProbe>()));
+            return new CompositeVramProbe(probes, loggerFactory.CreateLogger<CompositeVramProbe>());
+        });
+
+        services.AddSingleton<IHardwareTelemetryProvider, SystemHardwareTelemetryProvider>();
         return services;
     }
 }

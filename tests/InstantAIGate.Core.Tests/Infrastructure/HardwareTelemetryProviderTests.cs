@@ -38,10 +38,26 @@ public sealed class HardwareTelemetryProviderTests : IDisposable
         return path;
     }
 
+    private static IVramProbe CreateCompositeProbe()
+    {
+        var probes = new List<IVramProbe>();
+        if (OperatingSystem.IsWindows())
+        {
+            probes.Add(new WindowsVramProbe(NullLogger<WindowsVramProbe>.Instance));
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            probes.Add(new LinuxVramProbe(NullLogger<LinuxVramProbe>.Instance));
+        }
+
+        probes.Add(new VulkanVramProbe(NullLogger<VulkanVramProbe>.Instance));
+        return new CompositeVramProbe(probes, NullLogger<CompositeVramProbe>.Instance);
+    }
+
     [Fact]
     public void CaptureMetrics_WarmCall_CompletesWithinBudgetAndReportsCoreMetrics()
     {
-        var provider = CreateProvider(new LinuxVramProbe());
+        var provider = CreateProvider(CreateCompositeProbe());
         provider.CaptureMetrics();
         provider.CaptureMetrics();
 
@@ -63,7 +79,7 @@ public sealed class HardwareTelemetryProviderTests : IDisposable
     [Fact]
     public void CaptureMetrics_ParallelCalls_RemainThreadSafeAndConsistent()
     {
-        var provider = CreateProvider(new LinuxVramProbe());
+        var provider = CreateProvider(CreateCompositeProbe());
         provider.CaptureMetrics();
 
         var results = new ConcurrentBag<HardwareMetricsDto>();

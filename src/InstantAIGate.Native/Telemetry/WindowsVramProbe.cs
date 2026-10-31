@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 
 /// <summary>
 /// Vendor-agnostic Windows VRAM probe built on DXGI COM interop:
@@ -44,7 +45,6 @@ public sealed class WindowsVramProbe : IVramProbe, IDisposable
         {
             return VramProbeResult.Unavailable;
         }
-
         lock (_syncLock)
         {
             try
@@ -54,7 +54,6 @@ public sealed class WindowsVramProbe : IVramProbe, IDisposable
                 {
                     return VramProbeResult.Unavailable;
                 }
-
                 long dedicatedTotal = 0;
                 long budget = 0;
                 long currentUsage = 0;
@@ -66,29 +65,24 @@ public sealed class WindowsVramProbe : IVramProbe, IDisposable
                     {
                         providerName = $"DXGI: {entry.Description.Description.Trim()}";
                     }
-
                     if (entry.Adapter3 is null)
                     {
                         continue;
                     }
-
                     if (entry.Adapter3.QueryVideoMemoryInfo(0, out D3DQueryVideoMemoryInfo info) == 0)
                     {
                         budget += (long)info.Budget;
                         currentUsage += (long)info.CurrentUsage;
                     }
                 }
-
                 long totalBytes = dedicatedTotal > 0 ? dedicatedTotal : budget;
                 if (totalBytes <= 0)
                 {
                     return VramProbeResult.Unavailable;
                 }
-
                 long deviceUsedBytes = _pdhReader.TryGetDeviceDedicatedUsageBytes(out long pdhUsedBytes)
                     ? pdhUsedBytes
                     : currentUsage;
-
                 return new VramProbeResult(totalBytes, deviceUsedBytes, currentUsage, providerName, true);
             }
             catch (Exception ex)
@@ -99,23 +93,23 @@ public sealed class WindowsVramProbe : IVramProbe, IDisposable
         }
     }
 
+    [SupportedOSPlatform("windows")]
     private void EnsureAdaptersInitialized()
     {
         if (_adapters is not null)
         {
             return;
         }
-
         if (_initFailed && DateTimeOffset.UtcNow - _lastInitAttempt < ReinitThrottle)
         {
             return;
         }
-
         _lastInitAttempt = DateTimeOffset.UtcNow;
         _adapters = TryEnumerateAdapters();
         _initFailed = _adapters is null || _adapters.Count == 0;
     }
 
+    [SupportedOSPlatform("windows")]
     private List<AdapterEntry>? TryEnumerateAdapters()
     {
         Guid factoryRiid = typeof(IDXGIFactory1).GUID;
@@ -123,7 +117,6 @@ public sealed class WindowsVramProbe : IVramProbe, IDisposable
         {
             return null;
         }
-
         var result = new List<AdapterEntry>();
         try
         {
@@ -134,14 +127,12 @@ public sealed class WindowsVramProbe : IVramProbe, IDisposable
                 {
                     return null;
                 }
-
                 for (uint index = 0; index < MaxAdapterCount; index++)
                 {
                     if (factory.EnumAdapters1(index, out IntPtr adapterPtr) != 0 || adapterPtr == IntPtr.Zero)
                     {
                         break;
                     }
-
                     try
                     {
                         object adapterRcw = Marshal.GetObjectForIUnknown(adapterPtr);
@@ -170,7 +161,6 @@ public sealed class WindowsVramProbe : IVramProbe, IDisposable
         {
             Marshal.Release(factoryPtr);
         }
-
         return result;
     }
 
@@ -180,17 +170,18 @@ public sealed class WindowsVramProbe : IVramProbe, IDisposable
         {
             return;
         }
-
         _disposed = true;
         _pdhReader.Dispose();
-
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
         lock (_syncLock)
         {
             if (_adapters is null)
             {
                 return;
             }
-
             foreach (AdapterEntry entry in _adapters)
             {
                 try
@@ -201,7 +192,6 @@ public sealed class WindowsVramProbe : IVramProbe, IDisposable
                 {
                 }
             }
-
             _adapters = null;
         }
     }

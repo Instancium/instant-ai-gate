@@ -8,6 +8,7 @@ using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.Handles;
 using System;
 using System.Runtime.InteropServices;
+using BackendLogCallback = InstantAIGate.Core.Interfaces.Inference.BackendLogCallback;
 
 public class BackendFacade : IBackendFacade
 {
@@ -39,11 +40,9 @@ public class BackendFacade : IBackendFacade
     {
         if (modelHandle is not LlamaModelHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
             throw new ArgumentException("Invalid model handle type.", nameof(modelHandle));
-
         int dimension = LlamaNative.llama_model_n_embd(nativeHandle.Pointer);
         if (dimension <= 0)
             throw new InvalidOperationException("Native engine returned non-positive embedding dimension.");
-
         return dimension;
     }
 
@@ -78,7 +77,6 @@ public class BackendFacade : IBackendFacade
     {
         if (modelHandle is not LlamaModelHandle nativeHandle)
             throw new ArgumentException("Invalid model handle type.", nameof(modelHandle));
-
         var ctxParams = LlamaNative.llama_context_default_params();
         ctxParams.NCtx = settings.ContextSize > 0 ? (uint)settings.ContextSize : 2048;
         ctxParams.NBatch = settings.BatchSize > 0 ? (uint)settings.BatchSize : 512;
@@ -87,7 +85,6 @@ public class BackendFacade : IBackendFacade
         ctxParams.Embeddings = settings.Embeddings;
         ctxParams.OffloadKqv = settings.GpuLayerCount > 0;
         ctxParams.FlashAttnType = settings.FlashAttention ? LlamaFlashAttnType.Enabled : LlamaFlashAttnType.Disabled;
-
         var ggmlType = settings.KvCacheQuantization?.ToUpperInvariant() switch
         {
             "Q8_0" or "Q8_K" => GgmlType.Q8_0,
@@ -99,9 +96,10 @@ public class BackendFacade : IBackendFacade
         };
         ctxParams.TypeK = ggmlType;
         ctxParams.TypeV = ggmlType;
-
         IntPtr ptr = LlamaNative.llama_init_from_model(nativeHandle.Pointer, in ctxParams);
-        return ptr != IntPtr.Zero ? new LlamaContextHandle(ptr) : throw new InvalidOperationException("Failed to create context natively.");
+        return ptr != IntPtr.Zero
+            ? new LlamaContextHandle(ptr)
+            : throw new InvalidOperationException("Failed to create context natively.");
     }
 
     public void FreeModel(IModelHandle modelHandle)
@@ -141,24 +139,19 @@ public class BackendFacade : IBackendFacade
     {
         if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
             return null;
-
         IntPtr embeddingsPtr = LlamaNative.llama_get_embeddings_seq(nativeHandle.Pointer, seqId);
         if (embeddingsPtr == IntPtr.Zero)
             return null;
-
         IntPtr modelPtr = LlamaNative.llama_get_model(nativeHandle.Pointer);
         int embeddingDim = LlamaNative.llama_model_n_embd(modelPtr);
-
         if (embeddingDim <= 0)
             return null;
-
         float[] embeddings = new float[embeddingDim];
         Marshal.Copy(embeddingsPtr, embeddings, 0, embeddingDim);
-
         return embeddings;
     }
 
-    public void SetLogCallback(global::InstantAIGate.Core.Interfaces.Inference.BackendLogCallback callback)
+    public void SetLogCallback(BackendLogCallback callback)
     {
         _nativeLogCallback = (level, text, _) =>
         {
@@ -188,7 +181,6 @@ public class BackendFacade : IBackendFacade
         {
             return 0;
         }
-
         return LlamaNative.llama_model_size(nativeHandle.Pointer);
     }
 
@@ -196,9 +188,14 @@ public class BackendFacade : IBackendFacade
     {
         if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
         {
-            return default;
+            return new ContextPerformanceData(
+                PromptMs: 0.0,
+                EvalMs: 0.0,
+                SampleMs: 0.0,
+                PromptTokens: 0,
+                EvalTokens: 0,
+                SampleCount: 0);
         }
-
         LlamaPerfContextData perf = LlamaNative.llama_perf_context(nativeHandle.Pointer);
         return new ContextPerformanceData(
             PromptMs: perf.TPromptMs,
@@ -215,7 +212,6 @@ public class BackendFacade : IBackendFacade
         {
             return;
         }
-
         LlamaNative.llama_perf_context_reset(nativeHandle.Pointer);
     }
 }
