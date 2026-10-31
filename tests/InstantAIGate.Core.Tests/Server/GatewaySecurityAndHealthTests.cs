@@ -66,4 +66,29 @@ public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>
         var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task Negotiate_WithoutToken_Returns401()
+    {
+        using var body = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/hub/gateway/negotiate?negotiateVersion=1", body);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RootRoute_IsNotBlockedByApiKeyMiddleware()
+    {
+        var response = await _client.GetAsync("/");
+        Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task StaticAssetPaths_WithoutToken_AreNotRejectedWith401()
+    {
+        foreach (string path in new[] { "/index.html", "/css/app.css", "/_framework/blazor.webassembly.js", "/favicon.ico" })
+        {
+            var response = await _client.GetAsync(path);
+            Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+    }
 }

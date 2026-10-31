@@ -5,6 +5,7 @@ using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Exceptions;
+using InstantAIGate.Core.Interfaces.Infrastructure;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Server.Configuration;
 using InstantAIGate.Server.Services.Workers;
@@ -36,6 +37,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
     private readonly StorageSettings _storageSettings;
     private readonly ChannelWriter<DownloadJob> _downloadChannelWriter;
     private readonly IGatewayStateManager _stateManager;
+    private readonly IHardwareTelemetryProvider _hardwareTelemetryProvider;
     private readonly IEmbeddingModelResolver _embeddingResolver;
     private readonly HardwareProfilePolicy _profilePolicy;
     private readonly ILogger<GatewayHub> _logger;
@@ -50,6 +52,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         IOptions<StorageSettings> storageSettings,
         ChannelWriter<DownloadJob> downloadChannelWriter,
         IGatewayStateManager stateManager,
+        IHardwareTelemetryProvider hardwareTelemetryProvider,
         IEmbeddingModelResolver embeddingResolver,
         HardwareProfilePolicy profilePolicy,
         ILogger<GatewayHub> logger)
@@ -63,6 +66,7 @@ public class GatewayHub : Hub<IGatewayHubClient>
         _storageSettings = storageSettings.Value;
         _downloadChannelWriter = downloadChannelWriter;
         _stateManager = stateManager;
+        _hardwareTelemetryProvider = hardwareTelemetryProvider ?? throw new ArgumentNullException(nameof(hardwareTelemetryProvider));
         _embeddingResolver = embeddingResolver ?? throw new ArgumentNullException(nameof(embeddingResolver));
         _profilePolicy = profilePolicy ?? throw new ArgumentNullException(nameof(profilePolicy));
         _logger = logger;
@@ -906,6 +910,62 @@ public class GatewayHub : Hub<IGatewayHubClient>
     {
         return Task.FromResult(_stateManager.GetSnapshot());
     }
+
+    public const string TelemetryGroupName = "GatewayTelemetryGroup";
+
+    [Authorize(Policy = "GatewayAdmin")]
+    public Task<DashboardTelemetrySnapshot> GetDashboardSnapshotAsync()
+        => Task.FromResult(BuildSnapshot());
+
+    [Authorize(Policy = "GatewayAdmin")]
+    public async Task SubscribeToDashboardTelemetry()
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, TelemetryGroupName);
+        await Clients.Caller.ReceiveDashboardTelemetry(BuildSnapshot());
+    }
+
+    [Authorize(Policy = "GatewayAdmin")]
+    public Task UnsubscribeFromDashboardTelemetry()
+        => Groups.RemoveFromGroupAsync(Context.ConnectionId, TelemetryGroupName);
+
+    [Authorize(Policy = "GatewayAdmin")]
+    public Task<IReadOnlyList<SessionTelemetryDto>> GetActiveSessionsAsync()
+        => Task.FromResult(_sessionManager.GetSessionsTelemetry());
+
+    [Authorize(Policy = "GatewayAdmin")]
+    public async Task ForceKillSessionAsync(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        await _sessionManager.ReleaseSessionAsync(sessionId, destroySlot: true, Context.ConnectionAborted);
+
+        _logger.LogWarning(
+            "Session {SessionId} was force-killed by admin connection {ConnectionId}.",
+            sessionId,
+            Context.ConnectionId);
+    }
+
+    [Authorize(Policy = "GatewayAdmin")]
+    public Task TriggerGarbageCollectionAsync()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        _logger.LogInformation("Forced garbage collection triggered by admin connection {ConnectionId}.", Context.ConnectionId);
+
+        return Task.CompletedTask;
+    }
+
+    private DashboardTelemetrySnapshot BuildSnapshot() => new()
+    {
+        Timestamp = DateTimeOffset.UtcNow,
+        GatewayStatus = _stateManager.GetSnapshot(),
+        InferenceMetrics = _modelManager.GetMetrics(),
+        Hardware = _hardwareTelemetryProvider.CaptureMetrics(),
+        Models = _modelManager.GetModelsPoolTelemetry(),
+        Sessions = _sessionManager.GetSessionsTelemetry()
+    };
 
     [Authorize(Policy = "GatewayUser")]
     public async Task SubscribeToModelDownload(string repoId)

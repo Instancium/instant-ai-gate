@@ -18,4 +18,5 @@ public interface IGatewayHubClient
     Task ReceiveLog(string level, string category, string message);
     Task ReceiveMetrics(InferenceMetrics metrics, object nativeDetails);
     Task ReceiveGatewayStatus(GatewayStatusDetails status);
+    Task ReceiveDashboardTelemetry(DashboardTelemetrySnapshot snapshot);
 }

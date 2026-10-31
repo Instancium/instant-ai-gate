@@ -298,5 +298,101 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         Assert.Equal(_testRepoId, progressData.ModelId);
     }
 
+    [Fact]
+    public async Task Observability_AdminCanRequestDashboardSnapshot_And_ReceiveHardwareAndSessionMetrics()
+    {
+        await using HubConnection userConnection = CreateGatewayConnection(_tenantToken);
+        await userConnection.StartAsync();
+        string sessionId = $"test-session-{Guid.NewGuid():N}";
+        await userConnection.InvokeAsync("JoinSession", sessionId, _testRepoId);
+
+        await using HubConnection adminConnection = CreateGatewayConnection(_adminToken);
+        await adminConnection.StartAsync();
+
+        DashboardTelemetrySnapshot snapshot =
+            await adminConnection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync");
+
+        Assert.NotNull(snapshot);
+        Assert.True(snapshot.Hardware.ProcessRamBytes > 0);
+        Assert.True(snapshot.Hardware.SystemTotalRamBytes > 0);
+        Assert.NotNull(snapshot.GatewayStatus);
+        Assert.NotNull(snapshot.InferenceMetrics);
+        Assert.NotNull(snapshot.Models);
+        Assert.Contains(snapshot.Sessions, s => s.SessionId == sessionId);
+
+        await using HubConnection tenantConnection = CreateGatewayConnection(_tenantToken);
+        await tenantConnection.StartAsync();
+        await Assert.ThrowsAsync<HubException>(
+            () => tenantConnection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync"));
+
+        await userConnection.InvokeAsync("LeaveSession", sessionId);
+    }
+
+    [Fact]
+    public async Task Observability_SubscribedAdmin_ReceivesPeriodicDashboardTelemetry()
+    {
+        var received = new List<DashboardTelemetrySnapshot>();
+        using var tickGate = new SemaphoreSlim(initialCount: 0);
+
+        await using HubConnection adminConnection = CreateGatewayConnection(_adminToken);
+        adminConnection.On<DashboardTelemetrySnapshot>("ReceiveDashboardTelemetry", snapshot =>
+        {
+            lock (received)
+            {
+                received.Add(snapshot);
+            }
+
+            tickGate.Release();
+        });
+
+        await adminConnection.StartAsync();
+        await adminConnection.InvokeAsync("SubscribeToDashboardTelemetry");
+
+        for (int i = 0; i < 3; i++)
+        {
+            bool arrived = await tickGate.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(arrived, $"Expected periodic dashboard telemetry tick #{i + 1} within 5 s (1 Hz cadence).");
+        }
+
+        lock (received)
+        {
+            Assert.True(received.Count >= 3);
+            Assert.All(received, s => Assert.True(s.Hardware.ProcessRamBytes > 0));
+        }
+
+        int tenantTicks = 0;
+        await using HubConnection tenantConnection = CreateGatewayConnection(_tenantToken);
+        tenantConnection.On<DashboardTelemetrySnapshot>("ReceiveDashboardTelemetry", _ => Interlocked.Increment(ref tenantTicks));
+        await tenantConnection.StartAsync();
+
+        await Task.Delay(TimeSpan.FromSeconds(2.5));
+
+        Assert.Equal(0, Volatile.Read(ref tenantTicks));
+    }
+
+    [Fact]
+    public async Task ControlPlane_AdminCanForceKillHangingSession()
+    {
+        await using HubConnection userConnection = CreateGatewayConnection(_tenantToken);
+        await userConnection.StartAsync();
+        string sessionId = $"test-kill-session-{Guid.NewGuid():N}";
+        await userConnection.InvokeAsync("JoinSession", sessionId, _testRepoId);
+
+        await using HubConnection adminConnection = CreateGatewayConnection(_adminToken);
+        await adminConnection.StartAsync();
+
+        await Assert.ThrowsAsync<HubException>(() => userConnection.InvokeAsync("ForceKillSessionAsync", sessionId));
+
+        await adminConnection.InvokeAsync("ForceKillSessionAsync", sessionId);
+
+        IReadOnlyList<SessionTelemetryDto> remaining =
+            await adminConnection.InvokeAsync<IReadOnlyList<SessionTelemetryDto>>("GetActiveSessionsAsync");
+        Assert.DoesNotContain(remaining, s => s.SessionId == sessionId);
+
+        DashboardTelemetrySnapshot snapshot =
+            await adminConnection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync");
+        Assert.All(snapshot.Models, m => Assert.Equal(0, m.ActiveLeases));
+    }
+
     #endregion
 }
