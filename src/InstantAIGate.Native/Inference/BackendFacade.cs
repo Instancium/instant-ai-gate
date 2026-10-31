@@ -77,6 +77,7 @@ public class BackendFacade : IBackendFacade
     {
         if (modelHandle is not LlamaModelHandle nativeHandle)
             throw new ArgumentException("Invalid model handle type.", nameof(modelHandle));
+
         var ctxParams = LlamaNative.llama_context_default_params();
         ctxParams.NCtx = settings.ContextSize > 0 ? (uint)settings.ContextSize : 2048;
         ctxParams.NBatch = settings.BatchSize > 0 ? (uint)settings.BatchSize : 512;
@@ -85,6 +86,8 @@ public class BackendFacade : IBackendFacade
         ctxParams.Embeddings = settings.Embeddings;
         ctxParams.OffloadKqv = settings.GpuLayerCount > 0;
         ctxParams.FlashAttnType = settings.FlashAttention ? LlamaFlashAttnType.Enabled : LlamaFlashAttnType.Disabled;
+        ctxParams.NoPerf = false;
+
         var ggmlType = settings.KvCacheQuantization?.ToUpperInvariant() switch
         {
             "Q8_0" or "Q8_K" => GgmlType.Q8_0,
@@ -96,6 +99,7 @@ public class BackendFacade : IBackendFacade
         };
         ctxParams.TypeK = ggmlType;
         ctxParams.TypeV = ggmlType;
+
         IntPtr ptr = LlamaNative.llama_init_from_model(nativeHandle.Pointer, in ctxParams);
         return ptr != IntPtr.Zero
             ? new LlamaContextHandle(ptr)
@@ -196,14 +200,15 @@ public class BackendFacade : IBackendFacade
                 EvalTokens: 0,
                 SampleCount: 0);
         }
+
         LlamaPerfContextData perf = LlamaNative.llama_perf_context(nativeHandle.Pointer);
         return new ContextPerformanceData(
             PromptMs: perf.TPromptMs,
             EvalMs: perf.TEvalMs,
-            SampleMs: perf.TSampleMs,
+            SampleMs: 0.0,
             PromptTokens: perf.NPrompt,
             EvalTokens: perf.NEval,
-            SampleCount: perf.NSample);
+            SampleCount: perf.NEval);
     }
 
     public void ResetContextPerformance(IContextHandle contextHandle)
@@ -212,6 +217,7 @@ public class BackendFacade : IBackendFacade
         {
             return;
         }
+
         LlamaNative.llama_perf_context_reset(nativeHandle.Pointer);
     }
 }

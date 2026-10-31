@@ -371,6 +371,87 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
     }
 
     [Fact]
+    public async Task Observability_EndToEnd_TelemetryLifecycle_TracksSessionGenerationAndSlotCleanup()
+    {
+        await using HubConnection adminConnection = CreateGatewayConnection(_adminToken);
+        var telemetrySnapshots = new List<DashboardTelemetrySnapshot>();
+        adminConnection.On<DashboardTelemetrySnapshot>("ReceiveDashboardTelemetry", snap =>
+        {
+            lock (telemetrySnapshots)
+            {
+                telemetrySnapshots.Add(snap);
+            }
+        });
+
+        await adminConnection.StartAsync();
+        await adminConnection.InvokeAsync("SubscribeToDashboardTelemetry");
+
+        var modelManager = _fixture.Services.GetRequiredService<IModelManager>();
+        if (modelManager.GetActiveSettings(_testRepoId) == null)
+        {
+            await adminConnection.InvokeAsync("LoadModelAsync", _testRepoId, "Default");
+        }
+
+        await using HubConnection userConnection = CreateGatewayConnection(_tenantToken);
+        var generationCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var receivedTokens = new List<SessionTokenDelta>();
+
+        string sessionId = $"e2e-telemetry-session-{Guid.NewGuid():N}";
+        userConnection.On<SessionTokenDelta>("ReceiveTokenDelta", delta =>
+        {
+            if (delta.SessionId == sessionId)
+            {
+                receivedTokens.Add(delta);
+                if (delta.IsDone)
+                {
+                    generationCompleted.TrySetResult();
+                }
+            }
+        });
+
+        await userConnection.StartAsync();
+        await userConnection.InvokeAsync("JoinSession", sessionId, _testRepoId);
+
+        var prompt = new ChatMessage("user", "Say Pong.");
+        await userConnection.InvokeAsync("SendPromptDelta", sessionId, prompt);
+
+        bool finishedInTime = await Task.WhenAny(generationCompleted.Task, Task.Delay(TimeSpan.FromSeconds(30))) == generationCompleted.Task;
+        Assert.True(finishedInTime, "Token generation must complete within timeout.");
+        Assert.NotEmpty(receivedTokens);
+
+        DashboardTelemetrySnapshot activeSnapshot =
+            await adminConnection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync");
+
+        Assert.NotNull(activeSnapshot);
+        Assert.True(activeSnapshot.Hardware.ProcessRamBytes > 0);
+        Assert.True(activeSnapshot.Hardware.ManagedHeapBytes > 0);
+
+        var modelTelemetry = Assert.Single(activeSnapshot.Models, m =>
+            string.Equals(m.RepoId, _testRepoId, StringComparison.OrdinalIgnoreCase));
+        Assert.True(modelTelemetry.IsLoaded);
+        Assert.True(modelTelemetry.ModelWeightsBytes > 0);
+        Assert.True(modelTelemetry.ActiveLeases >= 1, "Model must report at least 1 active context lease while session holds slot.");
+
+        var sessionTelemetry = Assert.Single(activeSnapshot.Sessions, s => s.SessionId == sessionId);
+        Assert.True(sessionTelemetry.PastTokens > 0, "Session PastTokens must be greater than zero after prompt + generation.");
+        Assert.True(sessionTelemetry.EvalTps > 0.0, "Session EvalTps must be recorded and greater than zero.");
+        Assert.True(sessionTelemetry.PromptTps > 0.0, "Session PromptTps must be recorded and greater than zero.");
+        Assert.True(sessionTelemetry.HasAllocatedContext, "Session must hold an allocated native context.");
+
+        await adminConnection.InvokeAsync("ForceKillSessionAsync", sessionId);
+        await adminConnection.InvokeAsync("PurgeIdleContextsAsync", _testRepoId);
+
+        DashboardTelemetrySnapshot cleanedSnapshot =
+            await adminConnection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync");
+
+        Assert.DoesNotContain(cleanedSnapshot.Sessions, s => s.SessionId == sessionId);
+        var cleanedModelTelemetry = Assert.Single(cleanedSnapshot.Models, m =>
+            string.Equals(m.RepoId, _testRepoId, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(0, cleanedModelTelemetry.ActiveLeases);
+        Assert.Equal(0, cleanedModelTelemetry.IdlePooledContexts);
+    }
+
+    [Fact]
     public async Task ControlPlane_AdminCanForceKillHangingSession()
     {
         await using HubConnection userConnection = CreateGatewayConnection(_tenantToken);

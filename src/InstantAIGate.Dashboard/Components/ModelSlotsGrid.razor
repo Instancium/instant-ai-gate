@@ -1,0 +1,161 @@
+@namespace InstantAIGate.Dashboard.Components
+@using System.Globalization
+@using InstantAIGate.Core.Dtos.Config
+@using InstantAIGate.Core.Dtos.Status
+
+<section class="panel-card">
+    <div class="panel-header">
+        <div>
+            <h2 class="panel-title">Model &amp; Context Pool Matrix</h2>
+            <span class="panel-subtitle">Loaded Weights, GPU Layer Offload &amp; Native llama_context Slot Allocation</span>
+        </div>
+        <div class="header-actions">
+            <button type="button"
+                    class="btn btn-secondary btn-sm"
+                    disabled="@IsBusy"
+                    @onclick="() => OnPurgeIdleContexts.InvokeAsync(string.Empty)">
+                Purge All Idle Pools
+            </button>
+            <button type="button"
+                    class="btn btn-outline btn-sm"
+                    disabled="@IsBusy"
+                    @onclick="() => OnForceGc.InvokeAsync()">
+                Force .NET GC
+            </button>
+        </div>
+    </div>
+
+    <div class="slots-legend">
+        <span class="slot-legend-item"><span class="slot-dot active"></span>Active Lease (In Session)</span>
+        <span class="slot-legend-item"><span class="slot-dot pooled"></span>Idle in ModelProvider Pool (Holding VRAM)</span>
+        <span class="slot-legend-item"><span class="slot-dot free"></span>Unallocated Capacity</span>
+    </div>
+
+    @if (Models is null || Models.Count == 0)
+    {
+        <div class="empty-state">
+            No models are currently loaded in VRAM. Use CLI <code>/load &lt;repoId&gt;</code> or configure startup model autoload.
+        </div>
+    }
+    else
+    {
+        <div class="models-grid">
+            @foreach (var model in Models)
+            {
+                int maxSlots = Math.Max(1, model.MaxContexts);
+                int activeCount = Math.Clamp(model.ActiveLeases, 0, maxSlots);
+                int pooledCount = Math.Clamp(model.IdlePooledContexts, 0, Math.Max(0, maxSlots - activeCount));
+                int effectiveGpuLayers = model.TotalLayers > 0
+                    ? Math.Min(model.GpuLayers, model.TotalLayers)
+                    : model.GpuLayers;
+
+                <div class="model-card @(model.IsDraining ? "draining" : "")">
+                    <div class="model-card-header">
+                        <div class="model-id-group">
+                            <span class="model-repo-id">@model.RepoId</span>
+                            <span class="model-type-badge @GetModelTypeCss(model.Type)">@model.Type.ToString().ToUpperInvariant()</span>
+                            @if (model.IsDraining)
+                            {
+                                <span class="badge warn">DRAINING</span>
+                            }
+                        </div>
+                        <span class="model-weights-size">@FormatBytes(model.ModelWeightsBytes)</span>
+                    </div>
+
+                    <div class="model-specs-row">
+                        <div class="spec-pill">
+                            <span class="spec-key">GPU Layers</span>
+                            <span class="spec-val">@(model.TotalLayers > 0 ? $"{effectiveGpuLayers} / {model.TotalLayers}" : $"{model.GpuLayers}")</span>
+                        </div>
+                        <div class="spec-pill">
+                            <span class="spec-key">Context (n_ctx)</span>
+                            <span class="spec-val">@model.ContextSize.ToString("N0", CultureInfo.InvariantCulture)</span>
+                        </div>
+                        <div class="spec-pill">
+                            <span class="spec-key">KV Quant</span>
+                            <span class="spec-val">@model.KvCacheQuantization</span>
+                        </div>
+                        <div class="spec-pill">
+                            <span class="spec-key">Slots</span>
+                            <span class="spec-val">@activeCount active / @pooledCount idle / @maxSlots max</span>
+                        </div>
+                    </div>
+
+                    <!-- Slot matrix from 1 to MaxContexts -->
+                    <div class="slot-matrix" role="list" aria-label="Context slots for @model.RepoId">
+                        @for (int slotIndex = 1; slotIndex <= maxSlots; slotIndex++)
+                        {
+                            string slotState;
+                            string slotLabel;
+                            if (slotIndex <= activeCount)
+                            {
+                                slotState = "active";
+                                slotLabel = "ACTIVE";
+                            }
+                            else if (slotIndex <= activeCount + pooledCount)
+                            {
+                                slotState = "pooled";
+                                slotLabel = "POOLED";
+                            }
+                            else
+                            {
+                                slotState = "free";
+                                slotLabel = "FREE";
+                            }
+
+                            <div class="slot-cell @slotState" role="listitem" title="Slot #@slotIndex: @slotLabel">
+                                <span class="slot-index">#@slotIndex</span>
+                                <span class="slot-status">@slotLabel</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="model-card-actions">
+                        <button type="button"
+                                class="btn btn-secondary btn-xs"
+                                disabled="@(IsBusy || model.IdlePooledContexts == 0)"
+                                @onclick="() => OnPurgeIdleContexts.InvokeAsync(model.RepoId)">
+                            Purge Idle Contexts (@model.IdlePooledContexts)
+                        </button>
+                        <button type="button"
+                                class="btn btn-danger btn-xs"
+                                disabled="@(IsBusy || model.IsDraining)"
+                                @onclick="() => OnUnloadModel.InvokeAsync(model.RepoId)">
+                            Unload Model
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<ModelPoolTelemetryDto>? Models { get; set; }
+    [Parameter] public EventCallback<string> OnPurgeIdleContexts { get; set; }
+    [Parameter] public EventCallback<string> OnUnloadModel { get; set; }
+    [Parameter] public EventCallback OnForceGc { get; set; }
+    [Parameter] public bool IsBusy { get; set; }
+
+    private static string GetModelTypeCss(ModelType type) => type switch
+    {
+        ModelType.Vlm => "type-vlm",
+        ModelType.Embedding => "type-embed",
+        ModelType.Audio => "type-audio",
+        _ => "type-llm"
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double value = bytes;
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return string.Create(CultureInfo.InvariantCulture, $"{value:0.##} {units[unit]}");
+    }
+}

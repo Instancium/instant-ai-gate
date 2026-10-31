@@ -1,0 +1,160 @@
+@namespace InstantAIGate.Dashboard.Components
+@using InstantAIGate.Dashboard.Services
+
+<section class="panel-card">
+    <div class="panel-header">
+        <div>
+            <h2 class="panel-title">Live Native Log Console (llama.cpp / mtmd / ggml-vulkan)</h2>
+            <span class="panel-subtitle">Real-Time STDERR &amp; SignalRLoggerProvider Diagnostic Stream</span>
+        </div>
+
+        <div class="terminal-controls">
+            <select class="select-compact" @bind="_selectedLevel" aria-label="Filter log level">
+                <option value="ALL">All Levels</option>
+                <option value="Error">Errors Only</option>
+                <option value="Warning">Warnings &amp; Errors</option>
+                <option value="Information">Info+</option>
+                <option value="Debug">Debug / Native Trace</option>
+            </select>
+
+            <input type="text"
+                   class="input-compact"
+                   placeholder="Filter category / message..."
+                   @bind="_searchQuery"
+                   @bind:event="oninput" />
+
+            <button type="button"
+                    class="btn btn-outline btn-xs"
+                    @onclick="TogglePause">
+                @(_isPaused ? "Resume Stream" : "Pause")
+            </button>
+
+            <button type="button"
+                    class="btn btn-secondary btn-xs"
+                    @onclick="OnClearLogs">
+                Clear
+            </button>
+        </div>
+    </div>
+
+    <div class="log-terminal" role="log" aria-live="polite">
+        @{
+            var entries = GetFilteredLogs();
+        }
+        @if (entries.Count == 0)
+        {
+            <div class="terminal-empty">
+                No log entries match the current filter. Native llama.cpp / ggml-vulkan events will stream here automatically.
+            </div>
+        }
+        else
+        {
+            @foreach (var entry in entries)
+            {
+                <div class="log-line @GetLevelCssClass(entry.Level)">
+                    <span class="log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")</span>
+                    <span class="log-level">[@FormatShortLevel(entry.Level)]</span>
+                    <span class="log-cat">@entry.Category:</span>
+                    <span class="log-msg">@entry.Message</span>
+                </div>
+            }
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<LogEntry>? Logs { get; set; }
+    [Parameter] public EventCallback OnClear { get; set; }
+
+    private string _selectedLevel = "ALL";
+    private string _searchQuery = string.Empty;
+    private bool _isPaused;
+    private IReadOnlyList<LogEntry> _frozenLogs = [];
+
+    protected override void OnParametersSet()
+    {
+        if (!_isPaused && Logs is not null)
+        {
+            _frozenLogs = Logs;
+        }
+    }
+
+    private void TogglePause()
+    {
+        _isPaused = !_isPaused;
+        if (!_isPaused && Logs is not null)
+        {
+            _frozenLogs = Logs;
+        }
+    }
+
+    private async Task OnClearLogs()
+    {
+        _frozenLogs = [];
+        if (OnClear.HasDelegate)
+        {
+            await OnClear.InvokeAsync();
+        }
+    }
+
+    private IReadOnlyList<LogEntry> GetFilteredLogs()
+    {
+        var source = _isPaused ? _frozenLogs : (Logs ?? []);
+        if (source.Count == 0) return [];
+
+        var result = new List<LogEntry>(Math.Min(source.Count, 200));
+        for (int i = source.Count - 1; i >= 0 && result.Count < 200; i--)
+        {
+            var item = source[i];
+            if (!MatchesLevel(item.Level, _selectedLevel)) continue;
+            if (!string.IsNullOrWhiteSpace(_searchQuery) &&
+                !item.Message.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) &&
+                !item.Category.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            result.Add(item);
+        }
+        return result;
+    }
+
+    private static bool MatchesLevel(string level, string filter)
+    {
+        if (string.Equals(filter, "ALL", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(filter, "Error", StringComparison.OrdinalIgnoreCase))
+        {
+            return level.Contains("Error", StringComparison.OrdinalIgnoreCase)
+                || level.Contains("Critical", StringComparison.OrdinalIgnoreCase);
+        }
+        if (string.Equals(filter, "Warning", StringComparison.OrdinalIgnoreCase))
+        {
+            return level.Contains("Warn", StringComparison.OrdinalIgnoreCase)
+                || level.Contains("Error", StringComparison.OrdinalIgnoreCase)
+                || level.Contains("Critical", StringComparison.OrdinalIgnoreCase);
+        }
+        if (string.Equals(filter, "Information", StringComparison.OrdinalIgnoreCase))
+        {
+            return !level.Contains("Debug", StringComparison.OrdinalIgnoreCase)
+                && !level.Contains("Trace", StringComparison.OrdinalIgnoreCase);
+        }
+        return true;
+    }
+
+    private static string FormatShortLevel(string level)
+    {
+        if (level.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+            level.Contains("Critical", StringComparison.OrdinalIgnoreCase)) return "ERR";
+        if (level.Contains("Warn", StringComparison.OrdinalIgnoreCase)) return "WRN";
+        if (level.Contains("Debug", StringComparison.OrdinalIgnoreCase)) return "DBG";
+        return "INF";
+    }
+
+    private static string GetLevelCssClass(string level)
+    {
+        if (level.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+            level.Contains("Critical", StringComparison.OrdinalIgnoreCase)) return "log-err";
+        if (level.Contains("Warn", StringComparison.OrdinalIgnoreCase)) return "log-warn";
+        if (level.Contains("Debug", StringComparison.OrdinalIgnoreCase)) return "log-dbg";
+        return "log-inf";
+    }
+}

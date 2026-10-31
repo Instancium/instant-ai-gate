@@ -1,84 +1,173 @@
 @page "/"
+@implements IAsyncDisposable
+@using System.Globalization
 @using InstantAIGate.Core.Dtos.Status
 @using InstantAIGate.SSR.Dtos
-@implements IAsyncDisposable
+@using InstantAIGate.Dashboard.Services
+@using InstantAIGate.Dashboard.Components
 
-<PageTitle>InstantAIGate Dashboard</PageTitle>
+<PageTitle>InstantAIGate — Diagnostic &amp; Telemetry Dashboard</PageTitle>
 
-<h1>InstantAIGate — Diagnostic Dashboard</h1>
+<div class="dashboard-shell">
+    <header class="top-status-bar">
+        <div class="brand-block">
+            <span class="brand-logo">InstantAIGate</span>
+            <span class="brand-tag">Telemetry &amp; Leak Diagnostics</span>
+        </div>
 
-<section class="ig-status-bar">
-    <span class="ig-badge ig-badge--@ConnectionCssClass">@StateText</span>
-    @if (_latestStatus is not null)
-    {
-        <span>Gateway: <strong>@_latestStatus.Status</strong></span>
-        <span>Active model: <code>@(_latestStatus.ActiveModelId ?? "—")</code></span>
-    }
-</section>
+        <div class="status-pills">
+            <div class="status-pill">
+                <span class="status-dot @ConnectionCssClass"></span>
+                <span>SignalR: <strong>@StateText</strong></span>
+            </div>
 
-@if (_requiresApiKey)
-{
-    <section class="ig-card">
-        <h2>Admin authentication required</h2>
-        <p>Enter the <code>AdminApiKey</code> to subscribe to telemetry.</p>
-        <div class="ig-form">
-            <input type="password" @bind="_apiKeyInput" placeholder="Admin API key" />
-            <button disabled="@_isConnecting" @onclick="ConnectAsync">Connect</button>
-            @if (!string.IsNullOrWhiteSpace(_connectError))
+            <div class="status-pill">
+                <span class="status-label">Gateway:</span>
+                <strong class="@GetGatewayStatusCss(EffectiveGatewayStatus.Status)">
+                    @EffectiveGatewayStatus.Status
+                </strong>
+                @if (!string.IsNullOrWhiteSpace(EffectiveGatewayStatus.ActiveModelId))
+                {
+                    <span class="mono dim">(@EffectiveGatewayStatus.ActiveModelId)</span>
+                }
+            </div>
+
+            @if (_latestSnapshot is not null)
             {
-                <p class="ig-error">@_connectError</p>
+                <div class="status-pill mono dim">
+                    Updated: @_latestSnapshot.Timestamp.ToLocalTime().ToString("HH:mm:ss")
+                </div>
             }
         </div>
-    </section>
-}
-else
-{
-    <section class="ig-card">
-        <h2>Latest telemetry tick</h2>
-        @if (_latestSnapshot is null)
-        {
-            <p>Waiting for the first dashboard telemetry tick…</p>
-        }
-        else
-        {
-            <dl class="ig-dl">
-                <dt>Timestamp</dt><dd>@_latestSnapshot.Timestamp.ToLocalTime()</dd>
-                <dt>Process RAM</dt><dd>@FormatBytes(_latestSnapshot.Hardware.ProcessRamBytes)</dd>
-                <dt>Managed heap</dt><dd>@FormatBytes(_latestSnapshot.Hardware.ManagedHeapBytes)</dd>
-                <dt>System RAM (free / total)</dt>
-                <dd>@FormatBytes(_latestSnapshot.Hardware.SystemAvailableRamBytes) / @FormatBytes(_latestSnapshot.Hardware.SystemTotalRamBytes)</dd>
-                <dt>CPU</dt><dd>@_latestSnapshot.Hardware.CpuUsagePercent.ToString("F1")%</dd>
-                <dt>VRAM (@_latestSnapshot.Hardware.GpuProviderName)</dt>
-                <dd>@FormatBytes(_latestSnapshot.Hardware.VramUsedBytes) / @FormatBytes(_latestSnapshot.Hardware.VramTotalBytes)</dd>
-                <dt>History depth</dt><dd>@_client.History.Count / 120</dd>
-            </dl>
-        }
-    </section>
 
-    <section class="ig-card">
-        <h2>Control plane</h2>
-        <button disabled="@_isBusy" @onclick="ForceGcAsync">Force .NET GC</button>
-        <button disabled="@_isBusy" @onclick="PurgeIdleContextsAsync">Purge idle contexts</button>
-        <button disabled="@_isBusy" @onclick="DisconnectAsync">Disconnect</button>
-    </section>
-}
+        <div class="top-actions">
+            @if (!_requiresApiKey && _connectionState == ConnectionState.Connected)
+            {
+                <button type="button"
+                        class="btn btn-primary btn-sm"
+                        disabled="@_isBusy"
+                        title="Purge all idle llama_context pools and force .NET Garbage Collection to verify native memory return to baseline"
+                        @onclick="ForceGcAndPurgeAllAsync">
+                    Force GC &amp; Purge Idle Pools
+                </button>
+                <button type="button"
+                        class="btn btn-outline btn-sm"
+                        disabled="@_isBusy"
+                        @onclick="DisconnectAsync">
+                    Disconnect
+                </button>
+            }
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_actionError))
+    {
+        <div class="alert-banner danger">
+            <span>@_actionError</span>
+            <button type="button" class="btn btn-xs btn-outline" @onclick="() => _actionError = null">Dismiss</button>
+        </div>
+    }
+
+    @if (EffectiveGatewayStatus.Status == GatewayOperationalStatus.ModelDownloading || _latestDownloadProgress is not null)
+    {
+        float dlPercent = _latestDownloadProgress?.Percentage ?? EffectiveGatewayStatus.ProgressPercentage;
+        string modelId = _latestDownloadProgress?.ModelId ?? EffectiveGatewayStatus.ActiveModelId ?? "model";
+        <div class="download-banner">
+            <div class="download-banner-row">
+                <span>Downloading model <strong>@modelId</strong>...</span>
+                <span class="mono">@($"{dlPercent:F1}%")</span>
+            </div>
+            <div class="progress-track compact">
+                <div class="progress-fill info" style="width: @dlPercent.ToString("F1", CultureInfo.InvariantCulture)%;"></div>
+            </div>
+        </div>
+    }
+
+    @if (_requiresApiKey)
+    {
+        <div class="auth-card-wrapper">
+            <div class="auth-card">
+                <h2>Connect to Gateway Telemetry Hub</h2>
+                <p class="auth-desc">
+                    Enter the <code>GatewayAdmin</code> API Key to subscribe to 1 Hz hardware/VRAM probes, slot matrices, and session diagnostics.
+                </p>
+
+                @if (!string.IsNullOrWhiteSpace(_connectError))
+                {
+                    <div class="alert-banner danger">@_connectError</div>
+                }
+
+                <div class="auth-form-row">
+                    <input type="password"
+                           class="input-full"
+                           placeholder="Admin API Key (e.g. test-admin-secret)"
+                           @bind="_apiKeyInput"
+                           @bind:event="oninput"
+                           disabled="@_isConnecting" />
+                    <button type="button"
+                            class="btn btn-primary"
+                            disabled="@_isConnecting"
+                            @onclick="ConnectAsync">
+                        @(_isConnecting ? "Connecting..." : "Connect Dashboard")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <main class="dashboard-grid">
+            <MemoryLeakDetectorPanel Snapshot="_latestSnapshot"
+                                     History="_historySnapshot" />
+
+            <PerformanceTpsPanel Snapshot="_latestSnapshot"
+                                 History="_historySnapshot"
+                                 IsBusy="_isBusy"
+                                 OnUpdateQueueLimit="UpdateQueueLimitAsync" />
+
+            <ModelSlotsGrid Models="_latestSnapshot?.Models"
+                            IsBusy="_isBusy"
+                            OnPurgeIdleContexts="PurgeIdleContextsAsync"
+                            OnUnloadModel="UnloadModelAsync"
+                            OnForceGc="ForceGcAsync" />
+
+            <ActiveSessionsTable Sessions="_latestSnapshot?.Sessions"
+                                 IsBusy="_isBusy"
+                                 OnKillSession="ForceKillSessionAsync" />
+
+            <NativeLogTerminal Logs="_logSnapshot"
+                               OnClear="ClearLogs" />
+        </main>
+    }
+</div>
 
 @code {
     [Inject] private DashboardTelemetryClient _client { get; set; } = default!;
     [Inject] private IAdminApiKeyStore _apiKeyStore { get; set; } = default!;
 
     private DashboardTelemetrySnapshot? _latestSnapshot;
+    private IReadOnlyList<DashboardTelemetrySnapshot> _historySnapshot = [];
+    private IReadOnlyList<LogEntry> _logSnapshot = [];
     private GatewayStatusDetails? _latestStatus;
+    private DownloadProgress? _latestDownloadProgress;
+
     private bool _requiresApiKey = true;
     private bool _isConnecting;
     private bool _isBusy;
     private string? _apiKeyInput;
     private string? _connectError;
+    private string? _actionError;
     private ConnectionState _connectionState = ConnectionState.Disconnected;
+
+    private GatewayStatusDetails EffectiveGatewayStatus =>
+        _latestStatus ?? _latestSnapshot?.GatewayStatus ?? new GatewayStatusDetails();
 
     protected override async Task OnInitializedAsync()
     {
+        _client.DashboardTelemetryReceived += OnDashboardTelemetryReceived;
         _client.GatewayStatusChanged += OnGatewayStatus;
+        _client.DownloadProgressChanged += OnDownloadProgress;
+        _client.LogReceived += OnLogReceived;
         _client.ConnectionStateChanged += OnConnectionStateChanged;
 
         var storedKey = await _apiKeyStore.GetApiKeyAsync();
@@ -99,6 +188,7 @@ else
 
         _isConnecting = true;
         _connectError = null;
+        _actionError = null;
         StateHasChanged();
 
         try
@@ -107,6 +197,8 @@ else
             await _client.ConnectAsync();
             _requiresApiKey = false;
             _latestSnapshot = await _client.GetSnapshotAsync();
+            _historySnapshot = _client.History.Snapshot();
+            _logSnapshot = _client.Logs.Snapshot();
         }
         catch (Exception ex)
         {
@@ -120,18 +212,87 @@ else
         }
     }
 
-    private async Task ForceGcAsync()
+    private async Task ForceGcAndPurgeAllAsync()
     {
-        _isBusy = true;
-        try { await _client.TriggerGarbageCollectionAsync(); }
-        finally { _isBusy = false; }
+        await ExecuteAdminActionAsync(async () =>
+        {
+            await _client.PurgeIdleContextsAsync(string.Empty);
+            await _client.TriggerGarbageCollectionAsync();
+            _latestSnapshot = await _client.GetSnapshotAsync() ?? _latestSnapshot;
+            _historySnapshot = _client.History.Snapshot();
+        });
     }
 
-    private async Task PurgeIdleContextsAsync()
+    private async Task ForceGcAsync()
+    {
+        await ExecuteAdminActionAsync(async () =>
+        {
+            await _client.TriggerGarbageCollectionAsync();
+            _latestSnapshot = await _client.GetSnapshotAsync() ?? _latestSnapshot;
+        });
+    }
+
+    private async Task PurgeIdleContextsAsync(string repoId)
+    {
+        await ExecuteAdminActionAsync(async () =>
+        {
+            await _client.PurgeIdleContextsAsync(repoId);
+            _latestSnapshot = await _client.GetSnapshotAsync() ?? _latestSnapshot;
+        });
+    }
+
+    private async Task UnloadModelAsync(string repoId)
+    {
+        await ExecuteAdminActionAsync(async () =>
+        {
+            await _client.UnloadModelAsync(repoId);
+            _latestSnapshot = await _client.GetSnapshotAsync() ?? _latestSnapshot;
+        });
+    }
+
+    private async Task ForceKillSessionAsync(string sessionId)
+    {
+        await ExecuteAdminActionAsync(async () =>
+        {
+            await _client.ForceKillSessionAsync(sessionId);
+            _latestSnapshot = await _client.GetSnapshotAsync() ?? _latestSnapshot;
+        });
+    }
+
+    private async Task UpdateQueueLimitAsync(int newLimit)
+    {
+        await ExecuteAdminActionAsync(async () =>
+        {
+            await _client.SetQueueLimitAsync(newLimit);
+            _latestSnapshot = await _client.GetSnapshotAsync() ?? _latestSnapshot;
+        });
+    }
+
+    private async Task ExecuteAdminActionAsync(Func<Task> action)
     {
         _isBusy = true;
-        try { await _client.PurgeIdleContextsAsync(string.Empty); }
-        finally { _isBusy = false; }
+        _actionError = null;
+        StateHasChanged();
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearLogs()
+    {
+        _client.Logs.Clear();
+        _logSnapshot = [];
+        StateHasChanged();
     }
 
     private async Task DisconnectAsync()
@@ -142,9 +303,36 @@ else
         _apiKeyInput = string.Empty;
     }
 
+    private void OnDashboardTelemetryReceived(DashboardTelemetrySnapshot snapshot)
+    {
+        _latestSnapshot = snapshot;
+        _historySnapshot = _client.History.Snapshot();
+        if (snapshot.GatewayStatus.Status != GatewayOperationalStatus.ModelDownloading)
+        {
+            _latestDownloadProgress = null;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
     private void OnGatewayStatus(GatewayStatusDetails status)
     {
         _latestStatus = status;
+        if (status.Status != GatewayOperationalStatus.ModelDownloading)
+        {
+            _latestDownloadProgress = null;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnDownloadProgress(DownloadProgress progress)
+    {
+        _latestDownloadProgress = progress;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLogReceived(string level, string category, string message)
+    {
+        _logSnapshot = _client.Logs.Snapshot();
         InvokeAsync(StateHasChanged);
     }
 
@@ -169,23 +357,20 @@ else
         _ => "err"
     };
 
-    private static string FormatBytes(long bytes)
+    private static string GetGatewayStatusCss(GatewayOperationalStatus status) => status switch
     {
-        if (bytes <= 0) return "0 B";
-        string[] units = ["B", "KB", "MB", "GB", "TB"];
-        double value = bytes;
-        int unit = 0;
-        while (value >= 1024 && unit < units.Length - 1)
-        {
-            value /= 1024;
-            unit++;
-        }
-        return $"{value:0.##} {units[unit]}";
-    }
+        GatewayOperationalStatus.Ready => "text-ok",
+        GatewayOperationalStatus.ModelDownloading or GatewayOperationalStatus.ModelLoading => "text-warn",
+        GatewayOperationalStatus.Faulted => "text-danger",
+        _ => "dim"
+    };
 
     public async ValueTask DisposeAsync()
     {
+        _client.DashboardTelemetryReceived -= OnDashboardTelemetryReceived;
         _client.GatewayStatusChanged -= OnGatewayStatus;
+        _client.DownloadProgressChanged -= OnDownloadProgress;
+        _client.LogReceived -= OnLogReceived;
         _client.ConnectionStateChanged -= OnConnectionStateChanged;
         try { await _client.DisposeAsync(); } catch { }
     }

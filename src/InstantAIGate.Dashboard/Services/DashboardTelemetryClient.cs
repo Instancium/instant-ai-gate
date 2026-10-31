@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 public sealed class DashboardTelemetryClient : IAsyncDisposable
 {
     private const int DefaultHistoryCapacity = 120;
+    private const int DefaultLogCapacity = 400;
 
     /// <summary>
     /// Hub route relative to the host root. Must be resolved to an absolute URI in the
@@ -34,6 +35,7 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
     private bool _disposed;
 
     public CircularBuffer<DashboardTelemetrySnapshot> History { get; } = new(DefaultHistoryCapacity);
+    public CircularBuffer<LogEntry> Logs { get; } = new(DefaultLogCapacity);
     public ConnectionState State => _state;
 
     public event Action<DashboardTelemetrySnapshot>? DashboardTelemetryReceived;
@@ -154,6 +156,22 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
         await InvokeAdminAsync("PurgeIdleContextsAsync", ct, repoId ?? string.Empty);
     }
 
+    public async Task UnloadModelAsync(string repoId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(repoId);
+        await InvokeAdminAsync("UnloadModelAsync", ct, repoId);
+    }
+
+    public async Task SetQueueLimitAsync(int limit, CancellationToken ct = default)
+    {
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Queue limit must be greater than zero.");
+        }
+
+        await InvokeAdminAsync("SetQueueLimitAsync", ct, limit);
+    }
+
     public async Task TriggerGarbageCollectionAsync(CancellationToken ct = default)
     {
         await InvokeAdminAsync("TriggerGarbageCollectionAsync", ct);
@@ -202,7 +220,12 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
 
         connection.On<string, string, string>("ReceiveLog", (level, category, message) =>
         {
-            LogReceived?.Invoke(level ?? string.Empty, category ?? string.Empty, message ?? string.Empty);
+            string lvl = level ?? "Information";
+            string cat = category ?? string.Empty;
+            string msg = message ?? string.Empty;
+
+            Logs.Add(new LogEntry(DateTimeOffset.UtcNow, lvl, cat, msg));
+            LogReceived?.Invoke(lvl, cat, msg);
         });
     }
 

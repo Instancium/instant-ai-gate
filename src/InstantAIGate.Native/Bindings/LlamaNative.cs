@@ -828,11 +828,10 @@ internal static partial class LlamaNative
 public struct LlamaPerfContextData
 {
     public double TStartMs;
-    public double TSampleMs;
+    public double TLoadMs;
     public double TPromptMs;
     public double TEvalMs;
-    public long NSample;
-    public long NPrompt;
-    public long NEval;
-    public long NDecoded;
+    public int NPrompt;
+    public int NEval;
+    public int NReused;
 }

@@ -330,7 +330,11 @@ public sealed class ModelManager : IDisposable, IModelManager
     {
         int currentLeases = Volatile.Read(ref _totalActiveLeases);
         int pendingRequests = _queueManager.PendingCount;
-        return new InferenceMetrics(currentLeases, pendingRequests);
+        int maxQueueSize = _queueManager.MaxQueueSize > 0 ? _queueManager.MaxQueueSize : 100;
+        return new InferenceMetrics(currentLeases, pendingRequests)
+        {
+            MaxQueueSize = maxQueueSize
+        };
     }
 
     public IEnumerable<ModelRegistryStatus> GetActiveModelsStatus() => _modelProvider.GetStatus();
