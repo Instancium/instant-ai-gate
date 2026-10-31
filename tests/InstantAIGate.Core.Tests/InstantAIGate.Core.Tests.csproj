@@ -32,6 +32,7 @@
     <ProjectReference Include="..\..\src\InstantAIGate.Native\InstantAIGate.Native.csproj" />
     <ProjectReference Include="..\..\src\InstantAIGate.SSR\InstantAIGate.SSR.csproj" />
     <ProjectReference Include="..\..\src\InstantAIGate.Server\InstantAIGate.Server.csproj" />
+    <ProjectReference Include="..\..\src\InstantAIGate.Dashboard\InstantAIGate.Dashboard.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="TestData\test-1.jpeg">

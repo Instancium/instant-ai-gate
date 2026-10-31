@@ -1,0 +1,192 @@
+@page "/"
+@using InstantAIGate.Core.Dtos.Status
+@using InstantAIGate.SSR.Dtos
+@implements IAsyncDisposable
+
+<PageTitle>InstantAIGate Dashboard</PageTitle>
+
+<h1>InstantAIGate — Diagnostic Dashboard</h1>
+
+<section class="ig-status-bar">
+    <span class="ig-badge ig-badge--@ConnectionCssClass">@StateText</span>
+    @if (_latestStatus is not null)
+    {
+        <span>Gateway: <strong>@_latestStatus.Status</strong></span>
+        <span>Active model: <code>@(_latestStatus.ActiveModelId ?? "—")</code></span>
+    }
+</section>
+
+@if (_requiresApiKey)
+{
+    <section class="ig-card">
+        <h2>Admin authentication required</h2>
+        <p>Enter the <code>AdminApiKey</code> to subscribe to telemetry.</p>
+        <div class="ig-form">
+            <input type="password" @bind="_apiKeyInput" placeholder="Admin API key" />
+            <button disabled="@_isConnecting" @onclick="ConnectAsync">Connect</button>
+            @if (!string.IsNullOrWhiteSpace(_connectError))
+            {
+                <p class="ig-error">@_connectError</p>
+            }
+        </div>
+    </section>
+}
+else
+{
+    <section class="ig-card">
+        <h2>Latest telemetry tick</h2>
+        @if (_latestSnapshot is null)
+        {
+            <p>Waiting for the first dashboard telemetry tick…</p>
+        }
+        else
+        {
+            <dl class="ig-dl">
+                <dt>Timestamp</dt><dd>@_latestSnapshot.Timestamp.ToLocalTime()</dd>
+                <dt>Process RAM</dt><dd>@FormatBytes(_latestSnapshot.Hardware.ProcessRamBytes)</dd>
+                <dt>Managed heap</dt><dd>@FormatBytes(_latestSnapshot.Hardware.ManagedHeapBytes)</dd>
+                <dt>System RAM (free / total)</dt>
+                <dd>@FormatBytes(_latestSnapshot.Hardware.SystemAvailableRamBytes) / @FormatBytes(_latestSnapshot.Hardware.SystemTotalRamBytes)</dd>
+                <dt>CPU</dt><dd>@_latestSnapshot.Hardware.CpuUsagePercent.ToString("F1")%</dd>
+                <dt>VRAM (@_latestSnapshot.Hardware.GpuProviderName)</dt>
+                <dd>@FormatBytes(_latestSnapshot.Hardware.VramUsedBytes) / @FormatBytes(_latestSnapshot.Hardware.VramTotalBytes)</dd>
+                <dt>History depth</dt><dd>@_client.History.Count / 120</dd>
+            </dl>
+        }
+    </section>
+
+    <section class="ig-card">
+        <h2>Control plane</h2>
+        <button disabled="@_isBusy" @onclick="ForceGcAsync">Force .NET GC</button>
+        <button disabled="@_isBusy" @onclick="PurgeIdleContextsAsync">Purge idle contexts</button>
+        <button disabled="@_isBusy" @onclick="DisconnectAsync">Disconnect</button>
+    </section>
+}
+
+@code {
+    [Inject] private DashboardTelemetryClient _client { get; set; } = default!;
+    [Inject] private IAdminApiKeyStore _apiKeyStore { get; set; } = default!;
+
+    private DashboardTelemetrySnapshot? _latestSnapshot;
+    private GatewayStatusDetails? _latestStatus;
+    private bool _requiresApiKey = true;
+    private bool _isConnecting;
+    private bool _isBusy;
+    private string? _apiKeyInput;
+    private string? _connectError;
+    private ConnectionState _connectionState = ConnectionState.Disconnected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client.GatewayStatusChanged += OnGatewayStatus;
+        _client.ConnectionStateChanged += OnConnectionStateChanged;
+
+        var storedKey = await _apiKeyStore.GetApiKeyAsync();
+        if (!string.IsNullOrWhiteSpace(storedKey))
+        {
+            _apiKeyInput = storedKey;
+            await ConnectAsync();
+        }
+    }
+
+    private async Task ConnectAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_apiKeyInput))
+        {
+            _connectError = "API key cannot be empty.";
+            return;
+        }
+
+        _isConnecting = true;
+        _connectError = null;
+        StateHasChanged();
+
+        try
+        {
+            await _apiKeyStore.SetApiKeyAsync(_apiKeyInput.Trim());
+            await _client.ConnectAsync();
+            _requiresApiKey = false;
+            _latestSnapshot = await _client.GetSnapshotAsync();
+        }
+        catch (Exception ex)
+        {
+            _connectError = ex.Message;
+            await _apiKeyStore.ClearAsync();
+        }
+        finally
+        {
+            _isConnecting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ForceGcAsync()
+    {
+        _isBusy = true;
+        try { await _client.TriggerGarbageCollectionAsync(); }
+        finally { _isBusy = false; }
+    }
+
+    private async Task PurgeIdleContextsAsync()
+    {
+        _isBusy = true;
+        try { await _client.PurgeIdleContextsAsync(string.Empty); }
+        finally { _isBusy = false; }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        await _client.DisconnectAsync();
+        await _apiKeyStore.ClearAsync();
+        _requiresApiKey = true;
+        _apiKeyInput = string.Empty;
+    }
+
+    private void OnGatewayStatus(GatewayStatusDetails status)
+    {
+        _latestStatus = status;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnConnectionStateChanged(ConnectionState state)
+    {
+        _connectionState = state;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string StateText => _connectionState switch
+    {
+        ConnectionState.Connected => "Connected",
+        ConnectionState.Connecting => "Connecting…",
+        ConnectionState.Reconnecting => "Reconnecting…",
+        _ => "Disconnected"
+    };
+
+    private string ConnectionCssClass => _connectionState switch
+    {
+        ConnectionState.Connected => "ok",
+        ConnectionState.Reconnecting => "warn",
+        _ => "err"
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double value = bytes;
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return $"{value:0.##} {units[unit]}";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _client.GatewayStatusChanged -= OnGatewayStatus;
+        _client.ConnectionStateChanged -= OnConnectionStateChanged;
+        try { await _client.DisposeAsync(); } catch { }
+    }
+}

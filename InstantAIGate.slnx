@@ -8,6 +8,7 @@
   <Folder Name="/src/">
     <Project Path="src/InstantAIGate.Cli/InstantAIGate.Cli.csproj" />
     <Project Path="src/InstantAIGate.Core/InstantAIGate.Core.csproj" />
+    <Project Path="src/InstantAIGate.Dashboard/InstantAIGate.Dashboard.csproj" />
     <Project Path="src/InstantAIGate.Native/InstantAIGate.Native.csproj" />
     <Project Path="src/InstantAIGate.Server/InstantAIGate.Server.csproj" />
     <Project Path="src/InstantAIGate.SSR/InstantAIGate.SSR.csproj" />

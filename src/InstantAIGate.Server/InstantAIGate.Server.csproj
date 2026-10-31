@@ -8,6 +8,12 @@
     <Version>1.5.5</Version>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="wwwroot\**" />
+    <Content Remove="wwwroot\**" />
+    <EmbeddedResource Remove="wwwroot\**" />
+    <None Remove="wwwroot\**" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.14" />
   </ItemGroup>
@@ -15,7 +21,10 @@
     <ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
     <ProjectReference Include="..\InstantAIGate.Native\InstantAIGate.Native.csproj" />
     <ProjectReference Include="..\InstantAIGate.SSR\InstantAIGate.SSR.csproj" />
+    <ProjectReference Include="..\InstantAIGate.Dashboard\InstantAIGate.Dashboard.csproj" />
   </ItemGroup>
+
+ 
   <ItemGroup>
     <Content Include="..\..\config\model_catalog.json" Link="config\model_catalog.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

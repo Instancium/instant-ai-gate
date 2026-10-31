@@ -1,0 +1,109 @@
+:root {
+    --ig-bg: #0f1115;
+    --ig-surface: #171a21;
+    --ig-border: #262b36;
+    --ig-text: #e6e8ee;
+    --ig-muted: #8a93a6;
+    --ig-accent: #4c8bf5;
+    --ig-ok: #2ecc71;
+    --ig-warn: #f1c40f;
+    --ig-err: #e74c3c;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--ig-bg);
+    color: var(--ig-text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+}
+
+.ig-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 100vh;
+    color: var(--ig-muted);
+}
+
+.ig-page { display: flex; min-height: 100vh; }
+.ig-main { flex: 1; padding: 1.5rem; }
+.ig-content { max-width: 1200px; margin: 0 auto; }
+
+h1 { font-size: 1.4rem; margin: 0 0 1rem 0; }
+h2 { font-size: 1.05rem; margin: 0 0 0.75rem 0; }
+
+.ig-card {
+    background: var(--ig-surface);
+    border: 1px solid var(--ig-border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.ig-status-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background: var(--ig-surface);
+    border: 1px solid var(--ig-border);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.ig-badge {
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.ig-badge--ok { background: rgba(46, 204, 113, 0.15); color: var(--ig-ok); }
+.ig-badge--warn { background: rgba(241, 196, 15, 0.15); color: var(--ig-warn); }
+.ig-badge--err { background: rgba(231, 76, 60, 0.15); color: var(--ig-err); }
+
+.ig-dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.25rem 1rem;
+    margin: 0;
+}
+.ig-dl dt { color: var(--ig-muted); }
+.ig-dl dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.ig-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.ig-form input {
+    padding: 0.4rem 0.6rem;
+    background: var(--ig-bg);
+    color: var(--ig-text);
+    border: 1px solid var(--ig-border);
+    border-radius: 6px;
+    min-width: 240px;
+}
+.ig-form button, .ig-card button {
+    padding: 0.4rem 0.9rem;
+    background: var(--ig-accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.ig-form button:disabled, .ig-card button:disabled { opacity: 0.5; cursor: not-allowed; }
+.ig-error { color: var(--ig-err); }
+
+code { background: var(--ig-bg); padding: 0.05rem 0.3rem; border-radius: 4px; }
+
+#blazor-error-ui {
+    background: var(--ig-err);
+    color: white;
+    padding: 0.5rem 1rem;
+    display: none;
+}

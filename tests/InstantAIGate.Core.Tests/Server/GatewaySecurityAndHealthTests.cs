@@ -83,6 +83,30 @@ public class GatewaySecurityAndHealthTests : IClassFixture<GatewayTestFixture>
     }
 
     [Fact]
+    public async Task RootRoute_Returns200Ok_WithHtmlDashboardEntryPoint()
+    {
+        var response = await _client.GetAsync("/");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(response.Content.Headers.ContentType);
+        Assert.StartsWith("text/html", response.Content.Headers.ContentType!.MediaType ?? string.Empty);
+
+        string body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("InstantAIGate", body);
+        Assert.Contains("blazor.webassembly.js", body);
+    }
+
+    [Fact]
+    public async Task IndexHtml_Returns200Ok_WithHtmlContentType()
+    {
+        var response = await _client.GetAsync("/index.html");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(response.Content.Headers.ContentType);
+        Assert.StartsWith("text/html", response.Content.Headers.ContentType!.MediaType ?? string.Empty);
+    }
+
+    [Fact]
     public async Task StaticAssetPaths_WithoutToken_AreNotRejectedWith401()
     {
         foreach (string path in new[] { "/index.html", "/css/app.css", "/_framework/blazor.webassembly.js", "/favicon.ico" })
