@@ -6,7 +6,9 @@ using InstantAIGate.Core.Services.Inference;
 using InstantAIGate.Core.Services.Infrastructure;
 using InstantAIGate.Native.Inference;
 using InstantAIGate.Native.Logging;
+using InstantAIGate.Native.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Net.Http;
 
@@ -32,6 +34,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<HttpClient>();
         services.AddSingleton<IAssetManager, MemoryAssetManager>();
         services.AddSingleton<IMediaResolver, LocalTempMediaResolver>();
+        services.AddSingleton<IVramProbe>(sp =>
+            OperatingSystem.IsWindows()
+                ? new WindowsVramProbe(sp.GetRequiredService<ILogger<WindowsVramProbe>>())
+                : new LinuxVramProbe(sp.GetRequiredService<ILogger<LinuxVramProbe>>()));
+        services.AddSingleton<IHardwareTelemetryProvider, SystemHardwareTelemetryProvider>();
         NativeStreamRedirector.Initialize(logMessage =>
         {
             Console.Out.WriteLine($"[ggml/clip] {logMessage}");

@@ -7,6 +7,7 @@ namespace InstantAIGate.Core.Dtos.Status;
 public sealed record HardwareMetricsDto
 {
     public long ProcessRamBytes { get; init; }
+    public long ProcessPrivateBytes { get; init; }
     public long ManagedHeapBytes { get; init; }
     public long SystemTotalRamBytes { get; init; }
     public long SystemAvailableRamBytes { get; init; }
