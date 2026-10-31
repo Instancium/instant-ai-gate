@@ -12,8 +12,6 @@
 
 **InstantAIGate** is a high-throughput, deterministic AI inference gateway developed by Instancium, an independent R&D laboratory. Engineered on a compiled, cross-platform .NET 10 architecture with direct native memory bindings, it establishes Architectural Autonomy and Vendor Independence by allowing teams to deploy production-grade AI solutions within a controlled data perimeter.
 
----
-
 ## The Philosophy: Controlled AI Context & Specialized Stability
 
 Unlike conventional stateless proxies that attempt one-size-fits-all universality, InstantAIGate is purpose-built for deep, production-grade memory control and deterministic behavior. 
@@ -25,7 +23,6 @@ Unlike conventional stateless proxies that attempt one-size-fits-all universalit
 
 For a definitive list of officially supported and tested model configurations, refer to the [`config/model_catalog.json`](config/model_catalog.json) file.
 
----
 
 ## Key Features
 
@@ -65,7 +62,6 @@ For a definitive list of officially supported and tested model configurations, r
 - **Disconnect Grace Period:** Network interruptions preserve session context in VRAM for a configurable window (default: 30s), enabling seamless client reconnections.
 - **Safe Eviction:** Abandoned sessions exceeding the idle timeout are safely synchronized with internal `ExecutionGate` semaphores before being returned to the VRAM pool.
 
----
 
 ## Architecture
 
@@ -87,7 +83,30 @@ InstantAIGate isolates client orchestration from the gateway server and underlyi
 - **Dynamic Request Queue:** Provides backpressure control, prioritizing and throttling requests to prevent hardware saturation.
 - **P/Invoke Bindings:** `LlamaNative` and `MtmdNative` execute hardware-accelerated tensor operations directly via compiled runtimes, avoiding runtime virtualization overhead.
 
----
+## Native Runtimes & Binaries
+
+InstantAIGate interfaces directly with compiled `llama.cpp` inference binaries (`v0.4.0`) located in `src/InstantAIGate.Native/runtimes/`. 
+
+> **Roadmap Note:** Currently, native binaries can be built independently using the provided build scripts. In upcoming releases, this process will be simplified by bundling precompiled binary drivers directly with the repository code.
+
+### Manual Build Instructions
+
+#### Windows (`win-x64`)
+1. Ensure CMake and Visual Studio Build Tools are installed.
+2. Run the build script:
+   ```powershell
+   .\src\InstantAIGate.Native/runtimes/build/start.ps1
+   ```
+   *Automatically clones `llama.cpp` (if missing), checks out `v0.4.0`, configures Vulkan support, and places artifacts in `win-x64/native`.*
+
+#### Linux (`linux-x64`)
+1. Ensure Docker and Docker Compose are installed.
+2. Run the build script:
+   ```bash
+   chmod +x src/InstantAIGate.Native/runtimes/build/start.sh
+   ./src/InstantAIGate.Native/runtimes/build/start.sh
+   ```
+   *Compiles libraries inside a container and extracts them to `linux-x64/native` preserving symlinks via tarballs.*
 
 ## Client Integration & Protocol Contract
 
@@ -96,7 +115,6 @@ The complete wire contract is documented in the [Client Integration Guide](docs/
 ### Typed Contracts for .NET
 For C# developers, the [InstantAIGate.Core](https://www.nuget.org/packages/InstantAIGate.Core/) NuGet package provides all strongly-typed DTOs (`InstantAIGate.Core.Dtos.*`) and interfaces, ensuring compile-time safety and eliminating manual JSON payload parsing.
 
----
 >
 > ### Hardware Acceleration & Cross-Platform Execution
 >
@@ -114,7 +132,6 @@ For C# developers, the [InstantAIGate.Core](https://www.nuget.org/packages/Insta
 > | Windows | x64 | `runtimes/win-x64/*.dll` |
 > | Linux | x64 | `runtimes/linux-x64/*.so` |
 >
----
 
 ## Deployment
 
@@ -122,7 +139,6 @@ For C# developers, the [InstantAIGate.Core](https://www.nuget.org/packages/Insta
 - **Docker:** `Dockerfile` and `docker-compose.yml` in `deploy/docker/` for containerized Linux deployment.
 - **Standalone:** Self-contained single-file publish via `dotnet publish`.
 
----
 
 ## ⚠️ Versioning & Stability Policy 
 
@@ -140,7 +156,6 @@ Until version `2.0.0` is released, the public API and wire contract are not froz
 
 The NuGet package **`InstantAIGate.Core`** serves as the primary stability boundary for downstream consumers. 
 
----
 
 ## 📄 License & Trademark
 

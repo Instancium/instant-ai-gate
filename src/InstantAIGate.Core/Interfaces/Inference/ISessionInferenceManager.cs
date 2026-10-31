@@ -2,7 +2,9 @@
 
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
+using InstantAIGate.Core.Dtos.Status;
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -62,4 +64,16 @@ public interface ISessionInferenceManager
     void AppendSessionTokens(string sessionId, int[] tokens);
     int[] GetSessionPrefixTokens(string sessionId);
     int GetPastTokensCount(string sessionId);
+
+    /// <summary>
+    /// Updates the last-known performance metrics (TPS) for a session.
+    /// Called by the inference engine during prompt evaluation and token generation.
+    /// </summary>
+    void UpdateSessionPerformance(string sessionId, double promptTps, double evalTps);
+
+    /// <summary>
+    /// Returns a thread-safe, immutable snapshot of all active and grace-period sessions
+    /// for dashboard telemetry. Does not block the generation pipeline.
+    /// </summary>
+    IReadOnlyList<SessionTelemetryDto> GetSessionsTelemetry();
 }

@@ -335,6 +335,49 @@ public sealed class ModelManager : IDisposable, IModelManager
     public IEnumerable<string> GetActiveModels() => _activeModels.Keys.ToList();
     public IEnumerable<NativeModelDetails> GetNativeDetails() => _modelProvider.GetNativeDetails();
 
+    public IReadOnlyList<ModelPoolTelemetryDto> GetModelsPoolTelemetry()
+    {
+        var nativeDetailsMap = _modelProvider.GetNativeDetails()
+            .ToDictionary(d => d.RepoId, StringComparer.OrdinalIgnoreCase);
+
+        var result = new List<ModelPoolTelemetryDto>(_activeModels.Count);
+
+        foreach (var kvp in _activeModels)
+        {
+            var repoId = kvp.Key;
+            var settings = kvp.Value;
+
+            _modelLeases.TryGetValue(repoId, out int activeLeases);
+            _drainingModels.TryGetValue(repoId, out bool isDraining);
+
+            int idlePooledContexts = 0;
+            int totalLayers = 0;
+            if (nativeDetailsMap.TryGetValue(repoId, out var native))
+            {
+                idlePooledContexts = native.IdleContextsCount;
+                totalLayers = native.TotalLayers;
+            }
+
+            result.Add(new ModelPoolTelemetryDto
+            {
+                RepoId = repoId,
+                Type = settings.Type,
+                IsLoaded = true,
+                IsDraining = isDraining,
+                ActiveLeases = activeLeases,
+                IdlePooledContexts = idlePooledContexts,
+                MaxContexts = settings.MaxContexts,
+                GpuLayers = settings.GpuLayerCount,
+                TotalLayers = totalLayers,
+                ContextSize = settings.ContextSize,
+                KvCacheQuantization = settings.KvCacheQuantization,
+                ModelWeightsBytes = 0
+            });
+        }
+
+        return result;
+    }
+
     public void Dispose()
     {
         _globalLock.Dispose();

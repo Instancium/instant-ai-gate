@@ -25,4 +25,10 @@ public interface IModelManager : IDisposable
     IEnumerable<NativeModelDetails> GetNativeDetails();
     Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default);
     Task<int> GetEmbeddingDimensionAsync(string repoId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a comprehensive telemetry snapshot of all loaded model pools,
+    /// including active leases, idle pooled contexts, and configuration details.
+    /// </summary>
+    IReadOnlyList<ModelPoolTelemetryDto> GetModelsPoolTelemetry();
 }
