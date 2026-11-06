@@ -1,0 +1,232 @@
+@namespace InstantAIGate.Dashboard.Components
+@using System.Globalization
+@using InstantAIGate.Core.Dtos.Status
+
+<section class="panel-card">
+    <div class="panel-header">
+        <div>
+            <h2 class="panel-title">Real-Time Performance &amp; Queue Monitor</h2>
+            <span class="panel-subtitle">Autoregressive Token Generation (Eval TPS), Prefill (Prompt TPS) &amp; Backpressure</span>
+        </div>
+        <div class="tps-kpi-group">
+            <div class="kpi-pill eval">
+                <span class="kpi-label">Aggregate Gen TPS</span>
+                <span class="kpi-value">@($"{CurrentEvalTps:F1}") <small>tok/s</small></span>
+            </div>
+            <div class="kpi-pill prompt">
+                <span class="kpi-label">Prompt Prefill TPS</span>
+                <span class="kpi-value">@($"{CurrentPromptTps:F1}") <small>tok/s</small></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="queue-bar-panel">
+        <div class="queue-info">
+            <div class="queue-numbers">
+                <span class="metric-title">DynamicRequestQueue Backpressure</span>
+                <span class="queue-badge @(PendingRequests > 0 ? "warn" : "ok")">
+                    Pending: @PendingRequests / @MaxQueueSize
+                </span>
+                <span class="queue-badge info">
+                    Active Context Leases: @(Snapshot?.InferenceMetrics.ActiveLeases ?? 0)
+                </span>
+            </div>
+            <div class="progress-track compact">
+                <div class="progress-fill @(QueueUtilizationPercent > 80 ? "danger" : "ok")"
+                     style="width: @FormatPercent(QueueUtilizationPercent)%;"></div>
+            </div>
+        </div>
+
+        <div class="queue-controls">
+            <label for="queue-limit-input" class="control-label">Queue Limit:</label>
+            <input id="queue-limit-input"
+                   type="number"
+                   min="1"
+                   max="10000"
+                   class="input-compact"
+                   @bind="_queueLimitInput"
+                   disabled="@IsBusy" />
+            <button type="button"
+                    class="btn btn-secondary btn-sm"
+                    disabled="@(IsBusy || _queueLimitInput <= 0)"
+                    @onclick="ApplyQueueLimitAsync">
+                Apply Limit
+            </button>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <div class="chart-header">
+            <span class="chart-title">Throughput History (Last @(History?.Count ?? 0)s — 2 Min Window)</span>
+            <div class="chart-legend">
+                <span class="legend-item"><span class="legend-line line-eval-tps"></span>Eval TPS (Peak: @($"{PeakEvalTps:F1}") tok/s)</span>
+                <span class="legend-item"><span class="legend-line line-prompt-tps"></span>Prompt TPS (Peak: @($"{PeakPromptTps:F1}") tok/s)</span>
+            </div>
+        </div>
+
+        <svg class="telemetry-svg" viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="TPS History Chart">
+            <defs>
+                <linearGradient id="evalTpsGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#34d399" stop-opacity="0.30" />
+                    <stop offset="100%" stop-color="#34d399" stop-opacity="0.02" />
+                </linearGradient>
+            </defs>
+
+            <line x1="0" y1="20" x2="600" y2="20" class="svg-grid" />
+            <line x1="0" y1="80" x2="600" y2="80" class="svg-grid" />
+            <line x1="0" y1="140" x2="600" y2="140" class="svg-grid" />
+
+            @if (History is { Count: >= 2 })
+            {
+                <polygon points="@BuildEvalTpsAreaPoints()" fill="url(#evalTpsGrad)" />
+                <polyline points="@BuildPromptTpsLinePoints()" class="svg-line-prompt-tps" />
+                <polyline points="@BuildEvalTpsLinePoints()" class="svg-line-eval-tps" />
+            }
+            else
+            {
+                <g>
+                  <text x="300" y="85" text-anchor="middle" class="svg-empty-text">Waiting for inference throughput samples...</text>
+                </g>
+            }
+        </svg>
+    </div>
+</section>
+
+@code {
+    [Parameter] public DashboardTelemetrySnapshot? Snapshot { get; set; }
+    [Parameter] public IReadOnlyList<DashboardTelemetrySnapshot>? History { get; set; }
+    [Parameter] public EventCallback<int> OnUpdateQueueLimit { get; set; }
+    [Parameter] public bool IsBusy { get; set; }
+
+    private int _queueLimitInput = 100;
+    private int _lastSyncedQueueLimit = 100;
+
+    protected override void OnParametersSet()
+    {
+        int incomingLimit = Snapshot?.InferenceMetrics.MaxQueueSize ?? 100;
+        if (incomingLimit > 0 && incomingLimit != _lastSyncedQueueLimit)
+        {
+            _lastSyncedQueueLimit = incomingLimit;
+            _queueLimitInput = incomingLimit;
+        }
+    }
+
+    private int PendingRequests => Snapshot?.InferenceMetrics.PendingRequests ?? 0;
+    private int MaxQueueSize => Snapshot?.InferenceMetrics.MaxQueueSize is > 0
+        ? Snapshot.InferenceMetrics.MaxQueueSize
+        : 100;
+
+    private double QueueUtilizationPercent =>
+        MaxQueueSize > 0 ? Math.Clamp((double)PendingRequests / MaxQueueSize * 100.0, 0.0, 100.0) : 0.0;
+
+    private double CurrentEvalTps => ComputeAggregateEvalTps(Snapshot);
+    private double CurrentPromptTps => ComputeAggregatePromptTps(Snapshot);
+
+    private double PeakEvalTps
+    {
+        get
+        {
+            double max = CurrentEvalTps;
+            if (History is not null)
+            {
+                for (int i = 0; i < History.Count; i++)
+                {
+                    double val = ComputeAggregateEvalTps(History[i]);
+                    if (val > max) max = val;
+                }
+            }
+            return max;
+        }
+    }
+
+    private double PeakPromptTps
+    {
+        get
+        {
+            double max = CurrentPromptTps;
+            if (History is not null)
+            {
+                for (int i = 0; i < History.Count; i++)
+                {
+                    double val = ComputeAggregatePromptTps(History[i]);
+                    if (val > max) max = val;
+                }
+            }
+            return max;
+        }
+    }
+
+    private static double ComputeAggregateEvalTps(DashboardTelemetrySnapshot? snapshot)
+    {
+        if (snapshot?.Sessions is null || snapshot.Sessions.Count == 0) return 0.0;
+        double sum = 0.0;
+        for (int i = 0; i < snapshot.Sessions.Count; i++)
+        {
+            sum += Math.Max(0.0, snapshot.Sessions[i].EvalTps);
+        }
+        return sum;
+    }
+
+    private static double ComputeAggregatePromptTps(DashboardTelemetrySnapshot? snapshot)
+    {
+        if (snapshot?.Sessions is null || snapshot.Sessions.Count == 0) return 0.0;
+        double max = 0.0;
+        for (int i = 0; i < snapshot.Sessions.Count; i++)
+        {
+            if (snapshot.Sessions[i].PromptTps > max)
+            {
+                max = snapshot.Sessions[i].PromptTps;
+            }
+        }
+        return max;
+    }
+
+    private string BuildEvalTpsLinePoints()
+    {
+        if (History is null || History.Count < 2) return string.Empty;
+        double scaleMax = Math.Max(10.0, PeakEvalTps);
+        return BuildPolyline(History.Count, i => ComputeAggregateEvalTps(History[i]) / scaleMax);
+    }
+
+    private string BuildEvalTpsAreaPoints()
+    {
+        string line = BuildEvalTpsLinePoints();
+        return string.IsNullOrEmpty(line) ? string.Empty : $"0,145 {line} 600,145";
+    }
+
+    private string BuildPromptTpsLinePoints()
+    {
+        if (History is null || History.Count < 2) return string.Empty;
+        double scaleMax = Math.Max(10.0, PeakPromptTps);
+        return BuildPolyline(History.Count, i => ComputeAggregatePromptTps(History[i]) / scaleMax);
+    }
+
+    private static string BuildPolyline(int count, Func<int, double> normalizedSelector)
+    {
+        const double width = 600.0;
+        const double topY = 15.0;
+        const double bottomY = 145.0;
+        double height = bottomY - topY;
+
+        var points = new string[count];
+        for (int i = 0; i < count; i++)
+        {
+            double x = (double)i / (count - 1) * width;
+            double ratio = Math.Clamp(normalizedSelector(i), 0.0, 1.0);
+            double y = bottomY - (ratio * height);
+            points[i] = string.Create(CultureInfo.InvariantCulture, $"{x:F1},{y:F1}");
+        }
+        return string.Join(' ', points);
+    }
+
+    private async Task ApplyQueueLimitAsync()
+    {
+        if (_queueLimitInput > 0 && OnUpdateQueueLimit.HasDelegate)
+        {
+            await OnUpdateQueueLimit.InvokeAsync(_queueLimitInput);
+        }
+    }
+
+    private static string FormatPercent(double value) =>
+        Math.Clamp(value, 0.0, 100.0).ToString("F1", CultureInfo.InvariantCulture);
+}

@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "InstantAIGate.Dashboard": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:20245;http://localhost:20246"
+    }
+  }
+}

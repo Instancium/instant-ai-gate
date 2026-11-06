@@ -1,0 +1,300 @@
+@namespace InstantAIGate.Dashboard.Components
+@using System.Globalization
+@using InstantAIGate.Core.Dtos.Status
+@using InstantAIGate.Dashboard.Services
+
+<section class="panel-card">
+    <div class="panel-header">
+        <div>
+            <h2 class="panel-title">Memory Leak Radar (Hardware vs Application)</h2>
+            <span class="panel-subtitle">Native C++ / Vulkan VRAM &amp; Unmanaged Heap Correlation</span>
+        </div>
+        @if (_report.IsNativeRetentionSuspected)
+        {
+            <div class="retention-alert" role="alert">
+                <span class="pulse-dot danger"></span>
+                <span>Suspected Native Memory Retention</span>
+            </div>
+        }
+        else
+        {
+            <div class="retention-ok">
+                <span class="status-dot ok"></span>
+                <span>Memory Baseline Nominal</span>
+            </div>
+        }
+    </div>
+
+    @if (_report.IsNativeRetentionSuspected && !string.IsNullOrWhiteSpace(_report.RetentionDiagnosticMessage))
+    {
+        <div class="alert-banner danger">
+            <strong>Anomaly Detected:</strong> @_report.RetentionDiagnosticMessage
+        </div>
+    }
+
+    @if (_report.IsVramSpilloverRisk)
+    {
+        <div class="alert-banner warn">
+            <strong>VRAM Spillover Risk (&gt;95%):</strong> GPU memory is nearly exhausted (@($"{_report.VramUtilizationPercent:F1}%")). PCIe system RAM paging may severely degrade Token Generation TPS.
+        </div>
+    }
+
+    <div class="memory-cards-grid">
+
+        <div class="metric-box">
+            <div class="metric-box-header">
+                <span class="metric-title">VRAM (GPU) — @(Snapshot?.Hardware.GpuProviderName ?? "Unknown")</span>
+                <span class="metric-highlight">@FormatBytes(Snapshot?.Hardware.VramUsedBytes ?? 0) / @FormatBytes(Snapshot?.Hardware.VramTotalBytes ?? 0)</span>
+            </div>
+
+            <div class="progress-track">
+                <div class="progress-fill @GetVramBarClass(_report.VramUtilizationPercent)"
+                     style="width: @FormatPercent(_report.VramUtilizationPercent)%;"></div>
+            </div>
+
+            <div class="metric-subrow">
+                <span>Device Utilization: <strong>@($"{_report.VramUtilizationPercent:F1}%")</strong></span>
+                <span>Process VRAM: <strong>@FormatBytes(Snapshot?.Hardware.VramProcessUsedBytes ?? 0)</strong></span>
+            </div>
+
+            <div class="breakdown-list">
+                <div class="breakdown-item">
+                    <span class="breakdown-label"><span class="legend-swatch swatch-weights"></span>Loaded Model Weights</span>
+                    <span class="breakdown-val">@FormatBytes(_report.TotalModelWeightsBytes)</span>
+                </div>
+                <div class="breakdown-item">
+                    <span class="breakdown-label"><span class="legend-swatch swatch-kv"></span>Allocated Slots KV-Cache (@_report.TotalAllocatedContexts slots)</span>
+                    <span class="breakdown-val">~@FormatBytes(_report.EstimatedKvCacheBytes)</span>
+                </div>
+                <div class="breakdown-item">
+                    <span class="breakdown-label"><span class="legend-swatch swatch-delta"></span>Unaccounted Delta (&Delta; VRAM / External / Native)</span>
+                    <span class="breakdown-val @(_report.IsNativeRetentionSuspected ? "text-danger" : "")">@FormatBytes(_report.UnaccountedVramDeltaBytes)</span>
+                </div>
+            </div>
+        </div>
+
+
+        <div class="metric-box">
+            <div class="metric-box-header">
+                <span class="metric-title">RAM (Host &amp; Process) &amp; CPU</span>
+                <span class="metric-highlight">CPU: @($"{Snapshot?.Hardware.CpuUsagePercent ?? 0:F1}%")</span>
+            </div>
+
+            <div class="progress-track">
+                <div class="progress-fill info"
+                     style="width: @FormatPercent(HostRamPercent)%;"></div>
+            </div>
+
+            <div class="metric-subrow">
+                <span>Host RAM Used: <strong>@FormatBytes(HostRamUsedBytes) / @FormatBytes(Snapshot?.Hardware.SystemTotalRamBytes ?? 0)</strong></span>
+                <span>Available: <strong>@FormatBytes(Snapshot?.Hardware.SystemAvailableRamBytes ?? 0)</strong></span>
+            </div>
+
+            <div class="breakdown-list">
+                <div class="breakdown-item">
+                    <span class="breakdown-label"><span class="legend-swatch swatch-ws"></span>Process Working Set</span>
+                    <span class="breakdown-val">@FormatBytes(_report.ProcessWorkingSetBytes)</span>
+                </div>
+                <div class="breakdown-item">
+                    <span class="breakdown-label"><span class="legend-swatch swatch-unmanaged"></span>Private Unmanaged Difference (Native C++)</span>
+                    <span class="breakdown-val @(_report.IsNativeRetentionSuspected ? "text-warn" : "")">@FormatBytes(_report.PrivateUnmanagedBytes)</span>
+                </div>
+                <div class="breakdown-item">
+                    <span class="breakdown-label"><span class="legend-swatch swatch-gc"></span>.NET GC Managed Heap</span>
+                    <span class="breakdown-val">@FormatBytes(_report.ManagedHeapBytes)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="chart-container">
+        <div class="chart-header">
+            <span class="chart-title">Time-Series Correlation (Last @(History?.Count ?? 0)s): Physical Memory vs Allocated Contexts</span>
+            <div class="chart-legend">
+                <span class="legend-item"><span class="legend-line line-mem"></span>@(IsGpuTelemetryActive ? "Physical VRAM Used" : "Process Unmanaged RAM") (@FormatBytes(PeakMemoryBytes) peak)</span>
+                <span class="legend-item"><span class="legend-line line-ctx"></span>Allocated Contexts (@PeakContextsCount max)</span>
+            </div>
+        </div>
+
+        <svg class="telemetry-svg" viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="Memory and Contexts Correlation Chart">
+            <defs>
+                <linearGradient id="memAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.32" />
+                    <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.02" />
+                </linearGradient>
+            </defs>
+
+            <!-- Grid lines -->
+            <line x1="0" y1="20" x2="600" y2="20" class="svg-grid" />
+            <line x1="0" y1="80" x2="600" y2="80" class="svg-grid" />
+            <line x1="0" y1="140" x2="600" y2="140" class="svg-grid" />
+
+            @if (History is { Count: >= 2 })
+            {
+                <polygon points="@BuildMemoryAreaPoints()" fill="url(#memAreaGrad)" />
+                <polyline points="@BuildMemoryLinePoints()" class="svg-line-memory" />
+                <polyline points="@BuildContextsLinePoints()" class="svg-line-contexts" />
+            }
+            else
+            {
+                <g>
+                   <text x="300" y="85" text-anchor="middle" class="svg-empty-text">Collecting telemetry samples (1 Hz)...</text>
+                </g>
+            }
+        </svg>
+    </div>
+</section>
+
+@code {
+    [Parameter] public DashboardTelemetrySnapshot? Snapshot { get; set; }
+    [Parameter] public IReadOnlyList<DashboardTelemetrySnapshot>? History { get; set; }
+
+    private MemoryLeakReport _report = new();
+
+    protected override void OnParametersSet()
+    {
+        _report = MemoryLeakAnalyzer.Analyze(Snapshot, History);
+    }
+
+    private bool IsGpuTelemetryActive => (Snapshot?.Hardware.VramTotalBytes ?? 0) > 0;
+
+    private long HostRamUsedBytes
+    {
+        get
+        {
+            long total = Snapshot?.Hardware.SystemTotalRamBytes ?? 0;
+            long avail = Snapshot?.Hardware.SystemAvailableRamBytes ?? 0;
+            return Math.Max(0, total - avail);
+        }
+    }
+
+    private double HostRamPercent
+    {
+        get
+        {
+            long total = Snapshot?.Hardware.SystemTotalRamBytes ?? 0;
+            return total > 0 ? Math.Clamp((double)HostRamUsedBytes / total * 100.0, 0.0, 100.0) : 0.0;
+        }
+    }
+
+    private long PeakMemoryBytes
+    {
+        get
+        {
+            if (History is null || History.Count == 0)
+            {
+                return GetSampleMemoryBytes(Snapshot);
+            }
+            long max = 0;
+            for (int i = 0; i < History.Count; i++)
+            {
+                long val = GetSampleMemoryBytes(History[i]);
+                if (val > max) max = val;
+            }
+            return max;
+        }
+    }
+
+    private int PeakContextsCount
+    {
+        get
+        {
+            int max = 4;
+            if (History is not null)
+            {
+                for (int i = 0; i < History.Count; i++)
+                {
+                    int c = GetSampleContextsCount(History[i]);
+                    if (c > max) max = c;
+                }
+            }
+            return max;
+        }
+    }
+
+    private long GetSampleMemoryBytes(DashboardTelemetrySnapshot? s)
+    {
+        if (s is null) return 0;
+        if (s.Hardware.VramTotalBytes > 0)
+        {
+            return s.Hardware.VramProcessUsedBytes > 0
+                ? s.Hardware.VramProcessUsedBytes
+                : s.Hardware.VramUsedBytes;
+        }
+
+        long priv = s.Hardware.ProcessPrivateBytes > 0
+            ? s.Hardware.ProcessPrivateBytes
+            : s.Hardware.ProcessRamBytes;
+        return Math.Max(0, priv - s.Hardware.ManagedHeapBytes);
+    }
+
+    private static int GetSampleContextsCount(DashboardTelemetrySnapshot? s)
+    {
+        if (s?.Models is null) return 0;
+        int sum = 0;
+        for (int i = 0; i < s.Models.Count; i++)
+        {
+            sum += s.Models[i].ActiveLeases + s.Models[i].IdlePooledContexts;
+        }
+        return sum;
+    }
+
+    private string BuildMemoryLinePoints()
+    {
+        if (History is null || History.Count < 2) return string.Empty;
+        long maxMem = Math.Max(1, PeakMemoryBytes);
+        return BuildPolyline(History.Count, i => (double)GetSampleMemoryBytes(History[i]) / maxMem);
+    }
+
+    private string BuildMemoryAreaPoints()
+    {
+        string line = BuildMemoryLinePoints();
+        return string.IsNullOrEmpty(line) ? string.Empty : $"0,145 {line} 600,145";
+    }
+
+    private string BuildContextsLinePoints()
+    {
+        if (History is null || History.Count < 2) return string.Empty;
+        int maxCtx = Math.Max(1, PeakContextsCount);
+        return BuildPolyline(History.Count, i => (double)GetSampleContextsCount(History[i]) / maxCtx);
+    }
+
+    private static string BuildPolyline(int count, Func<int, double> normalizedValueSelector)
+    {
+        const double width = 600.0;
+        const double topY = 15.0;
+        const double bottomY = 145.0;
+        double usableHeight = bottomY - topY;
+
+        var parts = new string[count];
+        for (int i = 0; i < count; i++)
+        {
+            double x = (double)i / (count - 1) * width;
+            double ratio = Math.Clamp(normalizedValueSelector(i), 0.0, 1.0);
+            double y = bottomY - (ratio * usableHeight);
+            parts[i] = string.Create(CultureInfo.InvariantCulture, $"{x:F1},{y:F1}");
+        }
+        return string.Join(' ', parts);
+    }
+
+    private static string GetVramBarClass(double percent) =>
+        percent >= 95.0 ? "danger" : (percent >= 80.0 ? "warn" : "ok");
+
+    private static string FormatPercent(double value) =>
+        Math.Clamp(value, 0.0, 100.0).ToString("F1", CultureInfo.InvariantCulture);
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double value = bytes;
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return string.Create(CultureInfo.InvariantCulture, $"{value:0.##} {units[unit]}");
+    }
+}

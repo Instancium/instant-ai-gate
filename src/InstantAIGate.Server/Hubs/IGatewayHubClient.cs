@@ -3,7 +3,6 @@
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Dtos.Status;
-using InstantAIGate.Core.Exceptions;
 using InstantAIGate.SSR.Dtos;
 using System.Threading.Tasks;
 
@@ -18,4 +17,5 @@ public interface IGatewayHubClient
     Task ReceiveLog(string level, string category, string message);
     Task ReceiveMetrics(InferenceMetrics metrics, object nativeDetails);
     Task ReceiveGatewayStatus(GatewayStatusDetails status);
+    Task ReceiveDashboardTelemetry(DashboardTelemetrySnapshot snapshot);
 }

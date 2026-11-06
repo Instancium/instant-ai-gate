@@ -3,6 +3,7 @@
 using InstantAIGate.Core.Dtos.Config;
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
+using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Interfaces.Native;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,7 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
     {
         public SessionStartRequest Request { get; }
         public string RepoId => Request.RepoId;
+        public DateTimeOffset CreatedAt { get; }
         public int PastTokens { get; set; } = 0;
         public List<int> TokenSequence { get; } = new();
         public readonly SemaphoreSlim ExecutionGate = new(1, 1);
@@ -28,10 +30,13 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
         public DateTimeOffset LastAccessed { get; private set; }
         public string? BoundConnectionId { get; set; }
         public CancellationTokenSource? DisconnectGraceCts { get; set; }
+        public double LastPromptTps { get; set; }
+        public double LastEvalTps { get; set; }
 
         public StatefulSessionEntry(SessionStartRequest request, DateTimeOffset createdAt, string? connectionId = null)
         {
             Request = request;
+            CreatedAt = createdAt;
             LastAccessed = createdAt;
             BoundConnectionId = connectionId;
         }
@@ -504,6 +509,73 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
         return 0;
     }
 
+    public void UpdateSessionPerformance(string sessionId, double promptTps, double evalTps)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            lock (session.LockObj)
+            {
+                session.LastPromptTps = promptTps;
+                session.LastEvalTps = evalTps;
+                session.Touch(_timeProvider.GetUtcNow());
+            }
+        }
+    }
+
+    public IReadOnlyList<SessionTelemetryDto> GetSessionsTelemetry()
+    {
+        var now = _timeProvider.GetUtcNow();
+        var result = new List<SessionTelemetryDto>(_sessions.Count);
+
+        foreach (var kvp in _sessions)
+        {
+            var session = kvp.Value;
+            lock (session.LockObj)
+            {
+                SessionStateType state;
+                if (session.DisconnectGraceCts != null)
+                {
+                    state = SessionStateType.DisconnectedGracePeriod;
+                }
+                else if (session.ExecutionGate.CurrentCount == 0)
+                {
+                    state = SessionStateType.Generating;
+                }
+                else
+                {
+                    state = SessionStateType.Idle;
+                }
+
+                int maxContextTokens = 0;
+                var modelSettings = _modelManager.GetModelSettings(session.RepoId);
+                if (modelSettings != null)
+                {
+                    maxContextTokens = modelSettings.ContextSize;
+                }
+
+                double idleSeconds = (now - session.LastAccessed).TotalSeconds;
+
+                result.Add(new SessionTelemetryDto
+                {
+                    SessionId = kvp.Key,
+                    RepoId = session.RepoId,
+                    State = state,
+                    PastTokens = session.PastTokens,
+                    MaxContextTokens = maxContextTokens,
+                    PromptTps = session.LastPromptTps,
+                    EvalTps = session.LastEvalTps,
+                    CreatedAt = session.CreatedAt,
+                    LastAccessedAt = session.LastAccessed,
+                    IdleSeconds = Math.Max(0.0, idleSeconds),
+                    HasAllocatedContext = session.ActiveContext != null,
+                    BoundConnectionId = session.BoundConnectionId
+                });
+            }
+        }
+
+        return result;
+    }
+
     public async Task CleanupIdleSessionsAsync()
     {
         var now = _timeProvider.GetUtcNow();
@@ -512,7 +584,6 @@ public sealed class SessionInferenceManager : ISessionInferenceManager, IDisposa
             if (now - kvp.Value.LastAccessed > _idleTimeout)
             {
                 _logger.LogInformation("Evicting expired idle session {SessionId}", kvp.Key);
-                // Return to pool for idle evictions
                 await ReleaseSessionAsync(kvp.Key, destroySlot: false);
             }
         }

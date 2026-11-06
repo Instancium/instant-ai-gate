@@ -17,6 +17,11 @@
         public int PendingRequests { get; init; }
 
         /// <summary>
+        /// Maximum queue depth currently enforced by the gateway.
+        /// </summary>
+        public int MaxQueueSize { get; init; } = 100;
+
+        /// <summary>
         /// Initializes a new instance of the inference metrics.
         /// </summary>
         /// <param name="activeLeases">Number of active leases.</param>

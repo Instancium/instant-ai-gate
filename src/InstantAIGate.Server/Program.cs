@@ -73,6 +73,8 @@ public class Program
         app.UseMiddleware<GatewayExceptionMiddleware>();
         app.UseMiddleware<ApiKeyAuthMiddleware>();
         app.UseAuthorization();
+        app.UseBlazorFrameworkFiles();
+        app.UseStaticFiles();
 
         app.MapHealthChecks("/health/live", new HealthCheckOptions
         {
@@ -91,6 +93,7 @@ public class Program
         });
 
         app.MapHub<GatewayHub>("/hub/gateway");
+        app.MapFallbackToFile("index.html");
 
         app.Run();
     }

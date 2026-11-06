@@ -1,8 +1,5 @@
 ﻿using InstantAIGate.Core.Dtos.Inference;
-using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Dtos.Status;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace InstantAIGate.Core.Interfaces.Hub;
 

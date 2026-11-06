@@ -21,6 +21,9 @@
         bool RemoveContextMemoryRange(IContextHandle contextHandle, int seqId, int p0, int p1);
         void ShiftContextMemoryRange(IContextHandle contextHandle, int seqId, int p0, int p1, int delta);
         int GetModelLayerCount(IModelHandle modelHandle);
+        ulong GetModelSizeBytes(IModelHandle modelHandle);
+        InstantAIGate.Core.Dtos.Inference.Native.ContextPerformanceData GetContextPerformance(IContextHandle contextHandle);
+        void ResetContextPerformance(IContextHandle contextHandle);
 
         /// <summary>
         /// Reads the sequence-level embedding vector produced after a successful llama_decode pass.

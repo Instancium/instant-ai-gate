@@ -1,20 +1,23 @@
 ﻿namespace InstantAIGate.Native.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
+using InstantAIGate.Core.Dtos.Inference.Native;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Interfaces.Native;
 using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.Handles;
 using System;
 using System.Runtime.InteropServices;
+using BackendLogCallback = InstantAIGate.Core.Interfaces.Inference.BackendLogCallback;
 
 public class BackendFacade : IBackendFacade
 {
+    private static GgmlLogCallback? _nativeLogCallback;
+
     public void LoadAllBackends() => LlamaNative.llama_backend_init();
     public void BackendInit() => LlamaNative.llama_backend_init();
     public void BackendFree() => LlamaNative.llama_backend_free();
     public bool SupportsGpuOffload() => LlamaNative.llama_supports_gpu_offload();
-    private static GgmlLogCallback? _nativeLogCallback;
 
     public IModelHandle LoadModel(ModelSettings settings, string modelPath)
     {
@@ -37,11 +40,9 @@ public class BackendFacade : IBackendFacade
     {
         if (modelHandle is not LlamaModelHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
             throw new ArgumentException("Invalid model handle type.", nameof(modelHandle));
-
         int dimension = LlamaNative.llama_model_n_embd(nativeHandle.Pointer);
         if (dimension <= 0)
             throw new InvalidOperationException("Native engine returned non-positive embedding dimension.");
-
         return dimension;
     }
 
@@ -85,6 +86,7 @@ public class BackendFacade : IBackendFacade
         ctxParams.Embeddings = settings.Embeddings;
         ctxParams.OffloadKqv = settings.GpuLayerCount > 0;
         ctxParams.FlashAttnType = settings.FlashAttention ? LlamaFlashAttnType.Enabled : LlamaFlashAttnType.Disabled;
+        ctxParams.NoPerf = false;
 
         var ggmlType = settings.KvCacheQuantization?.ToUpperInvariant() switch
         {
@@ -99,7 +101,9 @@ public class BackendFacade : IBackendFacade
         ctxParams.TypeV = ggmlType;
 
         IntPtr ptr = LlamaNative.llama_init_from_model(nativeHandle.Pointer, in ctxParams);
-        return ptr != IntPtr.Zero ? new LlamaContextHandle(ptr) : throw new InvalidOperationException("Failed to create context natively.");
+        return ptr != IntPtr.Zero
+            ? new LlamaContextHandle(ptr)
+            : throw new InvalidOperationException("Failed to create context natively.");
     }
 
     public void FreeModel(IModelHandle modelHandle)
@@ -139,20 +143,15 @@ public class BackendFacade : IBackendFacade
     {
         if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
             return null;
-
         IntPtr embeddingsPtr = LlamaNative.llama_get_embeddings_seq(nativeHandle.Pointer, seqId);
         if (embeddingsPtr == IntPtr.Zero)
             return null;
-
         IntPtr modelPtr = LlamaNative.llama_get_model(nativeHandle.Pointer);
         int embeddingDim = LlamaNative.llama_model_n_embd(modelPtr);
-
         if (embeddingDim <= 0)
             return null;
-
         float[] embeddings = new float[embeddingDim];
         Marshal.Copy(embeddingsPtr, embeddings, 0, embeddingDim);
-
         return embeddings;
     }
 
@@ -178,5 +177,47 @@ public class BackendFacade : IBackendFacade
             }
         };
         LlamaNative.llama_log_set(_nativeLogCallback, IntPtr.Zero);
+    }
+
+    public ulong GetModelSizeBytes(IModelHandle modelHandle)
+    {
+        if (modelHandle is not LlamaModelHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+        {
+            return 0;
+        }
+        return LlamaNative.llama_model_size(nativeHandle.Pointer);
+    }
+
+    public ContextPerformanceData GetContextPerformance(IContextHandle contextHandle)
+    {
+        if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+        {
+            return new ContextPerformanceData(
+                PromptMs: 0.0,
+                EvalMs: 0.0,
+                SampleMs: 0.0,
+                PromptTokens: 0,
+                EvalTokens: 0,
+                SampleCount: 0);
+        }
+
+        LlamaPerfContextData perf = LlamaNative.llama_perf_context(nativeHandle.Pointer);
+        return new ContextPerformanceData(
+            PromptMs: perf.TPromptMs,
+            EvalMs: perf.TEvalMs,
+            SampleMs: 0.0,
+            PromptTokens: perf.NPrompt,
+            EvalTokens: perf.NEval,
+            SampleCount: perf.NEval);
+    }
+
+    public void ResetContextPerformance(IContextHandle contextHandle)
+    {
+        if (contextHandle is not LlamaContextHandle nativeHandle || nativeHandle.Pointer == IntPtr.Zero)
+        {
+            return;
+        }
+
+        LlamaNative.llama_perf_context_reset(nativeHandle.Pointer);
     }
 }

@@ -26,6 +26,7 @@ public class GatewayTestFixture : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 { "InstantAIGate:AdminApiKey", ServerOptions.AdminApiKey },
+                { "InstantAIGate:TenantApiKey", ServerOptions.TenantApiKey },
                 { "InstantAIGate:StartupModel:Enabled", "false" }
             });
         });

@@ -5,12 +5,13 @@ using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Exceptions;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Interfaces.Infrastructure;
+using InstantAIGate.Core.Services.Inference;
 using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.Handles;
 using Microsoft.Extensions.Logging;
 using System;
-using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -25,6 +26,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
     private readonly IMediaResolver _mediaResolver;
     private readonly ISessionInferenceManager _sessionManager;
     private readonly IBackendFacade _backendFacade;
+    private const int EvalTpsRefreshTokenInterval = 5;
     private bool _disposed;
 
     public LlamaInference(
@@ -315,6 +317,8 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
         _sessionManager.AppendSessionTokens(sessionId, deltaTokens);
 
+        _backendFacade.ResetContextPerformance(inferenceCtx.TextContext.Handle);
+        var promptStopwatch = Stopwatch.StartNew();
         int currentPos = pastTokens;
 
         if (mtmdCtxHandle != IntPtr.Zero && localImagePaths != null && localImagePaths.Count > 0)
@@ -407,7 +411,18 @@ public class LlamaInference : IInferenceEngine, IDisposable
             }
         }
 
+        promptStopwatch.Stop();
         _sessionManager.UpdatePastTokensCount(sessionId, currentPos);
+
+
+        var promptPerf = _backendFacade.GetContextPerformance(inferenceCtx.TextContext.Handle);
+        double promptTps = PerformanceMetricsCalculator.ComputePromptTps(promptPerf);
+        if (promptTps <= 0.0 && deltaTokens.Length > 0)
+        {
+            double elapsedPromptMs = Math.Max(0.1, promptStopwatch.Elapsed.TotalMilliseconds);
+            promptTps = PerformanceMetricsCalculator.ComputeTps(deltaTokens.Length, elapsedPromptMs);
+        }
+        _sessionManager.UpdateSessionPerformance(sessionId, promptTps, evalTps: 0.0);
 
         var samplerParams = LlamaNative.llama_sampler_chain_default_params();
         IntPtr samplerChain = LlamaNative.llama_sampler_chain_init(samplerParams);
@@ -457,6 +472,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
             var repetitionGuard = new RepetitionGuard();
             bool loopDetected = false;
 
+            var evalStopwatch = System.Diagnostics.Stopwatch.StartNew();
             var singleTokenBatch = LlamaNative.llama_batch_init(1, 0, 1);
             try
             {
@@ -517,12 +533,42 @@ public class LlamaInference : IInferenceEngine, IDisposable
                         if (decodeRes != 0)
                             throw new InvalidOperationException($"llama_decode failed: {decodeRes}");
                     }
+
+                    if (generatedCount % EvalTpsRefreshTokenInterval == 0)
+                    {
+                        var genPerf = _backendFacade.GetContextPerformance(inferenceCtx.TextContext.Handle);
+                        double liveEvalTps = PerformanceMetricsCalculator.ComputeEvalTps(genPerf);
+                        if (liveEvalTps <= 0.0 && generatedCount > 0)
+                        {
+                            liveEvalTps = PerformanceMetricsCalculator.ComputeTps(
+                                generatedCount,
+                                Math.Max(0.1, evalStopwatch.Elapsed.TotalMilliseconds));
+                        }
+                        _sessionManager.UpdateSessionPerformance(sessionId, promptTps, liveEvalTps);
+                    }
                 }
             }
             finally
             {
                 LlamaNative.llama_batch_free(singleTokenBatch);
             }
+
+            // Final performance snapshot reflecting the completed generation.
+            var finalPerf = _backendFacade.GetContextPerformance(inferenceCtx.TextContext.Handle);
+            double finalPromptTps = PerformanceMetricsCalculator.ComputePromptTps(finalPerf);
+            if (finalPromptTps <= 0.0)
+            {
+                finalPromptTps = promptTps;
+            }
+
+            double finalEvalTps = PerformanceMetricsCalculator.ComputeEvalTps(finalPerf);
+            if (finalEvalTps <= 0.0 && generatedCount > 0)
+            {
+                finalEvalTps = PerformanceMetricsCalculator.ComputeTps(
+                    generatedCount,
+                    Math.Max(0.1, evalStopwatch.Elapsed.TotalMilliseconds));
+            }
+            _sessionManager.UpdateSessionPerformance(sessionId, finalPromptTps, finalEvalTps);
 
             utf8Decoder.Flush(chunk => pendingChunks.Enqueue(chunk));
             while (pendingChunks.TryDequeue(out var finalChunk))

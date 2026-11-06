@@ -1,6 +1,5 @@
 namespace InstantAIGate.Native.Inference;
 
-using System;
 using System.Collections.Generic;
 
 /// <summary>

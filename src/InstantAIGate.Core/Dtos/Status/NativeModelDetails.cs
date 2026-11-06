@@ -48,6 +48,11 @@ public record NativeModelDetails
     /// Whether this model is configured for embedding inference.
     /// </summary>
     public bool IsEmbedding { get; init; }
+
+    /// <summary>
+    /// Size of the loaded model weights in bytes.
+    /// </summary>
+    public long ModelWeightsBytes { get; init; }
 }
 
 
