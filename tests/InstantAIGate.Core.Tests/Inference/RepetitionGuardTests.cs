@@ -1,7 +1,6 @@
 namespace InstantAIGate.Core.Tests.Inference;
 
 using InstantAIGate.Native.Inference;
-using System.Collections.Generic;
 using Xunit;
 
 public sealed class RepetitionGuardTests

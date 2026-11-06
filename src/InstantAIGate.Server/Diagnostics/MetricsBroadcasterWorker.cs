@@ -1,8 +1,8 @@
 ﻿namespace InstantAIGate.Server.Diagnostics;
 
 using InstantAIGate.Core.Dtos.Status;
-using InstantAIGate.Core.Interfaces.Infrastructure;
 using InstantAIGate.Core.Interfaces.Inference;
+using InstantAIGate.Core.Interfaces.Infrastructure;
 using InstantAIGate.Server.Hubs;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Hosting;

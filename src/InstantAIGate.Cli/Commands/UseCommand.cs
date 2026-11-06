@@ -34,8 +34,8 @@ public sealed class UseCommand : IConsoleCommand
                 return;
             }
 
-            AnsiConsole.MarkupLine($"[cyan]Current Chat Model:[/] [bold]{Markup.Escape(_session.ActiveModelId ?? "none") }[/]");
-            AnsiConsole.MarkupLine($"[cyan]Current Embedding Model:[/] [bold]{Markup.Escape(_session.ActiveEmbeddingModelId ?? "auto") }[/]");
+            AnsiConsole.MarkupLine($"[cyan]Current Chat Model:[/] [bold]{Markup.Escape(_session.ActiveModelId ?? "none")}[/]");
+            AnsiConsole.MarkupLine($"[cyan]Current Embedding Model:[/] [bold]{Markup.Escape(_session.ActiveEmbeddingModelId ?? "auto")}[/]");
             AnsiConsole.MarkupLine($"[dim]Loaded models: {string.Join(", ", loaded.Select(m => m.RepoId))}[/]");
             return;
         }

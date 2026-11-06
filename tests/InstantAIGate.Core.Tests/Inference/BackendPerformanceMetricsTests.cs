@@ -8,7 +8,6 @@ using InstantAIGate.Core.Interfaces.Native;
 using InstantAIGate.Core.Services.Inference;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;

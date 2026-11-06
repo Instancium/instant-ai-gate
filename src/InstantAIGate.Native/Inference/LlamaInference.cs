@@ -10,7 +10,6 @@ using InstantAIGate.Native.Bindings;
 using InstantAIGate.Native.Handles;
 using Microsoft.Extensions.Logging;
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -414,7 +413,7 @@ public class LlamaInference : IInferenceEngine, IDisposable
 
         promptStopwatch.Stop();
         _sessionManager.UpdatePastTokensCount(sessionId, currentPos);
-        
+
 
         var promptPerf = _backendFacade.GetContextPerformance(inferenceCtx.TextContext.Handle);
         double promptTps = PerformanceMetricsCalculator.ComputePromptTps(promptPerf);

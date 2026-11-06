@@ -1,9 +1,9 @@
 namespace InstantAIGate.Core.Tests.Server;
 
-using System.Collections.Generic;
 using InstantAIGate.Server.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Collections.Generic;
 using Xunit;
 
 public sealed class HardwareProfilePolicyTests

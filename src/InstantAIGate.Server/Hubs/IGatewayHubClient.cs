@@ -3,7 +3,6 @@
 using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Session;
 using InstantAIGate.Core.Dtos.Status;
-using InstantAIGate.Core.Exceptions;
 using InstantAIGate.SSR.Dtos;
 using System.Threading.Tasks;
 

@@ -5,7 +5,6 @@ using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.Dashboard.Services;
 using System;
-using System.Collections.Generic;
 using Xunit;
 
 public sealed class MemoryLeakAnalyzerTests

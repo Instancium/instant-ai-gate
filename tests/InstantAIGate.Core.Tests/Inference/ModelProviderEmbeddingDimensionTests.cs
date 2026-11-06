@@ -1,14 +1,12 @@
 ﻿namespace InstantAIGate.Core.Tests.Inference;
 
 using InstantAIGate.Core.Dtos.Config;
-using InstantAIGate.Core.Dtos.Inference;
 using InstantAIGate.Core.Interfaces.Inference;
 using InstantAIGate.Core.Interfaces.Native;
 using InstantAIGate.Core.Services.Inference;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 

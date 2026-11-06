@@ -1,10 +1,10 @@
 namespace InstantAIGate.Server.Configuration;
 
-using System;
-using System.Globalization;
 using InstantAIGate.Core.Dtos.Config;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Globalization;
 
 /// <summary>
 /// Central policy for hardware profile resolution.

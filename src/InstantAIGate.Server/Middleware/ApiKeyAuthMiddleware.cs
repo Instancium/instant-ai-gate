@@ -1,7 +1,7 @@
-﻿using System.Security.Claims;
+﻿using Microsoft.Extensions.Primitives;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.Primitives;
 
 namespace InstantAIGate.Server.Middleware;
 
