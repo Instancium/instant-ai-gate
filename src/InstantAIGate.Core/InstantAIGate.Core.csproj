@@ -18,6 +18,14 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="Interfaces\Session\**" />
+    <Compile Remove="Services\Inference\Session\**" />
+    <EmbeddedResource Remove="Interfaces\Session\**" />
+    <EmbeddedResource Remove="Services\Inference\Session\**" />
+    <None Remove="Interfaces\Session\**" />
+    <None Remove="Services\Inference\Session\**" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
     <None Include="LICENSE" Pack="true" PackagePath="\" />
   </ItemGroup>
@@ -25,9 +33,5 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.14" />
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Interfaces\Session\" />
-    <Folder Include="Services\Inference\Session\" />
   </ItemGroup>
 </Project>

@@ -11,6 +11,7 @@
 
 builder/
 TestResults/
+.github/copilot-instructions.md
 # ==============================================================================
 # Native Runtimes & Inference Drivers (InstantAIGate)
 # ==============================================================================
