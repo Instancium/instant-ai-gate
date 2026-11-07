@@ -1,7 +1,7 @@
 ﻿namespace InstantAIGate.Core.Dtos.Status;
 
 /// <summary>
-/// Native backend details for a loaded model.
+/// Native backend details for a loaded model inside the VRAM pool.
 /// </summary>
 public record NativeModelDetails
 {

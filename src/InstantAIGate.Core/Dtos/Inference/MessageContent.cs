@@ -2,6 +2,9 @@
 
 namespace InstantAIGate.Core.Dtos.Inference
 {
+    /// <summary>
+    /// Polymorphic base type for multimodal message content to enable robust JSON deserialization via SignalR.
+    /// </summary>
     [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
     [JsonDerivedType(typeof(TextContent), "text")]
     [JsonDerivedType(typeof(ImageBase64Content), "image_base64")]

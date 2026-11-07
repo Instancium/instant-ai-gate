@@ -50,24 +50,36 @@ public class ModelStartupWorkerIntegrationTests : IClassFixture<WebApplicationFa
         var stateManager = _factory.Services.GetRequiredService<IGatewayStateManager>();
         var modelManager = _factory.Services.GetRequiredService<IModelManager>();
 
+        // Increase timeout for full test suite runs (I/O & CPU contention)
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        bool isReady = false;
 
-        while (!cts.Token.IsCancellationRequested)
+        try
         {
-            var snapshot = stateManager.GetSnapshot();
-
-            if (snapshot.Status == GatewayOperationalStatus.Ready)
+            while (!cts.Token.IsCancellationRequested)
             {
-                break;
-            }
+                var snapshot = stateManager.GetSnapshot();
 
-            if (snapshot.Status == GatewayOperationalStatus.Faulted)
-            {
-                Assert.Fail($"Startup worker entered Faulted state: {snapshot.ErrorMessage}");
-            }
+                if (snapshot.Status == GatewayOperationalStatus.Ready)
+                {
+                    isReady = true;
+                    break;
+                }
 
-            await Task.Delay(50, cts.Token);
+                if (snapshot.Status == GatewayOperationalStatus.Faulted)
+                {
+                    Assert.Fail($"Startup worker entered faulted state: {snapshot.ErrorMessage}");
+                }
+
+                await Task.Delay(50, cts.Token);
+            }
         }
+        catch (TaskCanceledException)
+        {
+            // Swallow the raw cancellation exception to handle it gracefully below
+        }
+
+        Assert.True(isReady, "Timeout: ModelStartupWorker did not reach 'Ready' state within 30 seconds under load.");
 
         var activeConfig = modelManager.GetActiveSettings();
         Assert.NotNull(activeConfig);
