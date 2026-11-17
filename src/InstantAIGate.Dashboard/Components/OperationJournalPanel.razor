@@ -1,0 +1,55 @@
+@namespace InstantAIGate.Dashboard.Components
+@implements IDisposable
+@using System.Globalization
+@inject UiCommandService Commands
+
+<details class="ux-journal">
+    <summary class="ux-journal-summary">Operation journal (@_records.Count)</summary>
+    @if (_records.Count == 0)
+    {
+        <p class="ux-journal-empty">No admin operations executed yet.</p>
+    }
+    else
+    {
+        <ul class="ux-journal-list">
+            @for (int i = _records.Count - 1; i >= 0; i--)
+            {
+                var record = _records[i];
+                <li class="@(record.Status == UiCommandStatus.Succeeded ? "ux-journal-ok" : "ux-journal-err")">
+                    <span class="ux-journal-time">@record.Timestamp.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)</span>
+                    <span class="ux-journal-label">@record.Label</span>
+                    <span class="ux-journal-msg">@record.Message</span>
+                </li>
+            }
+        </ul>
+    }
+</details>
+
+@code {
+    /// <summary>
+    /// Persistent audit trail of executed admin commands (newest first).
+    /// Why: toasts auto-dismiss; operators need to reconstruct "what did I press and what
+    /// happened" after the fact without opening browser devtools.
+    /// </summary>
+    private IReadOnlyList<OperationRecord> _records = [];
+
+    protected override void OnInitialized()
+    {
+        Commands.CommandCompleted += OnCommandCompleted;
+        _records = Commands.GetJournal();
+    }
+
+    private void OnCommandCompleted(UiCommandEvent e)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _records = Commands.GetJournal();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Commands.CommandCompleted -= OnCommandCompleted;
+    }
+}

@@ -1,0 +1,109 @@
+@namespace InstantAIGate.Dashboard.Components
+@implements IDisposable
+
+<button type="button"
+        class="@ButtonCss"
+        disabled="@(IsBusy || IsDisabled)"
+        @onclick="HandleClickAsync">
+    @if (IsBusy)
+    {
+        <span class="ux-spinner" aria-hidden="true"></span>
+    }
+    @CurrentLabel
+</button>
+
+@code {
+    /// <summary>Default label shown in the idle state.</summary>
+    [Parameter] public string Label { get; set; } = "Run";
+
+    /// <summary>
+    /// When set, the button becomes two-step: first click arms it with this label for
+    /// <see cref="ConfirmWindowSeconds"/>, second click executes. Used for destructive
+    /// operations (unload, kill session, disconnect) so a misclick cannot free VRAM.
+    /// </summary>
+    [Parameter] public string? ConfirmLabel { get; set; }
+
+    [Parameter] public bool IsBusy { get; set; }
+
+    [Parameter] public bool IsDisabled { get; set; }
+
+    [Parameter] public string CssClass { get; set; } = "ux-btn";
+
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    [Parameter] public int ConfirmWindowSeconds { get; set; } = 4;
+
+    private bool _armed;
+    private bool _disposed;
+    private CancellationTokenSource? _disarmCts;
+
+    private string CurrentLabel => _armed ? ConfirmLabel ?? Label : Label;
+
+    private string ButtonCss => _armed ? $"{CssClass} ux-btn-arm" : CssClass;
+
+    private async Task HandleClickAsync()
+    {
+        if (ConfirmLabel is null)
+        {
+            await OnConfirm.InvokeAsync();
+            return;
+        }
+
+        if (!_armed)
+        {
+            Arm();
+            return;
+        }
+
+        Disarm();
+        await OnConfirm.InvokeAsync();
+    }
+
+    private void Arm()
+    {
+        _armed = true;
+        _disarmCts = new CancellationTokenSource();
+        _ = DisarmAfterAsync(_disarmCts.Token);
+    }
+
+    private async Task DisarmAfterAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(ConfirmWindowSeconds), ct);
+            if (!ct.IsCancellationRequested && !_disposed)
+            {
+                _armed = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private void Disarm()
+    {
+        _armed = false;
+        if (_disarmCts is not null)
+        {
+            _disarmCts.Cancel();
+            _disarmCts.Dispose();
+            _disarmCts = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        Disarm();
+    }
+}

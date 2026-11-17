@@ -4,11 +4,28 @@ using InstantAIGate.Core.Dtos.Status;
 using InstantAIGate.SSR.Dtos;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
+/// <summary>
+/// Scoped SignalR client for the diagnostic dashboard.
+/// Owns the admin connection lifecycle, the 1 Hz telemetry ring buffers and all
+/// control-plane invocations. Every invoke is bounded by <see cref="DefaultInvokeTimeout"/>
+/// so a hanging server-side drain (e.g. UnloadModelAsync waiting on live leases) can never
+/// freeze the UI indefinitely.
+/// </summary>
 public sealed class DashboardTelemetryClient : IAsyncDisposable
 {
     private const int DefaultHistoryCapacity = 120;
     private const int DefaultLogCapacity = 400;
+
+    /// <summary>
+    /// Upper bound for a single control-plane RPC. Chosen above the worst observed
+    /// graceful drain while far below "user believes the button is dead".
+    /// </summary>
+    public static readonly TimeSpan DefaultInvokeTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>
     /// Hub route relative to the host root. Must be resolved to an absolute URI in the
@@ -35,7 +52,9 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
     private bool _disposed;
 
     public CircularBuffer<DashboardTelemetrySnapshot> History { get; } = new(DefaultHistoryCapacity);
+
     public CircularBuffer<LogEntry> Logs { get; } = new(DefaultLogCapacity);
+
     public ConnectionState State => _state;
 
     public event Action<DashboardTelemetrySnapshot>? DashboardTelemetryReceived;
@@ -79,21 +98,20 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
             }
 
             await DisposeConnectionInternalAsync();
-
             var builder = new HubConnectionBuilder()
                 .WithUrl(_hubUrl, options =>
                 {
                     options.AccessTokenProvider = () => Task.FromResult<string?>(apiKey);
                 })
                 .WithAutomaticReconnect(RetryBackoff);
-
             _connection = builder.Build();
             WireHandlers(_connection);
             WireLifecycleHooks(_connection);
-
             SetState(ConnectionState.Connecting);
             await _connection.StartAsync(ct);
-            await _connection.InvokeAsync("SubscribeToDashboardTelemetry", ct);
+            await InvokeWithTimeoutAsync(
+                token => _connection.InvokeAsync("SubscribeToDashboardTelemetry", token),
+                ct);
             SetState(ConnectionState.Connected);
         }
         catch
@@ -142,39 +160,41 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
             return null;
         }
 
-        return await _connection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync", ct);
+        return await InvokeWithTimeoutAsync(
+            token => _connection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync", token),
+            ct);
     }
 
-    public async Task ForceKillSessionAsync(string sessionId, CancellationToken ct = default)
+    public Task ForceKillSessionAsync(string sessionId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-        await InvokeAdminAsync("ForceKillSessionAsync", ct, sessionId);
+        return InvokeAdminAsync("ForceKillSessionAsync", ct, sessionId);
     }
 
-    public async Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default)
+    public Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default)
     {
-        await InvokeAdminAsync("PurgeIdleContextsAsync", ct, repoId ?? string.Empty);
+        return InvokeAdminAsync("PurgeIdleContextsAsync", ct, repoId ?? string.Empty);
     }
 
-    public async Task UnloadModelAsync(string repoId, CancellationToken ct = default)
+    public Task UnloadModelAsync(string repoId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(repoId);
-        await InvokeAdminAsync("UnloadModelAsync", ct, repoId);
+        return InvokeAdminAsync("UnloadModelAsync", ct, repoId);
     }
 
-    public async Task SetQueueLimitAsync(int limit, CancellationToken ct = default)
+    public Task SetQueueLimitAsync(int limit, CancellationToken ct = default)
     {
         if (limit <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(limit), "Queue limit must be greater than zero.");
         }
 
-        await InvokeAdminAsync("SetQueueLimitAsync", ct, limit);
+        return InvokeAdminAsync("SetQueueLimitAsync", ct, limit);
     }
 
-    public async Task TriggerGarbageCollectionAsync(CancellationToken ct = default)
+    public Task TriggerGarbageCollectionAsync(CancellationToken ct = default)
     {
-        await InvokeAdminAsync("TriggerGarbageCollectionAsync", ct);
+        return InvokeAdminAsync("TriggerGarbageCollectionAsync", ct);
     }
 
     private async Task InvokeAdminAsync(string method, CancellationToken ct, params object?[] args)
@@ -182,11 +202,47 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_connection?.State != HubConnectionState.Connected)
         {
-            throw new InvalidOperationException("Dashboard telemetry client is not connected.");
+            throw new InvalidOperationException(
+                "Dashboard telemetry client is not connected. Reconnect before issuing admin commands.");
         }
 
         object[] payload = args.Where(a => a is not null).Cast<object>().ToArray();
-        await _connection.InvokeAsync(method, payload, ct);
+        await InvokeWithTimeoutAsync(token => _connection.InvokeAsync(method, payload, token), ct);
+    }
+
+    /// <summary>
+    /// Bounds every RPC with <see cref="DefaultInvokeTimeout"/> linked to the caller token.
+    /// Why: server-side admin operations may block on native drains; without a client bound
+    /// the awaiting button spinner would spin forever and look like a dead control.
+    /// </summary>
+    private async Task InvokeWithTimeoutAsync(Func<CancellationToken, Task> invoke, CancellationToken ct)
+    {
+        using var timeoutCts = new CancellationTokenSource(DefaultInvokeTimeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+        try
+        {
+            await invoke(linked.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Gateway did not respond within {DefaultInvokeTimeout.TotalSeconds:F0} s. The operation may still be running server-side.");
+        }
+    }
+
+    private async Task<T> InvokeWithTimeoutAsync<T>(Func<CancellationToken, Task<T>> invoke, CancellationToken ct)
+    {
+        using var timeoutCts = new CancellationTokenSource(DefaultInvokeTimeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+        try
+        {
+            return await invoke(linked.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Gateway did not respond within {DefaultInvokeTimeout.TotalSeconds:F0} s. The operation may still be running server-side.");
+        }
     }
 
     private void WireHandlers(HubConnection connection)
@@ -201,7 +257,6 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
             History.Add(snapshot);
             DashboardTelemetryReceived?.Invoke(snapshot);
         });
-
         connection.On<GatewayStatusDetails>("ReceiveGatewayStatus", status =>
         {
             if (status is not null)
@@ -209,7 +264,6 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
                 GatewayStatusChanged?.Invoke(status);
             }
         });
-
         connection.On<DownloadProgress>("ReceiveDownloadProgress", progress =>
         {
             if (progress is not null)
@@ -217,13 +271,11 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
                 DownloadProgressChanged?.Invoke(progress);
             }
         });
-
         connection.On<string, string, string>("ReceiveLog", (level, category, message) =>
         {
             string lvl = level ?? "Information";
             string cat = category ?? string.Empty;
             string msg = message ?? string.Empty;
-
             Logs.Add(new LogEntry(DateTimeOffset.UtcNow, lvl, cat, msg));
             LogReceived?.Invoke(lvl, cat, msg);
         });
@@ -236,7 +288,6 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
             SetState(ConnectionState.Reconnecting);
             return Task.CompletedTask;
         };
-
         connection.Reconnected += async connectionId =>
         {
             _logger.LogInformation("SignalR reconnected with id {ConnectionId}. Resubscribing.", connectionId);
@@ -250,7 +301,6 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
                 _logger.LogWarning(ex, "Failed to resubscribe after reconnect.");
             }
         };
-
         connection.Closed += _ =>
         {
             SetState(ConnectionState.Disconnected);
@@ -278,7 +328,6 @@ public sealed class DashboardTelemetryClient : IAsyncDisposable
 
         HubConnection connection = _connection;
         _connection = null;
-
         try
         {
             await connection.StopAsync();

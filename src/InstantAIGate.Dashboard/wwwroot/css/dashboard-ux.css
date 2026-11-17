@@ -1,0 +1,786 @@
+/* InstantAIGate dashboard UX layer. Self-contained: every class is prefixed with ux-
+   so it never collides with the legacy app.css vocabulary. */
+
+:root {
+    --ux-bg: #0d1117;
+    --ux-surface: #161b22;
+    --ux-surface-2: #1c2330;
+    --ux-border: #2a3140;
+    --ux-text: #d7dde6;
+    --ux-text-dim: #8b949e;
+    --ux-accent: #58a6ff;
+    --ux-ok: #3fb950;
+    --ux-warn: #d29922;
+    --ux-danger: #f85149;
+}
+
+.ux-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--ux-surface);
+    border-bottom: 1px solid var(--ux-border);
+}
+
+.ux-brand {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+}
+
+.ux-brand-name {
+    font-weight: 700;
+    font-size: clamp(15px, 1.4vw, 18px);
+    color: var(--ux-accent);
+}
+
+.ux-brand-sub {
+    font-size: 12px;
+    color: var(--ux-text-dim);
+}
+
+.ux-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.ux-pill {
+    padding: 3px 10px;
+    border: 1px solid var(--ux-border);
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--ux-text);
+    background: var(--ux-surface-2);
+}
+
+.ux-pill-ok {
+    border-color: var(--ux-ok);
+    color: var(--ux-ok);
+}
+
+.ux-pill-warn {
+    border-color: var(--ux-warn);
+    color: var(--ux-warn);
+}
+
+.ux-pill-err {
+    border-color: var(--ux-danger);
+    color: var(--ux-danger);
+}
+
+.ux-pill-dim {
+    color: var(--ux-text-dim);
+}
+
+.ux-topbar-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ux-strip {
+    padding: 8px 16px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--ux-border);
+}
+
+.ux-strip-warn {
+    background: rgba(210, 153, 34, 0.12);
+    color: var(--ux-warn);
+}
+
+/* Buttons */
+.ux-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--ux-text);
+    background: var(--ux-surface-2);
+    border: 1px solid var(--ux-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+}
+
+    .ux-btn:hover:not(:disabled) {
+        background: #232b3a;
+    }
+
+    .ux-btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+.ux-btn-primary {
+    background: rgba(88, 166, 255, 0.16);
+    border-color: var(--ux-accent);
+    color: var(--ux-accent);
+}
+
+.ux-btn-ghost {
+    background: transparent;
+}
+
+.ux-btn-danger {
+    background: rgba(248, 81, 73, 0.14);
+    border-color: var(--ux-danger);
+    color: var(--ux-danger);
+}
+
+.ux-btn-arm {
+    background: rgba(248, 81, 73, 0.28);
+    border-color: var(--ux-danger);
+    color: #fff;
+}
+
+.ux-btn-sm {
+    padding: 3px 8px;
+    font-size: 12px;
+}
+
+.ux-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: ux-spin 0.8s linear infinite;
+    display: inline-block;
+}
+
+@keyframes ux-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ux-spinner {
+        animation: none;
+    }
+}
+
+/* Toasts: pinned to the viewport, immune to page scroll position */
+.ux-toast-stack {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 400px;
+}
+
+.ux-toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--ux-surface);
+    border: 1px solid var(--ux-border);
+    border-left-width: 4px;
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.ux-toast-ok {
+    border-left-color: var(--ux-ok);
+}
+
+.ux-toast-err {
+    border-left-color: var(--ux-danger);
+}
+
+.ux-toast-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ux-toast-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ux-text);
+}
+
+.ux-toast-message {
+    font-size: 12px;
+    color: var(--ux-text-dim);
+    word-break: break-word;
+}
+
+.ux-toast-dismiss {
+    border: none;
+    background: transparent;
+    color: var(--ux-text-dim);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 4px;
+}
+
+    .ux-toast-dismiss:hover {
+        color: var(--ux-text);
+    }
+
+/* Journal */
+.ux-journal {
+    margin: 12px 16px 0;
+    font-size: 12px;
+}
+
+.ux-journal-summary {
+    cursor: pointer;
+    color: var(--ux-text-dim);
+    padding: 4px 0;
+}
+
+.ux-journal-empty {
+    color: var(--ux-text-dim);
+    margin: 6px 0;
+}
+
+.ux-journal-list {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+    .ux-journal-list li {
+        display: flex;
+        gap: 8px;
+        padding: 3px 0;
+        border-bottom: 1px dashed var(--ux-border);
+    }
+
+.ux-journal-time {
+    color: var(--ux-text-dim);
+    font-family: monospace;
+}
+
+.ux-journal-label {
+    color: var(--ux-text);
+}
+
+.ux-journal-msg {
+    color: var(--ux-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ux-journal-ok .ux-journal-label {
+    color: var(--ux-ok);
+}
+
+.ux-journal-err .ux-journal-label {
+    color: var(--ux-danger);
+}
+
+/* Panels & cards */
+.ux-panel {
+    margin: 12px 16px;
+    padding: 14px 16px;
+    background: var(--ux-surface);
+    border: 1px solid var(--ux-border);
+    border-radius: 8px;
+}
+
+.ux-panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.ux-panel-title {
+    margin: 0;
+    font-size: clamp(14px, 1.3vw, 17px);
+    font-weight: 600;
+}
+
+.ux-panel-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ux-panel-empty {
+    color: var(--ux-text-dim);
+    font-size: 13px;
+}
+
+.ux-cards {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.ux-card {
+    padding: 10px 12px;
+    background: var(--ux-surface-2);
+    border: 1px solid var(--ux-border);
+    border-radius: 6px;
+}
+
+.ux-card-title {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ux-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ux-card-value {
+    margin: 0 0 6px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.ux-card-unit {
+    font-size: 12px;
+    color: var(--ux-text-dim);
+    font-weight: 400;
+}
+
+.ux-card-note {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--ux-text-dim);
+}
+
+.ux-kv {
+    margin: 8px 0 0;
+    display: grid;
+    gap: 3px;
+    font-size: 12px;
+}
+
+    .ux-kv div {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .ux-kv dt {
+        color: var(--ux-text-dim);
+    }
+
+    .ux-kv dd {
+        margin: 0;
+        color: var(--ux-text);
+        font-family: monospace;
+    }
+
+/* Bars */
+.ux-bar {
+    height: 8px;
+    background: #0a0e14;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.ux-bar-thin {
+    height: 6px;
+}
+
+.ux-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 240ms ease;
+}
+
+    .ux-bar-fill.ok {
+        background: var(--ux-ok);
+    }
+
+    .ux-bar-fill.warn {
+        background: var(--ux-warn);
+    }
+
+    .ux-bar-fill.danger {
+        background: var(--ux-danger);
+    }
+
+/* Badges */
+.ux-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    background: var(--ux-surface-2);
+    border: 1px solid var(--ux-border);
+    color: var(--ux-text-dim);
+}
+
+.ux-badge-ok {
+    border-color: var(--ux-ok);
+    color: var(--ux-ok);
+}
+
+.ux-badge-warn {
+    border-color: var(--ux-warn);
+    color: var(--ux-warn);
+}
+
+.ux-type-llm {
+    border-color: var(--ux-accent);
+    color: var(--ux-accent);
+}
+
+.ux-type-vlm {
+    border-color: #bc8cff;
+    color: #bc8cff;
+}
+
+.ux-type-embed {
+    border-color: #56d364;
+    color: #56d364;
+}
+
+.ux-type-audio {
+    border-color: var(--ux-warn);
+    color: var(--ux-warn);
+}
+
+.ux-state-generating {
+    border-color: var(--ux-ok);
+    color: var(--ux-ok);
+}
+
+.ux-state-idle {
+    border-color: var(--ux-accent);
+    color: var(--ux-accent);
+}
+
+.ux-state-grace {
+    border-color: var(--ux-warn);
+    color: var(--ux-warn);
+}
+
+/* Alerts */
+.ux-alert {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.ux-alert-danger {
+    background: rgba(248, 81, 73, 0.12);
+    color: var(--ux-danger);
+    border: 1px solid var(--ux-danger);
+}
+
+.ux-alert-warn {
+    background: rgba(210, 153, 34, 0.12);
+    color: var(--ux-warn);
+    border: 1px solid var(--ux-warn);
+}
+
+/* Graphs */
+.ux-graph {
+    margin: 12px 0 0;
+}
+
+    .ux-graph svg {
+        width: 100%;
+        height: 150px;
+        background: #0a0e14;
+        border: 1px solid var(--ux-border);
+        border-radius: 6px;
+    }
+
+.ux-graph-area {
+    fill: rgba(88, 166, 255, 0.14);
+    stroke: none;
+}
+
+.ux-graph-line {
+    fill: none;
+    stroke: var(--ux-accent);
+    stroke-width: 2;
+}
+
+.ux-graph-line-ctx {
+    fill: none;
+    stroke: var(--ux-warn);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+}
+
+.ux-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--ux-text-dim);
+}
+
+.ux-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ux-swatch {
+    width: 14px;
+    height: 3px;
+    display: inline-block;
+}
+
+.ux-swatch-mem {
+    background: var(--ux-accent);
+}
+
+.ux-swatch-ctx {
+    background: var(--ux-warn);
+}
+
+/* Model grid */
+.ux-model-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.ux-model-card {
+    padding: 12px;
+    background: var(--ux-surface-2);
+    border: 1px solid var(--ux-border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ux-model-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ux-model-id {
+    font-family: monospace;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.ux-model-leases {
+    margin: 0;
+    font-size: 12px;
+    color: var(--ux-text-dim);
+}
+
+.ux-model-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: auto;
+}
+
+.ux-slots {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ux-slot {
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: monospace;
+    border: 1px solid var(--ux-border);
+    color: var(--ux-text-dim);
+    background: #0a0e14;
+}
+
+.ux-slot-active {
+    border-color: var(--ux-ok);
+    color: var(--ux-ok);
+    background: rgba(63, 185, 80, 0.12);
+}
+
+.ux-slot-idle {
+    border-color: var(--ux-accent);
+    color: var(--ux-accent);
+    background: rgba(88, 166, 255, 0.10);
+}
+
+.ux-slot-free {
+    opacity: 0.6;
+}
+
+/* Table */
+.ux-table-wrap {
+    overflow-x: auto;
+}
+
+.ux-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+    .ux-table th, .ux-table td {
+        padding: 6px 8px;
+        text-align: left;
+        border-bottom: 1px solid var(--ux-border);
+        vertical-align: middle;
+    }
+
+    .ux-table th {
+        color: var(--ux-text-dim);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+    }
+
+.ux-mono {
+    font-family: monospace;
+}
+
+.ux-table-sub {
+    display: block;
+    color: var(--ux-text-dim);
+    font-size: 11px;
+    margin-top: 2px;
+}
+
+/* Forms */
+.ux-inline-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.ux-field-label {
+    font-size: 12px;
+    color: var(--ux-text-dim);
+}
+
+.ux-input {
+    padding: 6px 8px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--ux-text);
+    background: #0a0e14;
+    border: 1px solid var(--ux-border);
+    border-radius: 6px;
+    width: 110px;
+}
+
+.ux-input-wide {
+    width: min(360px, 100%);
+}
+
+.ux-input:focus {
+    outline: 1px solid var(--ux-accent);
+}
+
+/* Gate */
+.ux-gate {
+    margin: 24px 16px;
+    padding: 20px;
+    background: var(--ux-surface);
+    border: 1px solid var(--ux-border);
+    border-radius: 8px;
+    max-width: 560px;
+}
+
+.ux-gate-title {
+    margin: 0 0 8px;
+    font-size: 18px;
+}
+
+.ux-gate-note {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--ux-text-dim);
+}
+
+/* Error containment surfaces */
+.ux-page-fault {
+    margin: 24px 16px;
+    padding: 20px;
+    border: 1px solid var(--ux-danger);
+    border-radius: 8px;
+    background: rgba(248, 81, 73, 0.08);
+}
+
+    .ux-page-fault h2 {
+        margin: 0 0 8px;
+        font-size: 17px;
+        color: var(--ux-danger);
+    }
+
+.ux-page-fault-detail {
+    margin: 0 0 8px;
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--ux-text);
+    word-break: break-word;
+}
+
+.ux-page-fault-hint {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--ux-text-dim);
+}
+
+.ux-panel-fault {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    margin: 12px 16px;
+    padding: 14px 16px;
+    border: 1px dashed var(--ux-warn);
+    border-radius: 8px;
+    background: rgba(210, 153, 34, 0.08);
+}
+
+.ux-panel-fault-title {
+    font-weight: 600;
+    color: var(--ux-warn);
+    font-size: 14px;
+}
+
+.ux-panel-fault-detail {
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--ux-text);
+    word-break: break-word;
+}
+
+.ux-panel-fault-hint {
+    font-size: 12px;
+    color: var(--ux-text-dim);
+}

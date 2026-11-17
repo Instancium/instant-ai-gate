@@ -1,9 +1,35 @@
 @inherits LayoutComponentBase
+@using InstantAIGate.Dashboard.Components
 
 <div class="ig-page">
     <main class="ig-main">
         <article class="ig-content">
-            @Body
+            <ErrorBoundary @ref="_pageBoundary">
+                <ChildContent>@Body</ChildContent>
+                <ErrorContent>
+                    <div class="ux-page-fault">
+                        <h2>Dashboard hit an unexpected UI error</h2>
+                        <p class="ux-page-fault-detail">@context.Message</p>
+                        <p class="ux-page-fault-hint">
+                            The telemetry connection is still alive; only the render pipeline was interrupted.
+                            Retry rendering, or reload the page if the fault repeats.
+                        </p>
+                        <button type="button" class="ux-btn ux-btn-primary" @onclick="RecoverPage">Retry rendering</button>
+                    </div>
+                </ErrorContent>
+            </ErrorBoundary>
         </article>
     </main>
+    <ToastHost />
 </div>
+
+@code {
+    /// <summary>
+    /// Page-level error containment. Why: without a boundary any render exception faults the
+    /// entire Blazor WebAssembly circuit, after which no @onclick handler executes and the
+    /// only visible artifact is the static "An unhandled error has occurred" strip.
+    /// </summary>
+    private ErrorBoundary? _pageBoundary;
+
+    private void RecoverPage() => _pageBoundary?.Recover();
+}

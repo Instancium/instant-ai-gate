@@ -1,0 +1,26 @@
+@namespace InstantAIGate.Dashboard.Components
+
+<ErrorBoundary @ref="_boundary">
+    <ChildContent>@ChildContent</ChildContent>
+    <ErrorContent>
+        <div class="ux-panel-fault">
+            <span class="ux-panel-fault-title">This panel failed to render</span>
+            <span class="ux-panel-fault-detail">@context.Message</span>
+            <span class="ux-panel-fault-hint">Telemetry is still streaming; other panels are unaffected.</span>
+            <button type="button" class="ux-btn ux-btn-ghost" @onclick="Retry">Retry panel</button>
+        </div>
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    /// <summary>
+    /// Per-panel error containment. Why: a single bad render frame inside one diagnostic
+    /// panel must not fault the whole Blazor circuit (which previously killed every control
+    /// on the page until a manual reload).
+    /// </summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private ErrorBoundary? _boundary;
+
+    private void Retry() => _boundary?.Recover();
+}

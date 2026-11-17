@@ -1,39 +1,32 @@
 @namespace InstantAIGate.Dashboard.Components
 @using System.Globalization
 @using InstantAIGate.Core.Dtos.Status
+@using InstantAIGate.Dashboard.Services
+@inject UiCommandService Commands
 
-<section class="panel-card">
-    <div class="panel-header">
-        <div>
-            <h2 class="panel-title">Active &amp; Hanging Sessions Inspector</h2>
-            <span class="panel-subtitle">Per-Session KV-Cache Utilization, Disconnect Grace Timers &amp; Emergency Slot Release</span>
-        </div>
-        <div class="session-summary-badges">
-            <span class="badge info">Total: @(Sessions?.Count ?? 0)</span>
-            <span class="badge ok">Generating: @(Sessions?.Count(s => s.State == SessionStateType.Generating) ?? 0)</span>
-            <span class="badge warn">Grace Period: @(Sessions?.Count(s => s.State == SessionStateType.DisconnectedGracePeriod) ?? 0)</span>
-        </div>
-    </div>
+<section class="ux-panel">
+    <header class="ux-panel-head">
+        <h2 class="ux-panel-title">Active &amp; Hanging Sessions Inspector</h2>
+    </header>
 
     @if (Sessions is null || Sessions.Count == 0)
     {
-        <div class="empty-state">
-            No active or disconnected sessions holding KV-cache slots.
-        </div>
+        <p class="ux-panel-empty">No active sessions. Slots are free.</p>
     }
     else
     {
-        <div class="table-responsive">
-            <table class="sessions-table">
+        <div class="ux-table-wrap">
+            <table class="ux-table">
                 <thead>
                     <tr>
-                        <th>Session ID / Connection</th>
-                        <th>Model (RepoId)</th>
-                        <th>Status</th>
-                        <th>Context Fill (KV-Cache)</th>
-                        <th>Current Speed</th>
-                        <th>Idle Time</th>
-                        <th class="text-right">Action</th>
+                        <th>Session</th>
+                        <th>Model</th>
+                        <th>State</th>
+                        <th>Context fill</th>
+                        <th>Prompt TPS</th>
+                        <th>Eval TPS</th>
+                        <th>Idle</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -42,72 +35,25 @@
                         double fillPercent = session.MaxContextTokens > 0
                             ? Math.Clamp((double)session.PastTokens / session.MaxContextTokens * 100.0, 0.0, 100.0)
                             : 0.0;
-
-                        <tr class="@(session.State == SessionStateType.DisconnectedGracePeriod ? "row-grace-warn" : "")">
+                        <tr>
+                            <td class="ux-mono" title="@session.SessionId">@Truncate(session.SessionId, 14)</td>
+                            <td class="ux-mono">@session.RepoId</td>
+                            <td><span class="ux-badge @GetStateCss(session.State)">@GetStateLabel(session.State)</span></td>
                             <td>
-                                <div class="cell-primary mono">@session.SessionId</div>
-                                <div class="cell-secondary mono">
-                                    Conn: @(string.IsNullOrWhiteSpace(session.BoundConnectionId) ? "detached" : session.BoundConnectionId)
+                                <div class="ux-bar ux-bar-thin">
+                                    <div class="ux-bar-fill @GetContextBarClass(fillPercent)" style="width: @FormatPercent(fillPercent)%"></div>
                                 </div>
+                                <span class="ux-table-sub">@session.PastTokens.ToString("N0", CultureInfo.InvariantCulture) / @session.MaxContextTokens.ToString("N0", CultureInfo.InvariantCulture) tok</span>
                             </td>
+                            <td>@session.PromptTps.ToString("F1", CultureInfo.InvariantCulture)</td>
+                            <td>@session.EvalTps.ToString("F1", CultureInfo.InvariantCulture)</td>
+                            <td>@FormatDuration(session.IdleSeconds)</td>
                             <td>
-                                <div class="cell-primary">@session.RepoId</div>
-                                <div class="cell-secondary">
-                                    @(session.HasAllocatedContext ? "VRAM Slot Bound" : "No Native Slot")
-                                </div>
-                            </td>
-                            <td>
-                                @switch (session.State)
-                                {
-                                    case SessionStateType.Generating:
-                                        <span class="status-badge badge-generating">
-                                            <span class="pulse-dot ok"></span>
-                                            GENERATING
-                                        </span>
-                                        break;
-                                    case SessionStateType.DisconnectedGracePeriod:
-                                        <span class="status-badge badge-grace">
-                                            <span class="pulse-dot warn"></span>
-                                            DISCONNECTED (GRACE PERIOD)
-                                        </span>
-                                        break;
-                                    default:
-                                        <span class="status-badge badge-idle">
-                                            <span class="status-dot idle"></span>
-                                            IDLE
-                                        </span>
-                                        break;
-                                }
-                            </td>
-                            <td class="context-cell">
-                                <div class="context-bar-header">
-                                    <span class="mono">@session.PastTokens.ToString("N0", CultureInfo.InvariantCulture) / @session.MaxContextTokens.ToString("N0", CultureInfo.InvariantCulture) tok</span>
-                                    <span class="mono">@($"{fillPercent:F1}%")</span>
-                                </div>
-                                <div class="progress-track compact">
-                                    <div class="progress-fill @GetContextBarClass(fillPercent)"
-                                         style="width: @FormatPercent(fillPercent)%;"></div>
-                                </div>
-                            </td>
-                            <td>
-                                <div class="speed-metrics mono">
-                                    <span title="Token Generation Speed">Gen: <strong>@($"{session.EvalTps:F1}")</strong> t/s</span>
-                                    <span class="cell-secondary" title="Prompt Evaluation Speed">Prompt: @($"{session.PromptTps:F1}") t/s</span>
-                                </div>
-                            </td>
-                            <td class="mono">
-                                <span class="@(session.IdleSeconds >= 60 ? "text-warn" : "")">
-                                    @FormatDuration(session.IdleSeconds)
-                                </span>
-                            </td>
-                            <td class="text-right">
-                                <button type="button"
-                                        class="btn btn-danger btn-xs"
-                                        disabled="@IsBusy"
-                                        title="Force-destroy session and free native llama_context slot from VRAM"
-                                        @onclick="() => OnKillSession.InvokeAsync(session.SessionId)">
-                                    Kill &amp; Free VRAM
-                                </button>
+                                <ConfirmActionButton Label="Kill & Free VRAM"
+                                                     ConfirmLabel="Confirm kill?"
+                                                     CssClass="ux-btn ux-btn-danger ux-btn-sm"
+                                                     IsBusy="@Commands.IsRunning(UiCommandIds.KillSession(session.SessionId))"
+                                                     OnConfirm="() => OnKillSession.InvokeAsync(session.SessionId)" />
                             </td>
                         </tr>
                     }
@@ -119,11 +65,28 @@
 
 @code {
     [Parameter] public IReadOnlyList<SessionTelemetryDto>? Sessions { get; set; }
+
     [Parameter] public EventCallback<string> OnKillSession { get; set; }
-    [Parameter] public bool IsBusy { get; set; }
 
     private static string GetContextBarClass(double fillPercent) =>
         fillPercent >= 85.0 ? "danger" : (fillPercent >= 60.0 ? "warn" : "ok");
+
+    private static string GetStateCss(SessionStateType state) => state switch
+    {
+        SessionStateType.Generating => "ux-state-generating",
+        SessionStateType.DisconnectedGracePeriod => "ux-state-grace",
+        _ => "ux-state-idle"
+    };
+
+    private static string GetStateLabel(SessionStateType state) => state switch
+    {
+        SessionStateType.Generating => "GENERATING",
+        SessionStateType.DisconnectedGracePeriod => "DISCONNECTED (GRACE)",
+        _ => "IDLE"
+    };
+
+    private static string Truncate(string value, int max) =>
+        value.Length <= max ? value : string.Concat(value.AsSpan(0, max), "…");
 
     private static string FormatPercent(double value) =>
         Math.Clamp(value, 0.0, 100.0).ToString("F1", CultureInfo.InvariantCulture);
@@ -136,10 +99,12 @@
         {
             return $"{(int)ts.TotalHours}h {ts.Minutes}m {ts.Seconds}s";
         }
+
         if (ts.TotalMinutes >= 1.0)
         {
             return $"{ts.Minutes}m {ts.Seconds}s";
         }
+
         return $"{ts.Seconds}s";
     }
 }

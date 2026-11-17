@@ -3,151 +3,118 @@
 @using InstantAIGate.Core.Dtos.Status
 @using InstantAIGate.Dashboard.Services
 
-<section class="panel-card">
-    <div class="panel-header">
-        <div>
-            <h2 class="panel-title">Memory Leak Radar (Hardware vs Application)</h2>
-            <span class="panel-subtitle">Native C++ / Vulkan VRAM &amp; Unmanaged Heap Correlation</span>
-        </div>
-        @if (_report.IsNativeRetentionSuspected)
+<section class="ux-panel">
+    <header class="ux-panel-head">
+        <h2 class="ux-panel-title">Memory Leak Radar (Hardware vs Application)</h2>
+        @switch (ViewMode)
         {
-            <div class="retention-alert" role="alert">
-                <span class="pulse-dot danger"></span>
-                <span>Suspected Native Memory Retention</span>
-            </div>
+            case HardwareViewMode.Gpu:
+                <span class="ux-badge ux-badge-ok">@Snapshot!.Hardware.GpuProviderName</span>
+                break;
+            case HardwareViewMode.UnifiedMemory:
+                <span class="ux-badge ux-badge-warn">CPU-only / unified memory</span>
+                break;
+            default:
+                <span class="ux-badge">awaiting telemetry</span>
+                break;
         }
-        else
-        {
-            <div class="retention-ok">
-                <span class="status-dot ok"></span>
-                <span>Memory Baseline Nominal</span>
-            </div>
-        }
-    </div>
+    </header>
 
-    @if (_report.IsNativeRetentionSuspected && !string.IsNullOrWhiteSpace(_report.RetentionDiagnosticMessage))
+    @if (ViewMode == HardwareViewMode.NoTelemetry)
     {
-        <div class="alert-banner danger">
-            <strong>Anomaly Detected:</strong> @_report.RetentionDiagnosticMessage
-        </div>
+        <p class="ux-panel-empty">Waiting for the first telemetry snapshot…</p>
     }
-
-    @if (_report.IsVramSpilloverRisk)
+    else
     {
-        <div class="alert-banner warn">
-            <strong>VRAM Spillover Risk (&gt;95%):</strong> GPU memory is nearly exhausted (@($"{_report.VramUtilizationPercent:F1}%")). PCIe system RAM paging may severely degrade Token Generation TPS.
-        </div>
-    }
-
-    <div class="memory-cards-grid">
-
-        <div class="metric-box">
-            <div class="metric-box-header">
-                <span class="metric-title">VRAM (GPU) — @(Snapshot?.Hardware.GpuProviderName ?? "Unknown")</span>
-                <span class="metric-highlight">@FormatBytes(Snapshot?.Hardware.VramUsedBytes ?? 0) / @FormatBytes(Snapshot?.Hardware.VramTotalBytes ?? 0)</span>
-            </div>
-
-            <div class="progress-track">
-                <div class="progress-fill @GetVramBarClass(_report.VramUtilizationPercent)"
-                     style="width: @FormatPercent(_report.VramUtilizationPercent)%;"></div>
-            </div>
-
-            <div class="metric-subrow">
-                <span>Device Utilization: <strong>@($"{_report.VramUtilizationPercent:F1}%")</strong></span>
-                <span>Process VRAM: <strong>@FormatBytes(Snapshot?.Hardware.VramProcessUsedBytes ?? 0)</strong></span>
-            </div>
-
-            <div class="breakdown-list">
-                <div class="breakdown-item">
-                    <span class="breakdown-label"><span class="legend-swatch swatch-weights"></span>Loaded Model Weights</span>
-                    <span class="breakdown-val">@FormatBytes(_report.TotalModelWeightsBytes)</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label"><span class="legend-swatch swatch-kv"></span>Allocated Slots KV-Cache (@_report.TotalAllocatedContexts slots)</span>
-                    <span class="breakdown-val">~@FormatBytes(_report.EstimatedKvCacheBytes)</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label"><span class="legend-swatch swatch-delta"></span>Unaccounted Delta (&Delta; VRAM / External / Native)</span>
-                    <span class="breakdown-val @(_report.IsNativeRetentionSuspected ? "text-danger" : "")">@FormatBytes(_report.UnaccountedVramDeltaBytes)</span>
-                </div>
-            </div>
-        </div>
-
-
-        <div class="metric-box">
-            <div class="metric-box-header">
-                <span class="metric-title">RAM (Host &amp; Process) &amp; CPU</span>
-                <span class="metric-highlight">CPU: @($"{Snapshot?.Hardware.CpuUsagePercent ?? 0:F1}%")</span>
-            </div>
-
-            <div class="progress-track">
-                <div class="progress-fill info"
-                     style="width: @FormatPercent(HostRamPercent)%;"></div>
-            </div>
-
-            <div class="metric-subrow">
-                <span>Host RAM Used: <strong>@FormatBytes(HostRamUsedBytes) / @FormatBytes(Snapshot?.Hardware.SystemTotalRamBytes ?? 0)</strong></span>
-                <span>Available: <strong>@FormatBytes(Snapshot?.Hardware.SystemAvailableRamBytes ?? 0)</strong></span>
-            </div>
-
-            <div class="breakdown-list">
-                <div class="breakdown-item">
-                    <span class="breakdown-label"><span class="legend-swatch swatch-ws"></span>Process Working Set</span>
-                    <span class="breakdown-val">@FormatBytes(_report.ProcessWorkingSetBytes)</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label"><span class="legend-swatch swatch-unmanaged"></span>Private Unmanaged Difference (Native C++)</span>
-                    <span class="breakdown-val @(_report.IsNativeRetentionSuspected ? "text-warn" : "")">@FormatBytes(_report.PrivateUnmanagedBytes)</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label"><span class="legend-swatch swatch-gc"></span>.NET GC Managed Heap</span>
-                    <span class="breakdown-val">@FormatBytes(_report.ManagedHeapBytes)</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-
-    <div class="chart-container">
-        <div class="chart-header">
-            <span class="chart-title">Time-Series Correlation (Last @(History?.Count ?? 0)s): Physical Memory vs Allocated Contexts</span>
-            <div class="chart-legend">
-                <span class="legend-item"><span class="legend-line line-mem"></span>@(IsGpuTelemetryActive ? "Physical VRAM Used" : "Process Unmanaged RAM") (@FormatBytes(PeakMemoryBytes) peak)</span>
-                <span class="legend-item"><span class="legend-line line-ctx"></span>Allocated Contexts (@PeakContextsCount max)</span>
-            </div>
-        </div>
-
-        <svg class="telemetry-svg" viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="Memory and Contexts Correlation Chart">
-            <defs>
-                <linearGradient id="memAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.32" />
-                    <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.02" />
-                </linearGradient>
-            </defs>
-
-            <!-- Grid lines -->
-            <line x1="0" y1="20" x2="600" y2="20" class="svg-grid" />
-            <line x1="0" y1="80" x2="600" y2="80" class="svg-grid" />
-            <line x1="0" y1="140" x2="600" y2="140" class="svg-grid" />
-
-            @if (History is { Count: >= 2 })
+        <div class="ux-cards">
+            @if (ViewMode == HardwareViewMode.Gpu)
             {
-                <polygon points="@BuildMemoryAreaPoints()" fill="url(#memAreaGrad)" />
-                <polyline points="@BuildMemoryLinePoints()" class="svg-line-memory" />
-                <polyline points="@BuildContextsLinePoints()" class="svg-line-contexts" />
+                <article class="ux-card">
+                    <h3 class="ux-card-title">VRAM (GPU)</h3>
+                    <p class="ux-card-value">@FormatBytes(Snapshot!.Hardware.VramUsedBytes) / @FormatBytes(Snapshot.Hardware.VramTotalBytes)</p>
+                    <div class="ux-bar">
+                        <div class="ux-bar-fill @GetBarClass(VramPercent)" style="width: @FormatPercent(VramPercent)%"></div>
+                    </div>
+                    <dl class="ux-kv">
+                        <div><dt>Process VRAM</dt><dd>@FormatBytes(Snapshot.Hardware.VramProcessUsedBytes)</dd></div>
+                        <div><dt>Model weights</dt><dd>@FormatBytes(_report.TotalModelWeightsBytes)</dd></div>
+                        <div><dt>KV cache (est.)</dt><dd>@FormatBytes(_report.EstimatedKvCacheBytes)</dd></div>
+                        <div><dt>Unaccounted delta</dt><dd>@FormatBytes(_report.UnaccountedVramDeltaBytes)</dd></div>
+                    </dl>
+                </article>
             }
             else
             {
-                <g>
-                   <text x="300" y="85" text-anchor="middle" class="svg-empty-text">Collecting telemetry samples (1 Hz)...</text>
-                </g>
+                <article class="ux-card">
+                    <h3 class="ux-card-title">Unified memory (CPU-only host)</h3>
+                    <p class="ux-card-note">
+                        GPU telemetry is unavailable on this host, so model weights and KV caches live in system RAM.
+                        The radar tracks the process native heap instead of VRAM.
+                    </p>
+                    <p class="ux-card-value">@FormatBytes(_report.ProcessPrivateBytes) / @FormatBytes(Snapshot!.Hardware.SystemTotalRamBytes)</p>
+                    <div class="ux-bar">
+                        <div class="ux-bar-fill @GetBarClass(ProcessPrivatePercent)" style="width: @FormatPercent(ProcessPrivatePercent)%"></div>
+                    </div>
+                    <dl class="ux-kv">
+                        <div><dt>Native heap (Private − GC)</dt><dd>@FormatBytes(_report.PrivateUnmanagedBytes)</dd></div>
+                        <div><dt>Weights + KV (est.)</dt><dd>@FormatBytes(_report.EstimatedGatewayVramBytes)</dd></div>
+                        <div><dt>Managed heap (GC)</dt><dd>@FormatBytes(_report.ManagedHeapBytes)</dd></div>
+                    </dl>
+                </article>
             }
-        </svg>
-    </div>
+
+            <article class="ux-card">
+                <h3 class="ux-card-title">RAM (host &amp; process)</h3>
+                <p class="ux-card-value">@FormatBytes(HostRamUsedBytes) / @FormatBytes(Snapshot!.Hardware.SystemTotalRamBytes)</p>
+                <div class="ux-bar">
+                    <div class="ux-bar-fill @GetBarClass(HostRamPercent)" style="width: @FormatPercent(HostRamPercent)%"></div>
+                </div>
+                <dl class="ux-kv">
+                    <div><dt>Process working set</dt><dd>@FormatBytes(_report.ProcessWorkingSetBytes)</dd></div>
+                    <div><dt>Process private bytes</dt><dd>@FormatBytes(_report.ProcessPrivateBytes)</dd></div>
+                    <div><dt>CPU usage</dt><dd>@FormatPercent(Snapshot.Hardware.CpuUsagePercent)%</dd></div>
+                    <div><dt>Allocated contexts</dt><dd>@_report.TotalAllocatedContexts</dd></div>
+                </dl>
+            </article>
+        </div>
+
+        @if (_report.IsNativeRetentionSuspected && !string.IsNullOrWhiteSpace(_report.RetentionDiagnosticMessage))
+        {
+            <p class="ux-alert ux-alert-danger">@_report.RetentionDiagnosticMessage</p>
+        }
+
+        @if (ViewMode == HardwareViewMode.Gpu && _report.IsVramSpilloverRisk)
+        {
+            <p class="ux-alert ux-alert-warn">VRAM utilization above 95%: OS page spillover over PCIe may collapse eval TPS.</p>
+        }
+
+        @if (History is { Count: >= 2 })
+        {
+            <figure class="ux-graph">
+                <svg viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Memory and context history">
+                    <polygon class="ux-graph-area" points="@BuildMemoryAreaPoints()" />
+                    <polyline class="ux-graph-line" points="@BuildMemoryLinePoints()" />
+                    <polyline class="ux-graph-line-ctx" points="@BuildContextsLinePoints()" />
+                </svg>
+                <figcaption class="ux-legend">
+                    <span class="ux-legend-item"><i class="ux-swatch ux-swatch-mem"></i>physical memory (VRAM or native heap)</span>
+                    <span class="ux-legend-item"><i class="ux-swatch ux-swatch-ctx"></i>allocated contexts</span>
+                </figcaption>
+            </figure>
+        }
+    }
 </section>
 
 @code {
+    private enum HardwareViewMode
+    {
+        NoTelemetry = 0,
+        Gpu = 1,
+        UnifiedMemory = 2
+    }
+
     [Parameter] public DashboardTelemetrySnapshot? Snapshot { get; set; }
+
     [Parameter] public IReadOnlyList<DashboardTelemetrySnapshot>? History { get; set; }
 
     private MemoryLeakReport _report = new();
@@ -157,7 +124,31 @@
         _report = MemoryLeakAnalyzer.Analyze(Snapshot, History);
     }
 
-    private bool IsGpuTelemetryActive => (Snapshot?.Hardware.VramTotalBytes ?? 0) > 0;
+    /// <summary>
+    /// Adaptive presentation mode. Why: on CPU-only hosts every VRAM probe legitimately
+    /// reports zero, and rendering a permanent 0% bar looked like a broken control.
+    /// </summary>
+    private HardwareViewMode ViewMode => Snapshot is null
+        ? HardwareViewMode.NoTelemetry
+        : (Snapshot.Hardware.VramTotalBytes > 0 ? HardwareViewMode.Gpu : HardwareViewMode.UnifiedMemory);
+
+    private double VramPercent
+    {
+        get
+        {
+            long total = Snapshot?.Hardware.VramTotalBytes ?? 0;
+            return total > 0 ? Math.Clamp((double)(Snapshot?.Hardware.VramUsedBytes ?? 0) / total * 100.0, 0.0, 100.0) : 0.0;
+        }
+    }
+
+    private double ProcessPrivatePercent
+    {
+        get
+        {
+            long total = Snapshot?.Hardware.SystemTotalRamBytes ?? 0;
+            return total > 0 ? Math.Clamp((double)_report.ProcessPrivateBytes / total * 100.0, 0.0, 100.0) : 0.0;
+        }
+    }
 
     private long HostRamUsedBytes
     {
@@ -186,12 +177,14 @@
             {
                 return GetSampleMemoryBytes(Snapshot);
             }
+
             long max = 0;
             for (int i = 0; i < History.Count; i++)
             {
                 long val = GetSampleMemoryBytes(History[i]);
                 if (val > max) max = val;
             }
+
             return max;
         }
     }
@@ -209,6 +202,7 @@
                     if (c > max) max = c;
                 }
             }
+
             return max;
         }
     }
@@ -237,6 +231,7 @@
         {
             sum += s.Models[i].ActiveLeases + s.Models[i].IdlePooledContexts;
         }
+
         return sum;
     }
 
@@ -266,7 +261,6 @@
         const double topY = 15.0;
         const double bottomY = 145.0;
         double usableHeight = bottomY - topY;
-
         var parts = new string[count];
         for (int i = 0; i < count; i++)
         {
@@ -275,10 +269,11 @@
             double y = bottomY - (ratio * usableHeight);
             parts[i] = string.Create(CultureInfo.InvariantCulture, $"{x:F1},{y:F1}");
         }
+
         return string.Join(' ', parts);
     }
 
-    private static string GetVramBarClass(double percent) =>
+    private static string GetBarClass(double percent) =>
         percent >= 95.0 ? "danger" : (percent >= 80.0 ? "warn" : "ok");
 
     private static string FormatPercent(double value) =>
@@ -295,6 +290,7 @@
             value /= 1024;
             unit++;
         }
+
         return string.Create(CultureInfo.InvariantCulture, $"{value:0.##} {units[unit]}");
     }
 }
