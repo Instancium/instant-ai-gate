@@ -41,7 +41,14 @@ public class Program
 
         builder.Services.AddInstantAIGateInference();
         builder.Services.AddInstantAIGateSSR();
-        builder.Services.AddSignalR();
+
+        builder.Services.AddSignalR(options =>
+        {
+            var gatewayTransportOptions = builder.Configuration
+                .GetSection("InstantAIGate:Gateway")
+                .Get<GatewayTransportOptions>() ?? new GatewayTransportOptions();
+            options.MaximumReceiveMessageSize = gatewayTransportOptions.GetEffectiveReceiveMessageSize();
+        });
 
         var signalRLoggerProvider = new SignalRLoggerProvider();
         builder.Services.AddSingleton<ILoggerProvider>(signalRLoggerProvider);

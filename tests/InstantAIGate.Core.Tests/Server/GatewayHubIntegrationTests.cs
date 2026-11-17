@@ -301,6 +301,14 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
     [Fact]
     public async Task Observability_AdminCanRequestDashboardSnapshot_And_ReceiveHardwareAndSessionMetrics()
     {
+        var modelManager = _fixture.Services.GetRequiredService<IModelManager>();
+        if (modelManager.GetActiveSettings() == null)
+        {
+            await using var adminConn = CreateGatewayConnection(_adminToken);
+            await adminConn.StartAsync();
+            await adminConn.InvokeAsync("LoadModelAsync", _testRepoId, "Default");
+        }
+
         await using HubConnection userConnection = CreateGatewayConnection(_tenantToken);
         await userConnection.StartAsync();
         string sessionId = $"test-session-{Guid.NewGuid():N}";
@@ -308,10 +316,8 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
 
         await using HubConnection adminConnection = CreateGatewayConnection(_adminToken);
         await adminConnection.StartAsync();
-
         DashboardTelemetrySnapshot snapshot =
             await adminConnection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync");
-
         Assert.NotNull(snapshot);
         Assert.True(snapshot.Hardware.ProcessRamBytes > 0);
         Assert.True(snapshot.Hardware.SystemTotalRamBytes > 0);
