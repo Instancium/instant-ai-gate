@@ -481,5 +481,31 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         Assert.All(snapshot.Models, m => Assert.Equal(0, m.ActiveLeases));
     }
 
+    [Fact]
+    public async Task Security_RemoteClient_ImageFileContent_RejectedWithHubException()
+    {
+        await using var userConnection = CreateGatewayConnection(_tenantToken);
+        await userConnection.StartAsync();
+
+        string sessionId = $"lfi-test-{Guid.NewGuid():N}";
+        await userConnection.InvokeAsync("JoinSession", sessionId, _testRepoId);
+
+        var maliciousParts = new List<MessageContent>
+        {
+            new ImageFileContent(OperatingSystem.IsWindows()
+                ? @"C:\Windows\System32\config\SAM"
+                : "/etc/shadow"),
+            new TextContent("Describe this file.")
+        };
+        var maliciousMessage = new ChatMessage("user", maliciousParts);
+
+        var exception = await Assert.ThrowsAsync<HubException>(
+            () => userConnection.InvokeAsync("SendPromptDelta", sessionId, maliciousMessage));
+
+        Assert.Contains("ImageFileContent is not permitted", exception.Message);
+
+        await userConnection.InvokeAsync("LeaveSession", sessionId);
+    }
+
     #endregion
 }
