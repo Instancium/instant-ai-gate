@@ -843,6 +843,19 @@ public class GatewayHub : Hub<IGatewayHubClient>
     [Authorize(Policy = "GatewayUser")]
     public async Task SendPromptDelta(string sessionId, ChatMessage deltaMessage)
     {
+        // LFI guard: ImageFileContent references a server-side file path.
+        // On the remote plane this is a path-probing / local-file-inclusion vector.
+        // Remote clients must use ImageBase64Content or ImageUrlContent instead.
+        if (deltaMessage.Parts.Any(p => p is ImageFileContent))
+        {
+            _logger.LogWarning(
+                "Remote client {ConnectionId} attempted ImageFileContent in session {SessionId}. Rejected.",
+                Context.ConnectionId, sessionId);
+            throw new HubException(
+                "ImageFileContent is not permitted on the remote plane. " +
+                "Use ImageBase64Content or ImageUrlContent instead.");
+        }
+
         try
         {
             await foreach (var token in _inferenceEngine.StreamDeltaGenerationAsync(

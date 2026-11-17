@@ -301,6 +301,14 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
     [Fact]
     public async Task Observability_AdminCanRequestDashboardSnapshot_And_ReceiveHardwareAndSessionMetrics()
     {
+        var modelManager = _fixture.Services.GetRequiredService<IModelManager>();
+        if (modelManager.GetActiveSettings() == null)
+        {
+            await using var adminConn = CreateGatewayConnection(_adminToken);
+            await adminConn.StartAsync();
+            await adminConn.InvokeAsync("LoadModelAsync", _testRepoId, "Default");
+        }
+
         await using HubConnection userConnection = CreateGatewayConnection(_tenantToken);
         await userConnection.StartAsync();
         string sessionId = $"test-session-{Guid.NewGuid():N}";
@@ -308,10 +316,8 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
 
         await using HubConnection adminConnection = CreateGatewayConnection(_adminToken);
         await adminConnection.StartAsync();
-
         DashboardTelemetrySnapshot snapshot =
             await adminConnection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync");
-
         Assert.NotNull(snapshot);
         Assert.True(snapshot.Hardware.ProcessRamBytes > 0);
         Assert.True(snapshot.Hardware.SystemTotalRamBytes > 0);
@@ -473,6 +479,32 @@ public class GatewayHubIntegrationTests : IClassFixture<GatewayTestFixture>
         DashboardTelemetrySnapshot snapshot =
             await adminConnection.InvokeAsync<DashboardTelemetrySnapshot>("GetDashboardSnapshotAsync");
         Assert.All(snapshot.Models, m => Assert.Equal(0, m.ActiveLeases));
+    }
+
+    [Fact]
+    public async Task Security_RemoteClient_ImageFileContent_RejectedWithHubException()
+    {
+        await using var userConnection = CreateGatewayConnection(_tenantToken);
+        await userConnection.StartAsync();
+
+        string sessionId = $"lfi-test-{Guid.NewGuid():N}";
+        await userConnection.InvokeAsync("JoinSession", sessionId, _testRepoId);
+
+        var maliciousParts = new List<MessageContent>
+        {
+            new ImageFileContent(OperatingSystem.IsWindows()
+                ? @"C:\Windows\System32\config\SAM"
+                : "/etc/shadow"),
+            new TextContent("Describe this file.")
+        };
+        var maliciousMessage = new ChatMessage("user", maliciousParts);
+
+        var exception = await Assert.ThrowsAsync<HubException>(
+            () => userConnection.InvokeAsync("SendPromptDelta", sessionId, maliciousMessage));
+
+        Assert.Contains("ImageFileContent is not permitted", exception.Message);
+
+        await userConnection.InvokeAsync("LeaveSession", sessionId);
     }
 
     #endregion
