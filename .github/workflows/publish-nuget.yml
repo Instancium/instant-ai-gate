@@ -26,7 +26,7 @@ jobs:
       - name: NuGet login (OIDC)
         uses: NuGet/login@v1
         with:
-          user: Instancium 
+         user: Instancian
 
     
       - name: Extract Version and Pack
