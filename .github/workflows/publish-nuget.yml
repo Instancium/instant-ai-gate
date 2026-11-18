@@ -27,27 +27,8 @@ jobs:
         with:
           user: Instancian
 
-      - name: Extract Version and Pack
-        shell: pwsh
-        run: |
-          $serverProjectFile = "src/InstantAIGate.Server/InstantAIGate.Server.csproj"
-          if (-not (Test-Path $serverProjectFile)) {
-              Write-Host "Error: Cannot find $serverProjectFile"
-              exit 1
-          }
-
-          $serverContent = Get-Content $serverProjectFile -Raw
-          $versionMatch = [regex]::Match($serverContent, '<Version>(.*?)</Version>')
-
-          if ($versionMatch.Success) {
-              $Version = $versionMatch.Groups[1].Value.Trim()
-              Write-Host "Target version: $Version"
-          } else {
-              Write-Host "Error: Could not find <Version>"
-              exit 1
-          }
-
-          dotnet pack src/InstantAIGate.Core/InstantAIGate.Core.csproj -c Release -p:PackageVersion=$Version -o ./nupkg
+      - name: Pack InstantAIGate.Core
+        run: dotnet pack src/InstantAIGate.Core/InstantAIGate.Core.csproj -c Release -o ./nupkg
 
       - name: Push to NuGet
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
