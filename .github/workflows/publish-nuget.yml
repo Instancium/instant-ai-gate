@@ -52,4 +52,4 @@ jobs:
           dotnet pack src/InstantAIGate.Core/InstantAIGate.Core.csproj -c Release -p:PackageVersion=$Version -o ./nupkg
 
       - name: Push to NuGet
-        run: dotnet nuget push ./nupkg/*.nupkg -s https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push ./nupkg/*.nupkg -s https://api.nuget.org/v3/index.json -k ${{ env.NUGET_AUTH_TOKEN }} --skip-duplicate
