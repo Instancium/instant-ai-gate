@@ -1,0 +1,142 @@
+@namespace InstantAIGate.Dashboard.Components
+@implements IDisposable
+@using System.Linq
+@inject UiCommandService Commands
+
+<div class="ux-toast-stack" role="status" aria-live="polite">
+    @foreach (var toast in _toasts)
+    {
+        <div class="ux-toast @(toast.Status == UiCommandStatus.Succeeded ? "ux-toast-ok" : "ux-toast-err")">
+            <div class="ux-toast-body">
+                <span class="ux-toast-title">@toast.Label</span>
+                <span class="ux-toast-message">@toast.Message</span>
+            </div>
+            <button type="button"
+                    class="ux-toast-dismiss"
+                    title="Dismiss"
+                    aria-label="Dismiss notification"
+                    @onclick="() => Dismiss(toast.Id)">
+                ×
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record Toast(int Id, string Label, string Message, UiCommandStatus Status);
+
+    private const int MaxVisibleToasts = 5;
+    private static readonly TimeSpan SuccessLifetime = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan FailureLifetime = TimeSpan.FromSeconds(9);
+
+    private readonly List<Toast> _toasts = new();
+    private readonly Dictionary<int, CancellationTokenSource> _timers = new();
+    private int _nextId = 1;
+
+    /// <summary>
+    /// Global feedback overlay pinned to the viewport bottom-right.
+    /// Why: a page-top banner sits outside the scroll viewport when the operator clicks a
+    /// control at the bottom of the page, making the result of the command invisible.
+    /// Running transitions are ignored here — they drive button spinners, not toasts.
+    /// </summary>
+    protected override void OnInitialized()
+    {
+        Commands.CommandCompleted += OnCommandCompleted;
+    }
+
+    private void OnCommandCompleted(UiCommandEvent e)
+    {
+        if (e.Status == UiCommandStatus.Running)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(() =>
+        {
+            string message = e.Message
+                ?? (e.Status == UiCommandStatus.Succeeded ? "Completed." : "Failed.");
+
+            var toast = new Toast(_nextId++, e.Label, message, e.Status);
+            _toasts.Add(toast);
+
+            while (_toasts.Count > MaxVisibleToasts)
+            {
+                RemoveToast(_toasts[0]);
+            }
+
+            ArmTimer(toast);
+            StateHasChanged();
+        });
+    }
+
+    private void ArmTimer(Toast toast)
+    {
+        var cts = new CancellationTokenSource();
+        _timers[toast.Id] = cts;
+
+        TimeSpan lifetime = toast.Status == UiCommandStatus.Succeeded ? SuccessLifetime : FailureLifetime;
+        _ = DismissAfterAsync(toast.Id, lifetime, cts.Token);
+    }
+
+    private async Task DismissAfterAsync(int id, TimeSpan delay, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(delay, ct);
+            if (!ct.IsCancellationRequested)
+            {
+                await InvokeAsync(() =>
+                {
+                    Toast? toast = _toasts.FirstOrDefault(t => t.Id == id);
+                    if (toast is not null)
+                    {
+                        RemoveToast(toast);
+                    }
+
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private void Dismiss(int id)
+    {
+        Toast? toast = _toasts.FirstOrDefault(t => t.Id == id);
+        if (toast is not null)
+        {
+            RemoveToast(toast);
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveToast(Toast toast)
+    {
+        _toasts.Remove(toast);
+
+        if (_timers.TryGetValue(toast.Id, out CancellationTokenSource? cts))
+        {
+            cts.Cancel();
+            cts.Dispose();
+            _timers.Remove(toast.Id);
+        }
+    }
+
+    public void Dispose()
+    {
+        Commands.CommandCompleted -= OnCommandCompleted;
+
+        foreach (CancellationTokenSource cts in _timers.Values)
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
+
+        _timers.Clear();
+    }
+}

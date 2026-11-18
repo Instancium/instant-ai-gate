@@ -1,102 +1,83 @@
 @namespace InstantAIGate.Dashboard.Components
 @using System.Globalization
 @using InstantAIGate.Core.Dtos.Status
+@using InstantAIGate.Dashboard.Services
+@inject UiCommandService Commands
 
-<section class="panel-card">
-    <div class="panel-header">
-        <div>
-            <h2 class="panel-title">Real-Time Performance &amp; Queue Monitor</h2>
-            <span class="panel-subtitle">Autoregressive Token Generation (Eval TPS), Prefill (Prompt TPS) &amp; Backpressure</span>
-        </div>
-        <div class="tps-kpi-group">
-            <div class="kpi-pill eval">
-                <span class="kpi-label">Aggregate Gen TPS</span>
-                <span class="kpi-value">@($"{CurrentEvalTps:F1}") <small>tok/s</small></span>
+<section class="ux-panel">
+    <header class="ux-panel-head">
+        <h2 class="ux-panel-title">Real-Time Performance &amp; Queue Monitor</h2>
+    </header>
+
+    <div class="ux-cards">
+        <article class="ux-card">
+            <h3 class="ux-card-title">Generation speed (eval TPS)</h3>
+            <p class="ux-card-value">@CurrentEvalTps.ToString("F1", CultureInfo.InvariantCulture) <span class="ux-card-unit">tok/s</span></p>
+            <dl class="ux-kv">
+                <div><dt>Peak (2 min)</dt><dd>@PeakEvalTps.ToString("F1", CultureInfo.InvariantCulture)</dd></div>
+            </dl>
+        </article>
+
+        <article class="ux-card">
+            <h3 class="ux-card-title">Prompt ingestion (prompt TPS)</h3>
+            <p class="ux-card-value">@CurrentPromptTps.ToString("F1", CultureInfo.InvariantCulture) <span class="ux-card-unit">tok/s</span></p>
+            <dl class="ux-kv">
+                <div><dt>Peak (2 min)</dt><dd>@PeakPromptTps.ToString("F1", CultureInfo.InvariantCulture)</dd></div>
+            </dl>
+        </article>
+
+        <article class="ux-card">
+            <h3 class="ux-card-title">Inference queue</h3>
+            <p class="ux-card-value">@PendingRequests / @MaxQueueSize</p>
+            <div class="ux-bar">
+                <div class="ux-bar-fill @GetBarClass(QueueUtilizationPercent)" style="width: @FormatPercent(QueueUtilizationPercent)%"></div>
             </div>
-            <div class="kpi-pill prompt">
-                <span class="kpi-label">Prompt Prefill TPS</span>
-                <span class="kpi-value">@($"{CurrentPromptTps:F1}") <small>tok/s</small></span>
+            <div class="ux-inline-form">
+                <label class="ux-field-label" for="ux-queue-limit">Queue limit</label>
+                <input id="ux-queue-limit"
+                       class="ux-input"
+                       type="number"
+                       min="1"
+                       disabled="@ConnectionLocked"
+                       title="@LockTitle"
+                       @bind="_queueLimitInput" />
+                <ConfirmActionButton Label="Apply"
+                                     CssClass="ux-btn ux-btn-ghost ux-btn-sm"
+                                     IsBusy="@Commands.IsRunning(UiCommandIds.SetQueueLimit)"
+                                     IsDisabled="@ConnectionLocked"
+                                     Title="@LockTitle"
+                                     OnConfirm="ApplyQueueLimitAsync" />
             </div>
-        </div>
+        </article>
     </div>
 
-    <div class="queue-bar-panel">
-        <div class="queue-info">
-            <div class="queue-numbers">
-                <span class="metric-title">DynamicRequestQueue Backpressure</span>
-                <span class="queue-badge @(PendingRequests > 0 ? "warn" : "ok")">
-                    Pending: @PendingRequests / @MaxQueueSize
-                </span>
-                <span class="queue-badge info">
-                    Active Context Leases: @(Snapshot?.InferenceMetrics.ActiveLeases ?? 0)
-                </span>
-            </div>
-            <div class="progress-track compact">
-                <div class="progress-fill @(QueueUtilizationPercent > 80 ? "danger" : "ok")"
-                     style="width: @FormatPercent(QueueUtilizationPercent)%;"></div>
-            </div>
-        </div>
-
-        <div class="queue-controls">
-            <label for="queue-limit-input" class="control-label">Queue Limit:</label>
-            <input id="queue-limit-input"
-                   type="number"
-                   min="1"
-                   max="10000"
-                   class="input-compact"
-                   @bind="_queueLimitInput"
-                   disabled="@IsBusy" />
-            <button type="button"
-                    class="btn btn-secondary btn-sm"
-                    disabled="@(IsBusy || _queueLimitInput <= 0)"
-                    @onclick="ApplyQueueLimitAsync">
-                Apply Limit
-            </button>
-        </div>
-    </div>
-
-    <div class="chart-container">
-        <div class="chart-header">
-            <span class="chart-title">Throughput History (Last @(History?.Count ?? 0)s — 2 Min Window)</span>
-            <div class="chart-legend">
-                <span class="legend-item"><span class="legend-line line-eval-tps"></span>Eval TPS (Peak: @($"{PeakEvalTps:F1}") tok/s)</span>
-                <span class="legend-item"><span class="legend-line line-prompt-tps"></span>Prompt TPS (Peak: @($"{PeakPromptTps:F1}") tok/s)</span>
-            </div>
-        </div>
-
-        <svg class="telemetry-svg" viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="TPS History Chart">
-            <defs>
-                <linearGradient id="evalTpsGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#34d399" stop-opacity="0.30" />
-                    <stop offset="100%" stop-color="#34d399" stop-opacity="0.02" />
-                </linearGradient>
-            </defs>
-
-            <line x1="0" y1="20" x2="600" y2="20" class="svg-grid" />
-            <line x1="0" y1="80" x2="600" y2="80" class="svg-grid" />
-            <line x1="0" y1="140" x2="600" y2="140" class="svg-grid" />
-
-            @if (History is { Count: >= 2 })
-            {
-                <polygon points="@BuildEvalTpsAreaPoints()" fill="url(#evalTpsGrad)" />
-                <polyline points="@BuildPromptTpsLinePoints()" class="svg-line-prompt-tps" />
-                <polyline points="@BuildEvalTpsLinePoints()" class="svg-line-eval-tps" />
-            }
-            else
-            {
-                <g>
-                  <text x="300" y="85" text-anchor="middle" class="svg-empty-text">Waiting for inference throughput samples...</text>
-                </g>
-            }
-        </svg>
-    </div>
+    @if (History is { Count: >= 2 })
+    {
+        <figure class="ux-graph">
+            <svg viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="TPS history">
+                <polygon class="ux-graph-area" points="@BuildEvalTpsAreaPoints()" />
+                <polyline class="ux-graph-line" points="@BuildEvalTpsLinePoints()" />
+                <polyline class="ux-graph-line-ctx" points="@BuildPromptTpsLinePoints()" />
+            </svg>
+            <figcaption class="ux-legend">
+                <span class="ux-legend-item"><i class="ux-swatch ux-swatch-mem"></i>aggregate eval TPS</span>
+                <span class="ux-legend-item"><i class="ux-swatch ux-swatch-ctx"></i>max prompt TPS</span>
+            </figcaption>
+        </figure>
+    }
 </section>
 
 @code {
     [Parameter] public DashboardTelemetrySnapshot? Snapshot { get; set; }
+
     [Parameter] public IReadOnlyList<DashboardTelemetrySnapshot>? History { get; set; }
+
     [Parameter] public EventCallback<int> OnUpdateQueueLimit { get; set; }
-    [Parameter] public bool IsBusy { get; set; }
+
+    /// <summary>Locks queue-limit editing while the SignalR connection is not Connected.</summary>
+    [Parameter] public bool ConnectionLocked { get; set; }
+
+    private string? LockTitle => ConnectionLocked ? "Available when the dashboard is connected" : null;
 
     private int _queueLimitInput = 100;
     private int _lastSyncedQueueLimit = 100;
@@ -112,6 +93,7 @@
     }
 
     private int PendingRequests => Snapshot?.InferenceMetrics.PendingRequests ?? 0;
+
     private int MaxQueueSize => Snapshot?.InferenceMetrics.MaxQueueSize is > 0
         ? Snapshot.InferenceMetrics.MaxQueueSize
         : 100;
@@ -120,6 +102,7 @@
         MaxQueueSize > 0 ? Math.Clamp((double)PendingRequests / MaxQueueSize * 100.0, 0.0, 100.0) : 0.0;
 
     private double CurrentEvalTps => ComputeAggregateEvalTps(Snapshot);
+
     private double CurrentPromptTps => ComputeAggregatePromptTps(Snapshot);
 
     private double PeakEvalTps
@@ -135,6 +118,7 @@
                     if (val > max) max = val;
                 }
             }
+
             return max;
         }
     }
@@ -152,6 +136,7 @@
                     if (val > max) max = val;
                 }
             }
+
             return max;
         }
     }
@@ -164,6 +149,7 @@
         {
             sum += Math.Max(0.0, snapshot.Sessions[i].EvalTps);
         }
+
         return sum;
     }
 
@@ -178,7 +164,16 @@
                 max = snapshot.Sessions[i].PromptTps;
             }
         }
+
         return max;
+    }
+
+    private async Task ApplyQueueLimitAsync()
+    {
+        if (_queueLimitInput > 0 && OnUpdateQueueLimit.HasDelegate)
+        {
+            await OnUpdateQueueLimit.InvokeAsync(_queueLimitInput);
+        }
     }
 
     private string BuildEvalTpsLinePoints()
@@ -207,7 +202,6 @@
         const double topY = 15.0;
         const double bottomY = 145.0;
         double height = bottomY - topY;
-
         var points = new string[count];
         for (int i = 0; i < count; i++)
         {
@@ -216,16 +210,12 @@
             double y = bottomY - (ratio * height);
             points[i] = string.Create(CultureInfo.InvariantCulture, $"{x:F1},{y:F1}");
         }
+
         return string.Join(' ', points);
     }
 
-    private async Task ApplyQueueLimitAsync()
-    {
-        if (_queueLimitInput > 0 && OnUpdateQueueLimit.HasDelegate)
-        {
-            await OnUpdateQueueLimit.InvokeAsync(_queueLimitInput);
-        }
-    }
+    private static string GetBarClass(double percent) =>
+        percent >= 95.0 ? "danger" : (percent >= 80.0 ? "warn" : "ok");
 
     private static string FormatPercent(double value) =>
         Math.Clamp(value, 0.0, 100.0).ToString("F1", CultureInfo.InvariantCulture);

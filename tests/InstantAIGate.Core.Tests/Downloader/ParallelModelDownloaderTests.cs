@@ -59,7 +59,7 @@ public class ParallelModelDownloaderTests : IDisposable
         File.WriteAllText(manifestPath, System.Text.Json.JsonSerializer.Serialize(manifest));
 
         var progressList = new List<DownloadProgress>();
-        var progress = new Progress<DownloadProgress>(progressList.Add);
+        var progress = new SyncProgressCollector(progressList);
 
         // Act
         await downloader.DownloadModelAsync(modelId, new[] { url }, _tempTestDir, progress);
@@ -77,6 +77,33 @@ public class ParallelModelDownloaderTests : IDisposable
         Assert.Equal(totalSize, finalProgress.BytesDownloaded);
     }
 
+    /// <summary>
+    /// Synchronous IProgress collector. Why: Progress<T> dispatches Report via the captured
+    /// SynchronizationContext/thread pool, so assertions right after await race with the posted
+    /// callback (flaky empty collection on fast sequential downloads).
+    /// </summary>
+    private sealed class SyncProgressCollector : IProgress<DownloadProgress>
+    {
+        private readonly List<DownloadProgress> _target;
+        private readonly Action<DownloadProgress>? _observer;
+
+        public SyncProgressCollector(List<DownloadProgress> target, Action<DownloadProgress>? observer = null)
+        {
+            _target = target;
+            _observer = observer;
+        }
+
+        public void Report(DownloadProgress value)
+        {
+            lock (_target)
+            {
+                _target.Add(value);
+            }
+            _observer?.Invoke(value);
+        }
+    }
+
+
     [Fact]
     public async Task DownloadModelAsync_MultiThreaded_CalculatesSpeedAndCompletes()
     {
@@ -88,7 +115,7 @@ public class ParallelModelDownloaderTests : IDisposable
             NullLogger<ParallelModelDownloader>.Instance,
             stubValidator);
         var progressList = new List<DownloadProgress>();
-        var progress = new Progress<DownloadProgress>(progressList.Add);
+        var progress = new SyncProgressCollector(progressList);
 
         // Act
         await downloader.DownloadModelAsync("test-model", new[] { SynthOptions.BaseUrl + "model.gguf" }, _tempTestDir, progress);
@@ -114,7 +141,7 @@ public class ParallelModelDownloaderTests : IDisposable
         var downloader = new ParallelModelDownloader(new HttpClient(handler),
             NullLogger<ParallelModelDownloader>.Instance, stubValidator);
         var progressList = new List<DownloadProgress>();
-        var progress = new Progress<DownloadProgress>(progressList.Add);
+        var progress = new SyncProgressCollector(progressList);
 
         // Act
         await downloader.DownloadModelAsync("fallback-model", new[] { SynthOptions.BaseUrl + "sequential.gguf" }, _tempTestDir, progress);
@@ -138,9 +165,8 @@ public class ParallelModelDownloaderTests : IDisposable
             NullLogger<ParallelModelDownloader>.Instance, stubValidator);
 
         using var cts = new CancellationTokenSource();
-        var progress = new Progress<DownloadProgress>(p =>
+        var progress = new SyncProgressCollector(new List<DownloadProgress>(), p =>
         {
-            // Cancel as soon as we start receiving data
             if (p.Percentage > 1.0f) cts.Cancel();
         });
 
