@@ -9,13 +9,10 @@ using System.Threading.Tasks;
 
 /// <summary>
 /// Single execution point for every user-initiated dashboard command.
-/// Why: before this service existed, each button handler had its own try/catch and a page-top
-/// error banner that was invisible at the click site; an uncaught exception anywhere faulted
-/// the whole Blazor circuit and silently killed all controls.
-/// Guarantees: (1) no exception ever escapes <see cref="RunAsync"/> — failures become
-/// <see cref="UiCommandStatus.Failed"/> state + journal record + toast event;
-/// (2) the same command id cannot execute concurrently (duplicate starts are rejected);
-/// (3) terminal transitions are published via <see cref="CommandCompleted"/> for global feedback.
+/// Guarantees: (1) no exception escapes <see cref="RunAsync"/>; (2) the same command id
+/// cannot execute concurrently and a rejected duplicate is reported, never swallowed;
+/// (3) both the running transition and the terminal transition are published so buttons
+/// can render a spinner while the RPC is in flight.
 /// </summary>
 public sealed class UiCommandService
 {
@@ -31,7 +28,10 @@ public sealed class UiCommandService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>Raised on every terminal command transition (succeeded or failed).</summary>
+    /// <summary>
+    /// Raised on every command transition: Running at start, then Succeeded or Failed.
+    /// Toast surfaces must ignore Running; state surfaces (buttons, page) must react to it.
+    /// </summary>
     public event Action<UiCommandEvent>? CommandCompleted;
 
     public UiCommandState GetState(string commandId)
@@ -64,8 +64,11 @@ public sealed class UiCommandService
         if (!_running.TryAdd(commandId, true))
         {
             _logger.LogDebug("Command {CommandId} rejected: already running.", commandId);
+            NotifyDuplicate(commandId, label);
             return false;
         }
+
+        PublishRunning(commandId, label);
 
         try
         {
@@ -90,15 +93,49 @@ public sealed class UiCommandService
         }
     }
 
+    /// <summary>
+    /// Publishes the in-flight state without touching the audit journal.
+    /// Why: without this transition IsRunning was permanently false, so no button ever
+    /// showed a spinner and a slow admin RPC was indistinguishable from a dead control.
+    /// </summary>
+    private void PublishRunning(string commandId, string label)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        _states[commandId] = new UiCommandState
+        {
+            Status = UiCommandStatus.Running,
+            LastMessage = null,
+            LastCompletedAt = null
+        };
+
+        CommandCompleted?.Invoke(new UiCommandEvent(commandId, label, UiCommandStatus.Running, null, now));
+    }
+
+    /// <summary>
+    /// Reports a rejected duplicate start. Deliberately does not overwrite the state of the
+    /// execution that is still in flight, so its spinner survives the rejected click.
+    /// </summary>
+    private void NotifyDuplicate(string commandId, string label)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        string message = $"{label} is already running. Wait for it to finish.";
+
+        _journal.Add(new OperationRecord(now, commandId, label, UiCommandStatus.Failed, message));
+        CommandCompleted?.Invoke(new UiCommandEvent(commandId, label, UiCommandStatus.Failed, message, now));
+    }
+
     private void Record(string commandId, string label, UiCommandStatus status, string? message)
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
+
         _states[commandId] = new UiCommandState
         {
             Status = status,
             LastMessage = message,
             LastCompletedAt = now
         };
+
         _journal.Add(new OperationRecord(now, commandId, label, status, message));
         CommandCompleted?.Invoke(new UiCommandEvent(commandId, label, status, message, now));
     }

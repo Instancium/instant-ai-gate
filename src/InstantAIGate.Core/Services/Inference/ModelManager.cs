@@ -8,12 +8,23 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 public sealed class ModelManager : IDisposable, IModelManager
 {
+    /// <summary>
+    /// Upper bound for a graceful drain. Chosen below the dashboard RPC timeout so the
+    /// operator receives an actionable reason instead of a generic transport timeout.
+    /// Why: an unbounded wait held the global model lock forever whenever a session kept
+    /// a context lease, after which every subsequent load/unload appeared to hang.
+    /// </summary>
+    private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(15);
+
+    private static readonly TimeSpan DrainPollInterval = TimeSpan.FromMilliseconds(50);
+
     private readonly IModelProvider _modelProvider;
     private readonly IModelLocator _modelLocator;
     private readonly IQueueManager _queueManager;
@@ -63,18 +74,29 @@ public sealed class ModelManager : IDisposable, IModelManager
 
     public Task PurgeIdleContextsAsync(string repoId, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         if (string.IsNullOrWhiteSpace(repoId))
         {
             foreach (var key in _activeModels.Keys)
             {
+                ct.ThrowIfCancellationRequested();
                 _modelProvider.PurgeIdleContexts(key);
             }
-        }
-        else
-        {
-            _modelProvider.PurgeIdleContexts(repoId);
+
+            _eventSource?.NotifyStateChanged();
+            return Task.CompletedTask;
         }
 
+        if (!_activeModels.ContainsKey(repoId))
+        {
+            throw new InvalidOperationException(
+                $"Model '{repoId}' is not loaded, so it has no idle contexts to purge. " +
+                $"Loaded models: {DescribeLoadedModels()}.");
+        }
+
+        _modelProvider.PurgeIdleContexts(repoId);
+        _eventSource?.NotifyStateChanged();
         return Task.CompletedTask;
     }
 
@@ -168,6 +190,7 @@ public sealed class ModelManager : IDisposable, IModelManager
 
             _queueManager.Resume();
             _eventSource?.NotifyStateChanged();
+
             _logger.LogInformation("Model '{RepoId}' loaded into active registry (MaxContexts={MaxContexts}).",
                 config.RepoId, maxContexts);
         }
@@ -179,6 +202,8 @@ public sealed class ModelManager : IDisposable, IModelManager
 
     public async Task SwapModelAsync(ModelSettings newConfig, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(newConfig);
+
         await _globalLock.WaitAsync(ct);
         try
         {
@@ -209,6 +234,7 @@ public sealed class ModelManager : IDisposable, IModelManager
             _primaryRepoId = newConfig.RepoId;
             _queueManager.Resume();
             _eventSource?.NotifyStateChanged();
+
             _logger.LogInformation("Swap to '{RepoId}' completed successfully.", newConfig.RepoId);
         }
         finally
@@ -219,6 +245,9 @@ public sealed class ModelManager : IDisposable, IModelManager
 
     public async Task<InferenceContext> AcquireContextAsync(string repoId, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(repoId))
+            throw new ArgumentException("RepoId cannot be empty.", nameof(repoId));
+
         if (!_activeModels.ContainsKey(repoId) ||
             (_drainingModels.TryGetValue(repoId, out bool isDraining) && isDraining))
         {
@@ -245,6 +274,7 @@ public sealed class ModelManager : IDisposable, IModelManager
                 {
                     _modelLeases.AddOrUpdate(repoId, 0, (_, current) => Math.Max(0, current - 1));
                     Interlocked.Decrement(ref _totalActiveLeases);
+
                     try
                     {
                         semaphore.Release();
@@ -252,8 +282,13 @@ public sealed class ModelManager : IDisposable, IModelManager
                     catch (ObjectDisposedException)
                     {
                     }
+                    catch (SemaphoreFullException)
+                    {
+                    }
+
                     _eventSource?.NotifyStateChanged();
                 });
+
                 return inferenceContext;
             }
 
@@ -263,6 +298,7 @@ public sealed class ModelManager : IDisposable, IModelManager
         {
             _modelLeases.AddOrUpdate(repoId, 0, (_, current) => Math.Max(0, current - 1));
             Interlocked.Decrement(ref _totalActiveLeases);
+
             try
             {
                 semaphore.Release();
@@ -270,6 +306,10 @@ public sealed class ModelManager : IDisposable, IModelManager
             catch (ObjectDisposedException)
             {
             }
+            catch (SemaphoreFullException)
+            {
+            }
+
             _eventSource?.NotifyStateChanged();
             throw;
         }
@@ -277,6 +317,13 @@ public sealed class ModelManager : IDisposable, IModelManager
 
     public async Task UnloadModelAsync(string repoId, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(repoId))
+        {
+            throw new ArgumentException(
+                "A model id is required to unload. Loaded models: " + DescribeLoadedModels(),
+                nameof(repoId));
+        }
+
         await _globalLock.WaitAsync(ct);
         try
         {
@@ -291,17 +338,38 @@ public sealed class ModelManager : IDisposable, IModelManager
     private async Task UnloadModelInternalAsync(string repoId, CancellationToken ct)
     {
         if (!_activeModels.ContainsKey(repoId))
+        {
+            _logger.LogInformation("Unload skipped: model '{RepoId}' is not loaded.", repoId);
             return;
+        }
 
         _drainingModels[repoId] = true;
         _eventSource?.NotifyStateChanged();
 
-        while (_modelLeases.TryGetValue(repoId, out int leases) && leases > 0)
+        var drainWatch = Stopwatch.StartNew();
+        try
         {
-            await Task.Delay(50, ct);
+            while (_modelLeases.TryGetValue(repoId, out int leases) && leases > 0)
+            {
+                if (drainWatch.Elapsed >= DrainTimeout)
+                {
+                    throw new InvalidOperationException(
+                        $"Model '{repoId}' still holds {leases} active context lease(s) after " +
+                        $"{DrainTimeout.TotalSeconds:F0} s of draining. Kill the sessions that use this model, then retry the unload.");
+                }
+
+                await Task.Delay(DrainPollInterval, ct);
+            }
+
+            _modelProvider.UnloadModel(repoId);
+        }
+        catch
+        {
+            _drainingModels[repoId] = false;
+            _eventSource?.NotifyStateChanged();
+            throw;
         }
 
-        _modelProvider.UnloadModel(repoId);
         _activeModels.TryRemove(repoId, out _);
         _drainingModels.TryRemove(repoId, out _);
         _modelLeases.TryRemove(repoId, out _);
@@ -323,6 +391,7 @@ public sealed class ModelManager : IDisposable, IModelManager
     {
         var modelWeights = await _modelProvider.GetWeightsAsync(repoId, ct);
         if (modelWeights != null) return modelWeights;
+
         throw new InvalidCastException("Weights infrastructure cannot be mapped.");
     }
 
@@ -331,6 +400,7 @@ public sealed class ModelManager : IDisposable, IModelManager
         int currentLeases = Volatile.Read(ref _totalActiveLeases);
         int pendingRequests = _queueManager.PendingCount;
         int maxQueueSize = _queueManager.MaxQueueSize > 0 ? _queueManager.MaxQueueSize : 100;
+
         return new InferenceMetrics(currentLeases, pendingRequests)
         {
             MaxQueueSize = maxQueueSize
@@ -338,29 +408,37 @@ public sealed class ModelManager : IDisposable, IModelManager
     }
 
     public IEnumerable<ModelRegistryStatus> GetActiveModelsStatus() => _modelProvider.GetStatus();
+
     public IEnumerable<string> GetActiveModels() => _activeModels.Keys.ToList();
+
     public IEnumerable<NativeModelDetails> GetNativeDetails() => _modelProvider.GetNativeDetails();
 
     public IReadOnlyList<ModelPoolTelemetryDto> GetModelsPoolTelemetry()
     {
         var nativeDetailsMap = _modelProvider.GetNativeDetails()
             .ToDictionary(d => d.RepoId, StringComparer.OrdinalIgnoreCase);
+
         var result = new List<ModelPoolTelemetryDto>(_activeModels.Count);
+
         foreach (var kvp in _activeModels)
         {
             var repoId = kvp.Key;
             var settings = kvp.Value;
+
             _modelLeases.TryGetValue(repoId, out int activeLeases);
             _drainingModels.TryGetValue(repoId, out bool isDraining);
+
             int idlePooledContexts = 0;
             int totalLayers = 0;
             long modelWeightsBytes = 0;
+
             if (nativeDetailsMap.TryGetValue(repoId, out var native))
             {
                 idlePooledContexts = native.IdleContextsCount;
                 totalLayers = native.TotalLayers;
                 modelWeightsBytes = native.ModelWeightsBytes;
             }
+
             result.Add(new ModelPoolTelemetryDto
             {
                 RepoId = repoId,
@@ -377,16 +455,22 @@ public sealed class ModelManager : IDisposable, IModelManager
                 ModelWeightsBytes = modelWeightsBytes
             });
         }
+
         return result;
     }
+
+    private string DescribeLoadedModels() =>
+        _activeModels.IsEmpty ? "none" : string.Join(", ", _activeModels.Keys);
 
     public void Dispose()
     {
         _globalLock.Dispose();
+
         foreach (var sem in _contextSemaphores.Values)
         {
             sem.Dispose();
         }
+
         _contextSemaphores.Clear();
         _modelProvider.Dispose();
     }

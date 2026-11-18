@@ -13,6 +13,7 @@
             </div>
             <button type="button"
                     class="ux-toast-dismiss"
+                    title="Dismiss"
                     aria-label="Dismiss notification"
                     @onclick="() => Dismiss(toast.Id)">
                 ×
@@ -34,8 +35,9 @@
 
     /// <summary>
     /// Global feedback overlay pinned to the viewport bottom-right.
-    /// Why: the previous error banner rendered at the top of the page and was outside the
-    /// scroll viewport when the user clicked a button at the bottom — feedback was invisible.
+    /// Why: a page-top banner sits outside the scroll viewport when the operator clicks a
+    /// control at the bottom of the page, making the result of the command invisible.
+    /// Running transitions are ignored here — they drive button spinners, not toasts.
     /// </summary>
     protected override void OnInitialized()
     {
@@ -44,12 +46,19 @@
 
     private void OnCommandCompleted(UiCommandEvent e)
     {
+        if (e.Status == UiCommandStatus.Running)
+        {
+            return;
+        }
+
         _ = InvokeAsync(() =>
         {
             string message = e.Message
                 ?? (e.Status == UiCommandStatus.Succeeded ? "Completed." : "Failed.");
+
             var toast = new Toast(_nextId++, e.Label, message, e.Status);
             _toasts.Add(toast);
+
             while (_toasts.Count > MaxVisibleToasts)
             {
                 RemoveToast(_toasts[0]);
@@ -64,6 +73,7 @@
     {
         var cts = new CancellationTokenSource();
         _timers[toast.Id] = cts;
+
         TimeSpan lifetime = toast.Status == UiCommandStatus.Succeeded ? SuccessLifetime : FailureLifetime;
         _ = DismissAfterAsync(toast.Id, lifetime, cts.Token);
     }
@@ -108,6 +118,7 @@
     private void RemoveToast(Toast toast)
     {
         _toasts.Remove(toast);
+
         if (_timers.TryGetValue(toast.Id, out CancellationTokenSource? cts))
         {
             cts.Cancel();
@@ -119,6 +130,7 @@
     public void Dispose()
     {
         Commands.CommandCompleted -= OnCommandCompleted;
+
         foreach (CancellationTokenSource cts in _timers.Values)
         {
             cts.Cancel();

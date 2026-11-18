@@ -1,19 +1,11 @@
 ﻿using Microsoft.Extensions.Primitives;
+using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace InstantAIGate.Server.Middleware;
 
-/// <summary>
-/// API-key authentication gate for the gateway HTTP pipeline.
-/// Security posture after Stage 4:
-///   * liveness/readiness probes remain anonymous;
-///   * GET/HEAD requests for the Blazor WASM shell (/, /index.html, /_framework/*, /css/*, /favicon.*)
-///     are anonymous BY DESIGN (the WASM bundle contains no secrets; all data flows through the
-///     token-protected SignalR hub);
-///   * everything else (including /hub/gateway/negotiate) still requires a valid admin or tenant key.
-/// </summary>
 public sealed class ApiKeyAuthMiddleware
 {
     private const string AdminRole = "Admin";
@@ -51,14 +43,7 @@ public sealed class ApiKeyAuthMiddleware
 
         if (apiKey is not null && TryResolveRole(apiKey, out string? role))
         {
-            context.User = new ClaimsPrincipal(
-                new ClaimsIdentity(
-                    [
-                        new Claim(ClaimTypes.Role, role!),
-                        new Claim(ClaimTypes.Name, role == AdminRole ? "gateway-admin" : "gateway-tenant")
-                    ],
-                    AuthenticationSchemeName));
-
+            context.User = BuildPrincipal(role!);
             await _next(context);
             return;
         }
@@ -72,6 +57,14 @@ public sealed class ApiKeyAuthMiddleware
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         await context.Response.WriteAsync("API key is missing or invalid.");
     }
+
+    private static ClaimsPrincipal BuildPrincipal(string role) =>
+        new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Role, role),
+                new Claim(ClaimTypes.Name, role == AdminRole ? "gateway-admin" : "gateway-tenant")
+            ],
+            AuthenticationSchemeName));
 
     private static bool IsHealthProbe(PathString path)
         => path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase);
@@ -111,23 +104,22 @@ public sealed class ApiKeyAuthMiddleware
         return path.StartsWith("/favicon.", StringComparison.OrdinalIgnoreCase);
     }
 
+
     private static string? ExtractApiKey(HttpRequest request)
     {
         if (request.Headers.TryGetValue("Authorization", out StringValues authorization))
         {
             string? value = authorization.ToString();
-
             if (value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
                 return value["Bearer ".Length..].Trim();
             }
         }
 
-        // SignalR falls back to WebSockets, where custom headers are unavailable:
-        // the access_token query string is the supported transport for the hub token.
         if (request.Query.TryGetValue("access_token", out StringValues queryToken))
         {
-            return queryToken.ToString();
+            string? token = queryToken.ToString();
+            return string.IsNullOrWhiteSpace(token) ? null : token;
         }
 
         return null;

@@ -27,6 +27,7 @@ public class Program
 
         builder.Services.Configure<StorageSettings>(
             builder.Configuration.GetSection("InstantAIGate:Storage"));
+
         builder.Services.Configure<SessionSettings>(
             builder.Configuration.GetSection(SessionSettings.SectionName));
 
@@ -42,18 +43,19 @@ public class Program
         builder.Services.AddInstantAIGateInference();
         builder.Services.AddInstantAIGateSSR();
 
+        var gatewayTransportOptions = builder.Configuration
+            .GetSection("InstantAIGate:Gateway")
+            .Get<GatewayTransportOptions>() ?? new GatewayTransportOptions();
+
         builder.Services.AddSignalR(options =>
         {
-            var gatewayTransportOptions = builder.Configuration
-                .GetSection("InstantAIGate:Gateway")
-                .Get<GatewayTransportOptions>() ?? new GatewayTransportOptions();
             options.MaximumReceiveMessageSize = gatewayTransportOptions.GetEffectiveReceiveMessageSize();
+            options.EnableDetailedErrors = gatewayTransportOptions.EnableDetailedErrors;
         });
 
         var signalRLoggerProvider = new SignalRLoggerProvider();
         builder.Services.AddSingleton<ILoggerProvider>(signalRLoggerProvider);
         builder.Services.AddHostedService(sp => signalRLoggerProvider);
-
         builder.Services.AddHostedService<MetricsBroadcasterWorker>();
 
         var downloadChannel = Channel.CreateUnbounded<DownloadJob>();
