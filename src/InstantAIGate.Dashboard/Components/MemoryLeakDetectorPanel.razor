@@ -29,55 +29,149 @@
         @if (ViewMode == HardwareViewMode.UnifiedMemory)
         {
             <p class="ux-card-note">
-                This host exposes no GPU telemetry, so model weights, KV caches and the native heap
-                live in system RAM. The gateway footprint is broken out inside the RAM card below;
-                no VRAM numbers are reported or estimated here.
+                This host exposes no GPU telemetry, so model weights, KV caches and the native heap live in system RAM.
+                No VRAM numbers are reported or estimated here.
             </p>
         }
 
-        <div class="ux-cards">
-            @if (ViewMode == HardwareViewMode.Gpu)
-            {
-                <article class="ux-card">
-                    <h3 class="ux-card-title">VRAM (GPU)</h3>
-                    <p class="ux-card-value">
-                        @FormatBytes(Snapshot!.Hardware.VramUsedBytes) / @FormatBytes(Snapshot.Hardware.VramTotalBytes)
-                        <span class="ux-card-unit">used / total VRAM</span>
-                    </p>
-                    <div class="ux-bar">
-                        <div class="ux-bar-fill @GetBarClass(VramPercent)" style="width: @FormatPercent(VramPercent)%"></div>
-                    </div>
-                    <dl class="ux-kv">
-                        <div><dt>Process VRAM</dt><dd>@FormatBytes(Snapshot.Hardware.VramProcessUsedBytes)</dd></div>
-                        <div><dt>Model weights</dt><dd>@FormatBytes(_report.TotalModelWeightsBytes)</dd></div>
-                        <div><dt>KV cache (est.)</dt><dd>@FormatBytes(_report.EstimatedKvCacheBytes)</dd></div>
-                        <div><dt>Unaccounted delta</dt><dd>@FormatBytes(_report.UnaccountedVramDeltaBytes)</dd></div>
-                    </dl>
-                </article>
-            }
-
-            <article class="ux-card">
-                <h3 class="ux-card-title">RAM (host &amp; process)</h3>
-                <p class="ux-card-value">
-                    @FormatBytes(HostRamUsedBytes) / @FormatBytes(Snapshot!.Hardware.SystemTotalRamBytes)
-                    <span class="ux-card-unit">used / total system RAM</span>
-                </p>
+        @if (ViewMode == HardwareViewMode.Gpu)
+        {
+            <div class="ux-bar-row">
+                <span class="ux-bar-label">VRAM</span>
                 <div class="ux-bar">
-                    <div class="ux-bar-fill @GetBarClass(HostRamPercent)" style="width: @FormatPercent(HostRamPercent)%"></div>
+                    <div class="ux-bar-fill @GetBarClass(VramPercent)" style="width: @FormatPercent(VramPercent)%"></div>
                 </div>
-                <dl class="ux-kv">
-                    <div><dt>Process working set</dt><dd>@FormatBytes(_report.ProcessWorkingSetBytes)</dd></div>
-                    <div><dt>Process private bytes</dt><dd>@FormatBytes(_report.ProcessPrivateBytes)</dd></div>
-                    @if (ViewMode == HardwareViewMode.UnifiedMemory)
-                    {
-                        <div><dt>Native heap (Private − GC)</dt><dd>@FormatBytes(_report.PrivateUnmanagedBytes)</dd></div>
-                        <div><dt>Weights + KV (est.)</dt><dd>@FormatBytes(_report.EstimatedGatewayVramBytes)</dd></div>
-                        <div><dt>Managed heap (GC)</dt><dd>@FormatBytes(_report.ManagedHeapBytes)</dd></div>
-                    }
-                    <div><dt>CPU usage</dt><dd>@FormatPercent(Snapshot.Hardware.CpuUsagePercent)%</dd></div>
-                    <div><dt>Allocated contexts</dt><dd>@_report.TotalAllocatedContexts</dd></div>
-                </dl>
-            </article>
+                <span class="ux-bar-value">@FormatBytes(Snapshot!.Hardware.VramUsedBytes) / @FormatBytes(Snapshot.Hardware.VramTotalBytes) (@FormatPercent(VramPercent)%)</span>
+            </div>
+        }
+        <div class="ux-bar-row">
+            <span class="ux-bar-label">RAM</span>
+            <div class="ux-bar">
+                <div class="ux-bar-fill @GetBarClass(HostRamPercent)" style="width: @FormatPercent(HostRamPercent)%"></div>
+            </div>
+            <span class="ux-bar-value">@FormatBytes(HostRamUsedBytes) / @FormatBytes(Snapshot!.Hardware.SystemTotalRamBytes) (@FormatPercent(HostRamPercent)%)</span>
+        </div>
+
+        <div class="ux-table-wrap">
+            <table class="ux-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th class="ux-num">Value</th>
+                        <th class="ux-num">Share</th>
+                        <th>What it measures</th>
+                    </tr>
+                </thead>
+
+                @if (ViewMode == HardwareViewMode.Gpu)
+                {
+                    <tbody>
+                        <tr class="ux-table-group"><th colspan="4">VRAM (GPU)</th></tr>
+                        <tr>
+                            <td class="ux-metric-name">Device VRAM used</td>
+                            <td class="ux-num">@FormatBytes(Snapshot!.Hardware.VramUsedBytes)</td>
+                            <td class="ux-num">@FormatShare(Snapshot.Hardware.VramUsedBytes, Snapshot.Hardware.VramTotalBytes)</td>
+                            <td class="ux-mean">Total video memory in use across all processes on the GPU.</td>
+                        </tr>
+                        <tr>
+                            <td class="ux-metric-name">Process VRAM</td>
+                            <td class="ux-num">@FormatBytes(Snapshot.Hardware.VramProcessUsedBytes)</td>
+                            <td class="ux-num">@FormatShare(Snapshot.Hardware.VramProcessUsedBytes, Snapshot.Hardware.VramTotalBytes)</td>
+                            <td class="ux-mean">Portion of VRAM attributed to the gateway process.</td>
+                        </tr>
+                        <tr>
+                            <td class="ux-metric-name">Unaccounted VRAM delta</td>
+                            <td class="ux-num">@FormatDeltaBytes(_report.UnaccountedVramDeltaBytes)</td>
+                            <td class="ux-num">—</td>
+                            <td class="ux-mean">Process VRAM minus weights and KV estimate; sustained growth signals a native leak.</td>
+                        </tr>
+                    </tbody>
+                }
+
+                <tbody>
+                    <tr class="ux-table-group"><th colspan="4">Host RAM</th></tr>
+                    <tr>
+                        <td class="ux-metric-name">System RAM used</td>
+                        <td class="ux-num">@FormatBytes(HostRamUsedBytes)</td>
+                        <td class="ux-num">@FormatShare(HostRamUsedBytes, Snapshot!.Hardware.SystemTotalRamBytes)</td>
+                        <td class="ux-mean">Physical RAM in use by the OS and all processes on this machine.</td>
+                    </tr>
+                    <tr>
+                        <td class="ux-metric-name">System RAM available</td>
+                        <td class="ux-num">@FormatBytes(Snapshot.Hardware.SystemAvailableRamBytes)</td>
+                        <td class="ux-num">@FormatShare(Snapshot.Hardware.SystemAvailableRamBytes, Snapshot.Hardware.SystemTotalRamBytes)</td>
+                        <td class="ux-mean">RAM immediately available for new allocations.</td>
+                    </tr>
+                    <tr>
+                        <td class="ux-metric-name">CPU usage</td>
+                        <td class="ux-num">@FormatPercent(Snapshot.Hardware.CpuUsagePercent)%</td>
+                        <td class="ux-num">—</td>
+                        <td class="ux-mean">Gateway process CPU load averaged across all cores.</td>
+                    </tr>
+                </tbody>
+
+                <tbody>
+                    <tr class="ux-table-group"><th colspan="4">Gateway process</th></tr>
+                    <tr>
+                        <td class="ux-metric-name">Process working set</td>
+                        <td class="ux-num">@FormatBytes(_report.ProcessWorkingSetBytes)</td>
+                        <td class="ux-num">@FormatShare(_report.ProcessWorkingSetBytes, Snapshot!.Hardware.SystemTotalRamBytes)</td>
+                        <td class="ux-mean">Physical RAM pages currently touched by the gateway process.</td>
+                    </tr>
+                    <tr>
+                        <td class="ux-metric-name">Process private bytes</td>
+                        <td class="ux-num">@FormatBytes(_report.ProcessPrivateBytes)</td>
+                        <td class="ux-num">@FormatShare(_report.ProcessPrivateBytes, Snapshot!.Hardware.SystemTotalRamBytes)</td>
+                        <td class="ux-mean">Memory committed exclusively to the gateway process.</td>
+                    </tr>
+                    <tr>
+                        <td class="ux-metric-name">Managed heap (GC)</td>
+                        <td class="ux-num">@FormatBytes(_report.ManagedHeapBytes)</td>
+                        <td class="ux-num">@FormatShare(_report.ManagedHeapBytes, Snapshot!.Hardware.SystemTotalRamBytes)</td>
+                        <td class="ux-mean">.NET GC heap; stays small when native offload works correctly.</td>
+                    </tr>
+                    <tr>
+                        <td class="ux-metric-name">Native heap (Private − GC)</td>
+                        <td class="ux-num">@FormatBytes(_report.PrivateUnmanagedBytes)</td>
+                        <td class="ux-num">@FormatShare(_report.PrivateUnmanagedBytes, Snapshot!.Hardware.SystemTotalRamBytes)</td>
+                        <td class="ux-mean">llama.cpp / mtmd allocations: weights, KV caches, compute arenas.</td>
+                    </tr>
+                </tbody>
+
+                <tbody>
+                    <tr class="ux-table-group"><th colspan="4">Gateway footprint (estimate)</th></tr>
+                    <tr>
+                        <td class="ux-metric-name">Model weights (loaded)</td>
+                        <td class="ux-num">@FormatBytes(_report.TotalModelWeightsBytes)</td>
+                        <td class="ux-num">@FormatShare(_report.TotalModelWeightsBytes, Snapshot!.Hardware.SystemTotalRamBytes)</td>
+                        <td class="ux-mean">Sum of loaded GGUF weight sizes resident in memory.</td>
+                    </tr>
+                    <tr>
+                        <td class="ux-metric-name">KV cache (allocated slots)</td>
+                        <td class="ux-num">@FormatBytes(_report.EstimatedKvCacheBytes)</td>
+                        <td class="ux-num">@FormatShare(_report.EstimatedKvCacheBytes, Snapshot!.Hardware.SystemTotalRamBytes)</td>
+                        <td class="ux-mean">Estimated KV memory of allocated context slots (leases + pooled).</td>
+                    </tr>
+                    <tr>
+                        <td class="ux-metric-name">Native delta beyond weights + KV</td>
+                        <td class="ux-num">@FormatDeltaBytes(_report.PrivateUnmanagedBytes - _report.EstimatedGatewayVramBytes)</td>
+                        <td class="ux-num">—</td>
+                        <td class="ux-mean">Native heap minus weights and KV; sustained positive growth is the leak signal.</td>
+                    </tr>
+                    <tr>
+                        <td class="ux-metric-name">Allocated contexts</td>
+                        <td class="ux-num">@_report.TotalAllocatedContexts</td>
+                        <td class="ux-num">—</td>
+                        <td class="ux-mean">Active leases plus idle pooled native contexts.</td>
+                    </tr>
+                    <tr>
+                        <td class="ux-metric-name">Active sessions</td>
+                        <td class="ux-num">@_report.ActiveSessionsCount</td>
+                        <td class="ux-num">—</td>
+                        <td class="ux-mean">Sessions currently registered on the gateway.</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
 
         @if (_report.IsNativeRetentionSuspected && !string.IsNullOrWhiteSpace(_report.RetentionDiagnosticMessage))
@@ -128,9 +222,7 @@
 
     /// <summary>
     /// Adaptive presentation mode. Why: on CPU-only hosts every VRAM probe legitimately
-    /// reports zero; rendering a synthetic "unified memory budget" card duplicated the RAM
-    /// card numbers and misled operators, so unified mode now only enriches the single RAM
-    /// card with the process footprint breakdown instead of inventing a second budget.
+    /// reports zero, and rendering a permanent 0% bar looked like a broken control.
     /// </summary>
     private HardwareViewMode ViewMode => Snapshot is null
         ? HardwareViewMode.NoTelemetry
@@ -273,6 +365,12 @@
 
     private static string FormatPercent(double value) =>
         Math.Clamp(value, 0.0, 100.0).ToString("F1", CultureInfo.InvariantCulture);
+
+    private static string FormatShare(long part, long total) =>
+        total > 0 ? $"{FormatPercent(Math.Clamp((double)part / total * 100.0, 0.0, 100.0))}%" : "—";
+
+    private static string FormatDeltaBytes(long bytes) =>
+        (bytes < 0 ? "-" : string.Empty) + FormatBytes(Math.Abs(bytes));
 
     private static string FormatBytes(long bytes)
     {
