@@ -53,6 +53,8 @@
                                                      ConfirmLabel="Confirm kill?"
                                                      CssClass="ux-btn ux-btn-danger ux-btn-sm"
                                                      IsBusy="@Commands.IsRunning(UiCommandIds.KillSession(session.SessionId))"
+                                                     IsDisabled="@ConnectionLocked"
+                                                     Title="@LockTitle"
                                                      OnConfirm="() => OnKillSession.InvokeAsync(session.SessionId)" />
                             </td>
                         </tr>
@@ -67,6 +69,11 @@
     [Parameter] public IReadOnlyList<SessionTelemetryDto>? Sessions { get; set; }
 
     [Parameter] public EventCallback<string> OnKillSession { get; set; }
+
+    /// <summary>Locks destructive controls while the SignalR connection is not Connected.</summary>
+    [Parameter] public bool ConnectionLocked { get; set; }
+
+    private string? LockTitle => ConnectionLocked ? "Available when the dashboard is connected" : null;
 
     private static string GetContextBarClass(double fillPercent) =>
         fillPercent >= 85.0 ? "danger" : (fillPercent >= 60.0 ? "warn" : "ok");

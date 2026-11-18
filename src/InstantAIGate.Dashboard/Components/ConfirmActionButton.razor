@@ -3,6 +3,7 @@
 
 <button type="button"
         class="@ButtonCss"
+        title="@Title"
         disabled="@(IsBusy || IsDisabled)"
         @onclick="HandleClickAsync">
     @if (IsBusy)
@@ -26,6 +27,9 @@
     [Parameter] public bool IsBusy { get; set; }
 
     [Parameter] public bool IsDisabled { get; set; }
+
+    /// <summary>Optional tooltip. Used to explain why a control is locked (e.g. no connection).</summary>
+    [Parameter] public string? Title { get; set; }
 
     [Parameter] public string CssClass { get; set; } = "ux-btn";
 

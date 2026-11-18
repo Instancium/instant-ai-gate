@@ -705,6 +705,11 @@
     outline: 1px solid var(--ux-accent);
 }
 
+.ux-input:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 /* Gate */
 .ux-gate {
     margin: 24px 16px;
@@ -784,3 +789,65 @@
     font-size: 12px;
     color: var(--ux-text-dim);
 }
+
+/* D1 addition: Blazor fatal-error strip. Hidden by default; blazor.webassembly.js
+   switches display to block only on a real circuit fault. Without this rule the div
+   sits in normal document flow and is always visible (false alarm). */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    padding: 10px 48px 10px 16px;
+    background: var(--ux-surface);
+    color: var(--ux-text);
+    border-top: 1px solid var(--ux-danger);
+    font-size: 13px;
+    z-index: 1100;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.5);
+}
+
+    #blazor-error-ui .reload {
+        color: var(--ux-accent);
+        margin: 0 6px;
+    }
+
+    #blazor-error-ui .dismiss {
+        position: absolute;
+        right: 14px;
+        top: 8px;
+        cursor: pointer;
+        color: var(--ux-text-dim);
+    }
+
+/* D1 addition: shell scaffolding for legacy class names used by MainLayout/index.html. */
+.ig-page {
+    min-height: 100vh;
+    background: var(--ux-bg);
+    color: var(--ux-text);
+}
+
+.ig-main {
+    width: 100%;
+}
+
+.ig-content {
+    display: block;
+}
+
+.ig-loading {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    color: var(--ux-text-dim);
+    font-size: 14px;
+}
+
+    .ig-loading strong {
+        color: var(--ux-accent);
+        font-size: 18px;
+    }

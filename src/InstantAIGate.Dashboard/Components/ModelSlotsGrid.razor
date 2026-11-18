@@ -12,10 +12,14 @@
             <ConfirmActionButton Label="Purge Idle Contexts (All)"
                                  CssClass="ux-btn ux-btn-ghost"
                                  IsBusy="@Commands.IsRunning(UiCommandIds.PurgeAll)"
+                                 IsDisabled="@ConnectionLocked"
+                                 Title="@LockTitle"
                                  OnConfirm="() => OnPurgeIdleContexts.InvokeAsync(string.Empty)" />
             <ConfirmActionButton Label="Force .NET GC"
                                  CssClass="ux-btn ux-btn-ghost"
                                  IsBusy="@Commands.IsRunning(UiCommandIds.ForceGc)"
+                                 IsDisabled="@ConnectionLocked"
+                                 Title="@LockTitle"
                                  OnConfirm="() => OnForceGc.InvokeAsync()" />
         </div>
     </header>
@@ -29,7 +33,7 @@
         <div class="ux-model-grid">
             @foreach (var model in Models)
             {
-                <article class="ux-model-card">
+                <article class="ux-model-card @(model.IsDraining ? "ux-card-draining" : null)">
                     <header class="ux-model-head">
                         <span class="ux-badge @GetModelTypeCss(model.Type)">@model.Type</span>
                         <span class="ux-model-id">@model.RepoId</span>
@@ -59,11 +63,15 @@
                         <ConfirmActionButton Label="Purge Idle"
                                              CssClass="ux-btn ux-btn-ghost"
                                              IsBusy="@Commands.IsRunning(UiCommandIds.PurgeModel(model.RepoId))"
+                                             IsDisabled="@ConnectionLocked"
+                                             Title="@LockTitle"
                                              OnConfirm="() => OnPurgeIdleContexts.InvokeAsync(model.RepoId)" />
                         <ConfirmActionButton Label="Unload"
                                              ConfirmLabel="Confirm unload?"
                                              CssClass="ux-btn ux-btn-danger"
                                              IsBusy="@Commands.IsRunning(UiCommandIds.UnloadModel(model.RepoId))"
+                                             IsDisabled="@ConnectionLocked"
+                                             Title="@LockTitle"
                                              OnConfirm="() => OnUnloadModel.InvokeAsync(model.RepoId)" />
                     </footer>
                 </article>
@@ -82,6 +90,15 @@
     [Parameter] public EventCallback<string> OnUnloadModel { get; set; }
 
     [Parameter] public EventCallback OnForceGc { get; set; }
+
+    /// <summary>
+    /// True while the SignalR connection is not in Connected state. Why: admin RPCs issued
+    /// during Reconnecting/Disconnected fail client-side with a noisy technical toast;
+    /// locking the controls with an explanatory tooltip is honest and quieter.
+    /// </summary>
+    [Parameter] public bool ConnectionLocked { get; set; }
+
+    private string? LockTitle => ConnectionLocked ? "Available when the dashboard is connected" : null;
 
     private static string GetModelTypeCss(ModelType type) => type switch
     {

@@ -29,13 +29,15 @@
         <ConfirmActionButton Label="Force GC & Purge Idle Pools"
                              CssClass="ux-btn ux-btn-primary"
                              IsBusy="@Commands.IsRunning(UiCommandIds.ForceGcAndPurgeAll)"
-                             IsDisabled="@(_connectionState != ConnectionState.Connected)"
+                             IsDisabled="@IsConnectionLocked"
+                             Title="@LockTitle"
                              OnConfirm="ForceGcAndPurgeAllAsync" />
         <ConfirmActionButton Label="Disconnect"
                              ConfirmLabel="Confirm disconnect?"
                              CssClass="ux-btn ux-btn-ghost"
                              IsBusy="@Commands.IsRunning(UiCommandIds.Disconnect)"
-                             IsDisabled="@(_connectionState != ConnectionState.Connected)"
+                             IsDisabled="@IsConnectionLocked"
+                             Title="@LockTitle"
                              OnConfirm="DisconnectAsync" />
     </div>
 </header>
@@ -99,18 +101,24 @@ else
     </PanelErrorBoundary>
 
     <PanelErrorBoundary>
-        <PerformanceTpsPanel Snapshot="_latestSnapshot" History="_historySnapshot" OnUpdateQueueLimit="UpdateQueueLimitAsync" />
+        <PerformanceTpsPanel Snapshot="_latestSnapshot"
+                             History="_historySnapshot"
+                             ConnectionLocked="@IsConnectionLocked"
+                             OnUpdateQueueLimit="UpdateQueueLimitAsync" />
     </PanelErrorBoundary>
 
     <PanelErrorBoundary>
         <ModelSlotsGrid Models="_latestSnapshot?.Models"
+                        ConnectionLocked="@IsConnectionLocked"
                         OnPurgeIdleContexts="PurgeIdleContextsAsync"
                         OnUnloadModel="UnloadModelAsync"
                         OnForceGc="ForceGcAsync" />
     </PanelErrorBoundary>
 
     <PanelErrorBoundary>
-        <ActiveSessionsTable Sessions="_latestSnapshot?.Sessions" OnKillSession="ForceKillSessionAsync" />
+        <ActiveSessionsTable Sessions="_latestSnapshot?.Sessions"
+                             ConnectionLocked="@IsConnectionLocked"
+                             OnKillSession="ForceKillSessionAsync" />
     </PanelErrorBoundary>
 
     <PanelErrorBoundary>
@@ -138,6 +146,14 @@ else
 
     private GatewayStatusDetails EffectiveGatewayStatus =>
         _latestStatus ?? _latestSnapshot?.GatewayStatus ?? new GatewayStatusDetails();
+
+    /// <summary>
+    /// Single source of truth for control locking: every admin command requires a live
+    /// SignalR connection, so all admin controls degrade uniformly outside Connected.
+    /// </summary>
+    private bool IsConnectionLocked => _connectionState != ConnectionState.Connected;
+
+    private string? LockTitle => IsConnectionLocked ? "Available when the dashboard is connected" : null;
 
     protected override async Task OnInitializedAsync()
     {

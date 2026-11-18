@@ -38,10 +38,14 @@
                        class="ux-input"
                        type="number"
                        min="1"
+                       disabled="@ConnectionLocked"
+                       title="@LockTitle"
                        @bind="_queueLimitInput" />
                 <ConfirmActionButton Label="Apply"
                                      CssClass="ux-btn ux-btn-ghost ux-btn-sm"
                                      IsBusy="@Commands.IsRunning(UiCommandIds.SetQueueLimit)"
+                                     IsDisabled="@ConnectionLocked"
+                                     Title="@LockTitle"
                                      OnConfirm="ApplyQueueLimitAsync" />
             </div>
         </article>
@@ -69,6 +73,11 @@
     [Parameter] public IReadOnlyList<DashboardTelemetrySnapshot>? History { get; set; }
 
     [Parameter] public EventCallback<int> OnUpdateQueueLimit { get; set; }
+
+    /// <summary>Locks queue-limit editing while the SignalR connection is not Connected.</summary>
+    [Parameter] public bool ConnectionLocked { get; set; }
+
+    private string? LockTitle => ConnectionLocked ? "Available when the dashboard is connected" : null;
 
     private int _queueLimitInput = 100;
     private int _lastSyncedQueueLimit = 100;

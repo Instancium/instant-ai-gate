@@ -20,7 +20,10 @@
             </ErrorBoundary>
         </article>
     </main>
-    <ToastHost />
+    <ErrorBoundary @ref="_toastBoundary">
+        <ChildContent><ToastHost /></ChildContent>
+        <ErrorContent>@* Silent: a toast-layer render fault must never take down the circuit. *@</ErrorContent>
+    </ErrorBoundary>
 </div>
 
 @code {
@@ -30,6 +33,12 @@
     /// only visible artifact is the static "An unhandled error has occurred" strip.
     /// </summary>
     private ErrorBoundary? _pageBoundary;
+
+    /// <summary>
+    /// Separate containment for the global toast overlay: it lives outside @Body, so the page
+    /// boundary cannot catch its exceptions, and an unbounded ToastHost would fault the circuit.
+    /// </summary>
+    private ErrorBoundary? _toastBoundary;
 
     private void RecoverPage() => _pageBoundary?.Recover();
 }
