@@ -4,10 +4,9 @@ on:
   release:
     types: [published]
 
-
 permissions:
-  id-token: write 
-  contents: read  
+  id-token: write
+  contents: read
 
 jobs:
   build-and-publish:
@@ -21,14 +20,13 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-          
 
       - name: NuGet login (OIDC)
+        id: login
         uses: NuGet/login@v1
         with:
-         user: Instancian
+          user: Instancian
 
-    
       - name: Extract Version and Pack
         shell: pwsh
         run: |
@@ -52,4 +50,4 @@ jobs:
           dotnet pack src/InstantAIGate.Core/InstantAIGate.Core.csproj -c Release -p:PackageVersion=$Version -o ./nupkg
 
       - name: Push to NuGet
-        run: dotnet nuget push ./nupkg/*.nupkg -s https://api.nuget.org/v3/index.json -k ${{ env.NUGET_AUTH_TOKEN }} --skip-duplicate
+        run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
