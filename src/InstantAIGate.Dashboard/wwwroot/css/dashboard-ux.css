@@ -790,9 +790,9 @@
     color: var(--ux-text-dim);
 }
 
-/* D1 addition: Blazor fatal-error strip. Hidden by default; blazor.webassembly.js
-   switches display to block only on a real circuit fault. Without this rule the div
-   sits in normal document flow and is always visible (false alarm). */
+/* Blazor fatal-error strip. Hidden by default; blazor.webassembly.js switches it to
+   display:block ONLY on a real circuit fault. Without this rule the static div from
+   index.html sits in normal document flow and is permanently visible (false alarm). */
 #blazor-error-ui {
     display: none;
     position: fixed;
@@ -821,7 +821,7 @@
         color: var(--ux-text-dim);
     }
 
-/* D1 addition: shell scaffolding for legacy class names used by MainLayout/index.html. */
+/* Shell scaffolding for legacy class names used by MainLayout and index.html. */
 .ig-page {
     min-height: 100vh;
     background: var(--ux-bg);

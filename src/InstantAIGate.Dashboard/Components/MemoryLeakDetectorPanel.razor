@@ -12,7 +12,7 @@
                 <span class="ux-badge ux-badge-ok">@Snapshot!.Hardware.GpuProviderName</span>
                 break;
             case HardwareViewMode.UnifiedMemory:
-                <span class="ux-badge ux-badge-warn">CPU-only / unified memory</span>
+                <span class="ux-badge ux-badge-warn">CPU-only: VRAM telemetry unavailable</span>
                 break;
             default:
                 <span class="ux-badge">awaiting telemetry</span>
@@ -26,12 +26,24 @@
     }
     else
     {
+        @if (ViewMode == HardwareViewMode.UnifiedMemory)
+        {
+            <p class="ux-card-note">
+                This host exposes no GPU telemetry, so model weights, KV caches and the native heap
+                live in system RAM. The gateway footprint is broken out inside the RAM card below;
+                no VRAM numbers are reported or estimated here.
+            </p>
+        }
+
         <div class="ux-cards">
             @if (ViewMode == HardwareViewMode.Gpu)
             {
                 <article class="ux-card">
                     <h3 class="ux-card-title">VRAM (GPU)</h3>
-                    <p class="ux-card-value">@FormatBytes(Snapshot!.Hardware.VramUsedBytes) / @FormatBytes(Snapshot.Hardware.VramTotalBytes)</p>
+                    <p class="ux-card-value">
+                        @FormatBytes(Snapshot!.Hardware.VramUsedBytes) / @FormatBytes(Snapshot.Hardware.VramTotalBytes)
+                        <span class="ux-card-unit">used / total VRAM</span>
+                    </p>
                     <div class="ux-bar">
                         <div class="ux-bar-fill @GetBarClass(VramPercent)" style="width: @FormatPercent(VramPercent)%"></div>
                     </div>
@@ -43,35 +55,25 @@
                     </dl>
                 </article>
             }
-            else
-            {
-                <article class="ux-card">
-                    <h3 class="ux-card-title">Unified memory (CPU-only host)</h3>
-                    <p class="ux-card-note">
-                        GPU telemetry is unavailable on this host, so model weights and KV caches live in system RAM.
-                        The radar tracks the process native heap instead of VRAM.
-                    </p>
-                    <p class="ux-card-value">@FormatBytes(_report.ProcessPrivateBytes) / @FormatBytes(Snapshot!.Hardware.SystemTotalRamBytes)</p>
-                    <div class="ux-bar">
-                        <div class="ux-bar-fill @GetBarClass(ProcessPrivatePercent)" style="width: @FormatPercent(ProcessPrivatePercent)%"></div>
-                    </div>
-                    <dl class="ux-kv">
-                        <div><dt>Native heap (Private − GC)</dt><dd>@FormatBytes(_report.PrivateUnmanagedBytes)</dd></div>
-                        <div><dt>Weights + KV (est.)</dt><dd>@FormatBytes(_report.EstimatedGatewayVramBytes)</dd></div>
-                        <div><dt>Managed heap (GC)</dt><dd>@FormatBytes(_report.ManagedHeapBytes)</dd></div>
-                    </dl>
-                </article>
-            }
 
             <article class="ux-card">
                 <h3 class="ux-card-title">RAM (host &amp; process)</h3>
-                <p class="ux-card-value">@FormatBytes(HostRamUsedBytes) / @FormatBytes(Snapshot!.Hardware.SystemTotalRamBytes)</p>
+                <p class="ux-card-value">
+                    @FormatBytes(HostRamUsedBytes) / @FormatBytes(Snapshot!.Hardware.SystemTotalRamBytes)
+                    <span class="ux-card-unit">used / total system RAM</span>
+                </p>
                 <div class="ux-bar">
                     <div class="ux-bar-fill @GetBarClass(HostRamPercent)" style="width: @FormatPercent(HostRamPercent)%"></div>
                 </div>
                 <dl class="ux-kv">
                     <div><dt>Process working set</dt><dd>@FormatBytes(_report.ProcessWorkingSetBytes)</dd></div>
                     <div><dt>Process private bytes</dt><dd>@FormatBytes(_report.ProcessPrivateBytes)</dd></div>
+                    @if (ViewMode == HardwareViewMode.UnifiedMemory)
+                    {
+                        <div><dt>Native heap (Private − GC)</dt><dd>@FormatBytes(_report.PrivateUnmanagedBytes)</dd></div>
+                        <div><dt>Weights + KV (est.)</dt><dd>@FormatBytes(_report.EstimatedGatewayVramBytes)</dd></div>
+                        <div><dt>Managed heap (GC)</dt><dd>@FormatBytes(_report.ManagedHeapBytes)</dd></div>
+                    }
                     <div><dt>CPU usage</dt><dd>@FormatPercent(Snapshot.Hardware.CpuUsagePercent)%</dd></div>
                     <div><dt>Allocated contexts</dt><dd>@_report.TotalAllocatedContexts</dd></div>
                 </dl>
@@ -126,7 +128,9 @@
 
     /// <summary>
     /// Adaptive presentation mode. Why: on CPU-only hosts every VRAM probe legitimately
-    /// reports zero, and rendering a permanent 0% bar looked like a broken control.
+    /// reports zero; rendering a synthetic "unified memory budget" card duplicated the RAM
+    /// card numbers and misled operators, so unified mode now only enriches the single RAM
+    /// card with the process footprint breakdown instead of inventing a second budget.
     /// </summary>
     private HardwareViewMode ViewMode => Snapshot is null
         ? HardwareViewMode.NoTelemetry
@@ -138,15 +142,6 @@
         {
             long total = Snapshot?.Hardware.VramTotalBytes ?? 0;
             return total > 0 ? Math.Clamp((double)(Snapshot?.Hardware.VramUsedBytes ?? 0) / total * 100.0, 0.0, 100.0) : 0.0;
-        }
-    }
-
-    private double ProcessPrivatePercent
-    {
-        get
-        {
-            long total = Snapshot?.Hardware.SystemTotalRamBytes ?? 0;
-            return total > 0 ? Math.Clamp((double)_report.ProcessPrivateBytes / total * 100.0, 0.0, 100.0) : 0.0;
         }
     }
 
