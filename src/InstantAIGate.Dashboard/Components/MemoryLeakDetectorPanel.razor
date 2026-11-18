@@ -128,7 +128,7 @@
                         <td class="ux-metric-name">Managed heap (GC)</td>
                         <td class="ux-num">@FormatBytes(_report.ManagedHeapBytes)</td>
                         <td class="ux-num">@FormatShare(_report.ManagedHeapBytes, Snapshot!.Hardware.SystemTotalRamBytes)</td>
-                        <td class="ux-mean">.NET GC heap; stays small when native offload works correctly.</td>
+                        <td class="ux-mean">Allocated managed heap incl. uncollected garbage; rises between GCs by design. Leak signal = rising baseline right after a full GC, not the sawtooth.</td>
                     </tr>
                     <tr>
                         <td class="ux-metric-name">Native heap (Private − GC)</td>
