@@ -1,4 +1,4 @@
-name: Publish InstantAIGate.Core to NuGet
+name: Publish NuGet Packages
 
 on:
   release:
@@ -30,5 +30,11 @@ jobs:
       - name: Pack InstantAIGate.Core
         run: dotnet pack src/InstantAIGate.Core/InstantAIGate.Core.csproj -c Release -o ./nupkg
 
-      - name: Push to NuGet
-        run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: Pack InstantAIGate.Client
+        run: dotnet pack src/InstantAIGate.Client/InstantAIGate.Client.csproj -c Release -o ./nupkg
+
+      - name: Push InstantAIGate.Core to NuGet
+        run: dotnet nuget push ./nupkg/InstantAIGate.Core.*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Push InstantAIGate.Client to NuGet
+        run: dotnet nuget push ./nupkg/InstantAIGate.Client.*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
