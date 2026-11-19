@@ -9,7 +9,7 @@
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>InstantAIGate.Client</PackageId>
-    <Version>1.5.10</Version>
+    <Version>1.6.0</Version>
     <Authors>InstantAIGate Team</Authors>
     <Description>Official .NET SignalR client SDK for the InstantAIGate inference gateway with pluggable KV-cache context strategies.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
@@ -18,16 +18,13 @@
     <PackageTags>ai;llm;inference;gateway;client;signalr;embeddings</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
-
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="\" Condition="Exists('..\..\LICENSE')" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\InstantAIGate.Core\InstantAIGate.Core.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
