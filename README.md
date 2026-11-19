@@ -62,6 +62,14 @@ For a definitive list of officially supported and tested model configurations, r
 - **Disconnect Grace Period:** Network interruptions preserve session context in VRAM for a configurable window (default: 30s), enabling seamless client reconnections.
 - **Safe Eviction:** Abandoned sessions exceeding the idle timeout are safely synchronized with internal `ExecutionGate` semaphores before being returned to the VRAM pool.
 
+### 9. Diagnostic Web Dashboard *(Experimental)*
+> **Experimental Feature:** `InstantAIGate.Dashboard` is currently in an experimental stage. UI workflows, metrics heuristics, and control-plane endpoints may change in minor releases.
+
+A Blazor WebAssembly diagnostic console (`src/InstantAIGate.Dashboard`) connected to the gateway Control Plane (`/hub/gateway`, requires an Admin API key):
+- **1 Hz Hardware & Memory Retention Diagnostics:** Visualizes GPU VRAM (or Unified Memory on CPU-only hosts), compares loaded weights and estimated KV-cache against process memory, and flags suspected native memory retention or VRAM spillover risk.
+- **Model Pool & Session Control:** Inspects per-model context slots (active leases, idle pooled contexts, unallocated slots) and active sessions with context fill bars, with guarded two-step controls to purge idle contexts, unload models, force-kill sessions, trigger .NET GC, or adjust queue limits.
+- **Throughput & Native Log Terminal:** Tracks aggregate Prompt/Eval TPS and request queue utilization alongside a live, filterable native log stream and an in-memory admin operation audit journal.
+
 
 ## Architecture
 
@@ -73,7 +81,9 @@ InstantAIGate isolates client orchestration from the gateway server and underlyi
 
 ### A. Client Layer
 - **Language Agnostic:** Integrates smoothly via official SignalR client libraries (JS/TS, Python, Go, Rust, C#).
+- **Official .NET SDK (`InstantAIGate.Client`):** A ready-to-use, capability-segregated SignalR client library providing connection management, streaming chat, embeddings, Data Plane telemetry, and pluggable KV-cache context strategies.
 - **Reference Client (`InstantAIGate.Cli`):** An open-source CLI demonstrating multi-model management, token budgeting, checkpointed ingestion, and multimodal streaming.
+- **Diagnostic Console (`InstantAIGate.Dashboard`, *Experimental*):** A Blazor WebAssembly web UI for real-time Control Plane telemetry and VRAM/session administration.
 
 ### B. Gateway Core (`InstantAIGate.Server`)
 - Acts as the central coordinator, mapping persistent `SessionId` tokens directly to leased native memory handles (`InferenceContext`).
@@ -110,10 +120,24 @@ InstantAIGate interfaces directly with compiled `llama.cpp` inference binaries (
 
 ## Client Integration & Protocol Contract
 
-The complete wire contract is documented in the [Client Integration Guide](docs/client-integration-guide.md). 
+The complete wire contract is documented in the [Client Integration Guide](docs/client-integration-guide.md).
 
-### Typed Contracts for .NET
-For C# developers, the [InstantAIGate.Core](https://www.nuget.org/packages/InstantAIGate.Core/) NuGet package provides all strongly-typed DTOs (`InstantAIGate.Core.Dtos.*`) and interfaces, ensuring compile-time safety and eliminating manual JSON payload parsing.
+### .NET Integration Packages
+
+InstantAIGate provides two complementary NuGet packages with distinct responsibilities:
+
+| Package | Purpose | When to Use |
+|---------|---------|-------------|
+| **[InstantAIGate.Core](https://www.nuget.org/packages/InstantAIGate.Core/)** | **Contracts & DTOs for building custom clients.** Contains strongly-typed DTOs (`InstantAIGate.Core.Dtos.*`), exceptions (`ContextOverflowException`), and hub contracts (`IGatewayHub`, `IGatewayHubAdmin`). | Use when implementing a custom transport layer, low-level SignalR integration, or Control Plane (`IGatewayHubAdmin`) tooling without taking on SDK abstractions. |
+| **[InstantAIGate.Client](src/InstantAIGate.Client/README.md)** | **Ready-to-use SDK for connecting to the gateway.** Built on top of `InstantAIGate.Core`, providing a shared SignalR connection, capability-segregated clients, and reusable KV-cache strategies. | Use in .NET applications that need immediate, production-ready Data Plane integration without wiring `HubConnection` boilerplate manually. |
+
+#### What `InstantAIGate.Client` Provides
+- **Transport Plane (`IGatewayConnection`):** Lazy, thread-safe SignalR connection management, Bearer API key authentication, automatic reconnect backoff, and `GatewayOperationalStatus.Ready` gating.
+- **Capability Clients:**
+  - `IChatClient` / `IChatClientFactory` — multimodal `ChatMessage` streaming (`StreamAsync` / `CompleteAsync`) and plain-string extensions, with structured `ContextOverflowReport` exception mapping.
+  - `IGatewayEmbeddingClient` — single and batch dense vector generation returning `EmbeddingResponse`, with optional lazy dimension validation (`ExpectedEmbeddingDimension`).
+  - `IGatewayTelemetryClient` — read-only Data Plane queries (`GetGatewayStatusAsync`, `GetActiveModelDetailsAsync`, `GetLoadedModelsDetailsAsync`, `GetSessionTokenCountAsync`).
+- **Pluggable KV-Cache Strategies (`IChatContextStrategy`):** Built-in `Stateless` (destroy per turn), `Conversational` (retain until disposal), and `Checkpointed` (pin and rollback prefix via `RollbackSession`) lifecycle strategies, plus DI registration via `services.AddInstantAIGateClient(...)`.
 
 >
 > ### Hardware Acceleration & Cross-Platform Execution
@@ -154,7 +178,7 @@ Until version `2.0.0` is released, the public API and wire contract are not froz
 | **Minor** (`x.Y.0`) | New features and behavioral changes that **may affect client applications**. Review the Integration Guide before upgrading. |
 | **Patch** (`x.y.Z`) | Bug fixes that **do not alter the integration rules**. Existing DTOs retain their shape. Safe to upgrade. |
 
-The NuGet package **`InstantAIGate.Core`** serves as the primary stability boundary for downstream consumers. 
+The NuGet packages **`InstantAIGate.Core`** and **`InstantAIGate.Client`** are versioned and released together as the primary stability boundary for downstream .NET consumers.
 
 
 ## 📄 License & Trademark
