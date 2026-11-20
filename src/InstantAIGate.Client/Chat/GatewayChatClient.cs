@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 /// <summary>
 /// SignalR-backed <see cref="IChatClient"/> implementation that delegates KV-cache session
 /// lifecycle management to an <see cref="IChatContextStrategy"/> while streaming token deltas
-/// through a bounded-free <see cref="Channel{T}"/>.
+/// through an unbounded <see cref="Channel{T}"/>.
 /// </summary>
 public sealed class GatewayChatClient : IChatClient
 {
@@ -137,6 +137,20 @@ public sealed class GatewayChatClient : IChatClient
                     }
 
                     channel.Writer.TryComplete(report.ToException());
+                });
+
+            using var sessionClosedSubscription = hub.On<string>(
+                GatewayHubMethods.ReceiveSessionClosed,
+                sessionId =>
+                {
+                    if (!string.Equals(sessionId, SessionId, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    channel.Writer.TryComplete(new IOException(
+                        $"Gateway closed session '{SessionId}' while inference was in flight. " +
+                        "The response may be incomplete."));
                 });
 
             Task OnClosed(Exception? error)

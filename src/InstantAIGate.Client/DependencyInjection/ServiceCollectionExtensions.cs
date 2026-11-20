@@ -18,7 +18,8 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Registers <see cref="GatewayOptions"/>, <see cref="IGatewayConnection"/>, <see cref="IChatClientFactory"/>,
-    /// <see cref="IGatewayEmbeddingClient"/>, and <see cref="IGatewayTelemetryClient"/> in the service collection.
+    /// <see cref="IChatMapReduceClient"/>, <see cref="IGatewayEmbeddingClient"/>, and
+    /// <see cref="IGatewayTelemetryClient"/> in the service collection.
     /// </summary>
     /// <param name="services">The target <see cref="IServiceCollection"/>.</param>
     /// <param name="configure">Callback used to configure <see cref="GatewayOptions"/>.</param>
@@ -36,6 +37,7 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<IGatewayConnection, GatewayConnection>();
         services.TryAddSingleton<IChatClientFactory, GatewayChatClientFactory>();
+        services.TryAddSingleton<IChatMapReduceClient, ChatMapReduceClient>();
         services.TryAddSingleton<IGatewayEmbeddingClient, GatewayEmbeddingClient>();
         services.TryAddSingleton<IGatewayTelemetryClient, GatewayTelemetryClient>();
 

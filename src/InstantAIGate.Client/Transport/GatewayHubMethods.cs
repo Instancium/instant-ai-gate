@@ -24,4 +24,5 @@ internal static class GatewayHubMethods
     internal const string ReceiveTokenDelta = "ReceiveTokenDelta";
     internal const string ReceiveError = "ReceiveError";
     internal const string ReceiveContextOverflow = "ReceiveContextOverflow";
+    internal const string ReceiveSessionClosed = "ReceiveSessionClosed";
 }

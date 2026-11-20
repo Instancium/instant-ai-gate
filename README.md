@@ -129,7 +129,7 @@ InstantAIGate provides two complementary NuGet packages with distinct responsibi
 | Package | Purpose | When to Use |
 |---------|---------|-------------|
 | **[InstantAIGate.Core](https://www.nuget.org/packages/InstantAIGate.Core/)** | **Contracts & DTOs for building custom clients.** Contains strongly-typed DTOs (`InstantAIGate.Core.Dtos.*`), exceptions (`ContextOverflowException`), and hub contracts (`IGatewayHub`, `IGatewayHubAdmin`). | Use when implementing a custom transport layer, low-level SignalR integration, or Control Plane (`IGatewayHubAdmin`) tooling without taking on SDK abstractions. |
-| **[InstantAIGate.Client](src/InstantAIGate.Client/README.md)** | **Ready-to-use SDK for connecting to the gateway.** Built on top of `InstantAIGate.Core`, providing a shared SignalR connection, capability-segregated clients, and reusable KV-cache strategies. | Use in .NET applications that need immediate, production-ready Data Plane integration without wiring `HubConnection` boilerplate manually. |
+| **[InstantAIGate.Client](https://www.nuget.org/packages/InstantAIGate.Client/)** | **Ready-to-use SDK for connecting to the gateway.** Built on top of `InstantAIGate.Core`, providing a shared SignalR connection, capability-segregated clients, and reusable KV-cache strategies. | Use in .NET applications that need immediate, production-ready Data Plane integration without wiring `HubConnection` boilerplate manually. |
 
 #### What `InstantAIGate.Client` Provides
 - **Transport Plane (`IGatewayConnection`):** Lazy, thread-safe SignalR connection management, Bearer API key authentication, automatic reconnect backoff, and `GatewayOperationalStatus.Ready` gating.
