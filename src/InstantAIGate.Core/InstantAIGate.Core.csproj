@@ -9,7 +9,7 @@
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <PackageId>InstantAIGate.Core</PackageId>
     <Version>1.6.0</Version>
-    <Authors>InstantAIGate Team</Authors>
+    <Authors>Instancium</Authors>
     <Description>Core domain models, DTOs, and interface contracts for the InstantAIGate inference engine.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryType>git</RepositoryType>
